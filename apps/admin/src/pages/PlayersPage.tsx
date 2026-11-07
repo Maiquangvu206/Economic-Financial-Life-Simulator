@@ -33,9 +33,7 @@ export function PlayersPage() {
       </form>
 
       <div className="rounded-xl border border-dashed border-slate-700 px-6 py-10 text-center text-xs text-slate-500">
-        {submitted
-          ? `Chưa nối API tra cứu cho "${submitted}". Endpoint dự kiến: GET /api/v1/admin/players?q=`
-          : 'Nhập tên nhân vật để tra cứu: Tiền gửi tiết kiệm (VNĐ), Bất động sản sở hữu, Bậc học vấn (Mặc định THPT), Lịch sử lao động & Thuế.'}
+        {submitted ? `Chưa có kết quả cho "${submitted}".` : 'Nhập thông tin nhân vật cần tra cứu.'}
       </div>
     </div>
   );

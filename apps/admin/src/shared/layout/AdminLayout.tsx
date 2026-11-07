@@ -39,16 +39,12 @@ export function AdminLayout() {
             </NavLink>
           ))}
         </nav>
-
-        <p className="px-2 text-[10px] leading-relaxed text-slate-600">
-          Khu vực nội bộ. Mọi thao tác can thiệp hệ thống đều được ghi audit log.
-        </p>
       </aside>
 
       <div className="min-w-0 flex-1">
         <header className="flex h-14 items-center justify-between border-b border-slate-800 px-5">
-          <span className="text-xs text-slate-500">Production-shaped scaffold · v0.1</span>
-          <span className="rounded-full border border-amber-900 bg-amber-950/40 px-2 py-0.5 text-[10px] text-amber-300">
+          <span className="text-xs text-slate-400 font-medium">Bảng Điều Khiển Quản Trị</span>
+          <span className="rounded-full border border-amber-900 bg-amber-950/40 px-2.5 py-0.5 text-[10px] font-bold text-amber-300">
             ADMIN
           </span>
         </header>

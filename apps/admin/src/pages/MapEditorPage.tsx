@@ -422,44 +422,34 @@ export function MapEditorPage() {
       {/* Thanh thông tin chi tiết ô đất & giao thông */}
       <div className="rounded-2xl border border-slate-800 bg-surface-900/80 p-4 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-4">
         {selectedCellKey ? (
-          <>
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="font-bold text-amber-300 font-mono">Tọa độ: [{selectedCellKey}]</span>
-              <span className="text-slate-600">|</span>
-              <span>
-                Quy hoạch:{' '}
-                <b className="text-white">
-                  {selectedCell
-                    ? VIETNAM_ZONES.find((z) => z.id === selectedCell.zone)?.label
-                    : 'Đất trống'}
-                </b>
-              </span>
-              <span className="text-slate-600">|</span>
-              <span>
-                Hạ tầng giao thông:{' '}
-                <b className={currentRoadInfo ? 'text-amber-300' : 'text-slate-500'}>
-                  {currentRoadInfo ? `${currentRoadInfo.icon} ${currentRoadInfo.label}` : 'Chưa có đường'}
-                </b>
-              </span>
-              <span className="text-slate-600">|</span>
-              <span>
-                Đơn vị giá:{' '}
-                <b className="text-emerald-400 font-mono">
-                  {selectedCell ? formatCompact(selectedCell.pricePerM2) : '0 ₫'}/m²
-                </b>
-              </span>
-            </div>
-            <div className="text-[11px] text-amber-400/90 font-medium">
-              💡 Chế độ <b>{editorMode === 'zones' ? 'Quy hoạch vùng' : 'Giao thông'}</b>: Nhấp lần 2 vào ô này để gán{' '}
-              {editorMode === 'zones'
-                ? `vùng [${VIETNAM_ZONES.find((z) => z.id === activeZone)?.label}] và giá [${formatCompact(customPrice)}/m²]`
-                : `cung đường [${VIETNAM_ROADS.find((r) => r.id === activeRoad)?.label}]`}
-            </div>
-          </>
-        ) : (
-          <div className="text-slate-500 italic">
-            Nhấp chuột 1 lần vào ô để xem thông tin đất & giao thông. Nhấn lần 2 để gán công cụ đang chọn. Dùng nút [−] [+] hoặc giữ Ctrl + Cuộn chuột để phóng to/thu nhỏ.
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-bold text-amber-300 font-mono">Tọa độ: [{selectedCellKey}]</span>
+            <span className="text-slate-600">|</span>
+            <span>
+              Quy hoạch:{' '}
+              <b className="text-white">
+                {selectedCell
+                  ? VIETNAM_ZONES.find((z) => z.id === selectedCell.zone)?.label
+                  : 'Đất trống'}
+              </b>
+            </span>
+            <span className="text-slate-600">|</span>
+            <span>
+              Giao thông:{' '}
+              <b className={currentRoadInfo ? 'text-amber-300' : 'text-slate-500'}>
+                {currentRoadInfo ? `${currentRoadInfo.icon} ${currentRoadInfo.label}` : 'Không'}
+              </b>
+            </span>
+            <span className="text-slate-600">|</span>
+            <span>
+              Đơn vị giá:{' '}
+              <b className="text-emerald-400 font-mono">
+                {selectedCell ? formatCompact(selectedCell.pricePerM2) : '0 ₫'}/m²
+              </b>
+            </span>
           </div>
+        ) : (
+          <div className="text-slate-500">Chưa chọn ô đất nào.</div>
         )}
       </div>
     </div>

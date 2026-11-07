@@ -207,9 +207,6 @@ export function SeasonCalendarPage() {
               onChange={(e) => setOtRatePercent(Number(e.target.value))}
               className="w-full accent-emerald-500 cursor-pointer"
             />
-            <p className="text-[11px] text-slate-500">
-              * Theo Điều 98 Bộ luật Lao động Việt Nam 2019: Làm thêm vào ngày nghỉ lễ, tết tối thiểu bằng 300% chưa kể tiền lương ngày lễ.
-            </p>
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-xs space-y-2">
