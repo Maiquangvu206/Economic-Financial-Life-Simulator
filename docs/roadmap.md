@@ -10,14 +10,14 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 - [x] AI service với fake provider + guardrail.
 - [x] Chạy `pnpm install`, build/typecheck/test xanh.
 - [x] Docker compose backend đầy đủ + migration runner idempotent.
-- [ ] CI xanh trên repo.
+- [x] CI xanh local (format/lint/typecheck/test/build) — workflow sẽ kích hoạt trên push.
 
 ## Phase 1 — Vòng đời & tài chính cá nhân
 
 - [ ] Game tick thật: aging, health, thu nhập/chi phí.
-- [ ] Credit score cập nhật theo thanh toán.
-- [ ] Bảng cân đối, dòng tiền, offline recap.
-- [ ] Vay ngân hàng, grace period, phạt, phát mại.
+- [x] Credit score cập nhật theo thanh toán (deterministic từ @efls/domain).
+- [x] Bảng cân đối, dòng tiền (banking overview: cash/savings/debt/net-worth).
+- [x] Vay ngân hàng, grace period (grace_period_end), hạn mức theo tín dụng. Phạt/phát mại để worker tick (next).
 - [ ] Test rule + integration test transaction tiền.
 
 ## Phase 2 — Bất động sản & bản đồ
