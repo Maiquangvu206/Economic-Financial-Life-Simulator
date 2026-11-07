@@ -14,7 +14,7 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 
 ## Phase 1 — Vòng đời & tài chính cá nhân
 
-- [ ] Game tick thật: aging, health, thu nhập/chi phí.
+- [x] Game tick thật: aging, health, thu nhập/chi phí (worker/processors/gameTick.ts).
 - [x] Credit score cập nhật theo thanh toán (deterministic từ @efls/domain).
 - [x] Bảng cân đối, dòng tiền (banking overview: cash/savings/debt/net-worth).
 - [x] Vay ngân hàng, grace period (grace_period_end), hạn mức theo tín dụng. Phạt/phát mại để worker tick (next).
@@ -22,13 +22,13 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 
 ## Hướng dẫn giao diện (UI/UX) — Game 2D nhiều hoạt động
 
-- [ ] Thiết kế hệ thống màu game: nền slate-950, accent emerald-500, amber caution, rose danger, indigo action; font mono cho số tiền, Outfit/Inter cho tiêu đề.
-- [ ] Layout shell game: Top HUD (năm, tiền mặt, năng lượng, heat), sidebar navigation, action bar dưới, Phaser canvas làm màn hình chính.
-- [ ] Phaser `CityScene`: thành phố 2D top-down, phân khu màu theo zone_type, click tòa nhà mở overlay React tương ứng (ngân hàng → FinancePage, sàn giao dịch → StockMarketPage, v.v.).
-- [ ] Component library base: Panel, StatCard, Button, Modal, Toast với bo góc `rounded-2xl`, backdrop-blur, glow subtle, hover scale 1.02.
-- [ ] Micro-interaction: nút active glow, số tiền tăng giảm đổi màu, check-icon bay khi giao dịch thành công, heat level pulse đỏ khi cao.
-- [ ] Mapping scene ↔ trang React: City↔CityPage, Ngân hàng↔FinancePage, Chứng khoán↔StockMarketPage, BĐS↔RealEstatePage, Doanh nghiệp↔BusinessPage, Pháp lý↔LawPage, Chợ đen↔UnderworldPage, Offline Recap↔OfflineRecapPage.
-- [ ] Sprint A (2 tuần): Tailwind theme game + AppLayout shell + CityScene cơ bản + kết nối FinancePage overlay.
+- [x] Thiết kế hệ thống màu game: nền slate-950, accent emerald-500, amber caution, rose danger, indigo action; font mono cho số tiền, Outfit/Inter cho tiêu đề.
+- [x] Layout shell game: Top HUD (năm, tiền mặt, năng lượng, heat), sidebar navigation, action bar dưới, Phaser canvas làm màn hình chính.
+- [x] Phaser `CityScene`: thành phố 2D top-down, phân khu màu theo zone_type, click tòa nhà mở overlay React tương ứng.
+- [x] Component library base: Panel, StatCard, Button, Modal, Toast với bo góc `rounded-2xl`, backdrop-blur, glow subtle, hover scale 1.02.
+- [x] Micro-interaction: nút active glow, số tiền tăng giảm đổi màu, check-icon bay khi giao dịch thành công, heat level pulse đỏ khi cao.
+- [x] Mapping scene ↔ trang React: City↔CityPage, Ngân hàng↔FinancePage, Chứng khoán↔StockMarketPage, BĐS↔RealEstatePage, Doanh nghiệp↔BusinessPage, Pháp lý↔LawPage, Chợ đen↔UnderworldPage, Offline Recap↔OfflineRecapPage.
+- [x] Sprint A (2 tuần): Tailwind theme game + AppLayout shell + CityScene cơ bản + kết nối FinancePage overlay.
 - [ ] Sprint B (2 tuần): FinancePage thực tế kết nối API banking, StockMarketPage, RealEstatePage, OfflineRecapPage.
 
 ## Phase 2 — Bất động sản & bản đồ
