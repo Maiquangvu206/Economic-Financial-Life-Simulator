@@ -8,6 +8,7 @@ import { attachActor, requireInternalToken } from './shared/http/actor.js';
 import { errorHandler } from './shared/http/errorHandler.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
+import { bankingRouter } from './modules/banking/banking.routes.js';
 import { charactersRouter } from './modules/characters/characters.routes.js';
 
 export function createApp(): Express {
@@ -38,6 +39,7 @@ export function createApp(): Express {
   app.use('/api', requireInternalToken);
 
   app.use('/api/v1/auth', authRouter);
+  app.use('/api/v1/banking', attachActor, bankingRouter);
   app.use('/api/v1/characters', attachActor, charactersRouter);
   app.use('/api/v1/admin', attachActor, adminRouter);
 

@@ -7,6 +7,7 @@ export const TickerDtoSchema = z.object({
   id: IdSchema,
   companyId: IdSchema,
   symbol: z.string().min(1).max(8),
+  companyName: z.string(),
   currentPrice: MoneySchema,
   change24hPct: z.number(),
   totalVolume: z.number().int().nonnegative(),
@@ -25,6 +26,7 @@ export type PlaceOrderRequest = z.infer<typeof PlaceOrderRequestSchema>;
 export const OrderDtoSchema = z.object({
   id: IdSchema,
   tickerId: IdSchema,
+  symbol: z.string(),
   characterId: IdSchema,
   side: OrderSideSchema,
   price: MoneySchema,
@@ -43,3 +45,31 @@ export const OrderBookSnapshotSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 export type OrderBookSnapshot = z.infer<typeof OrderBookSnapshotSchema>;
+
+export const HoldingDtoSchema = z.object({
+  tickerId: IdSchema,
+  symbol: z.string(),
+  companyName: z.string(),
+  shares: z.number().int().nonnegative(),
+  averageCost: MoneySchema,
+  marketValue: MoneySchema,
+  unrealizedPnl: MoneySchema,
+});
+export type HoldingDto = z.infer<typeof HoldingDtoSchema>;
+
+export const PortfolioDtoSchema = z.object({
+  holdings: z.array(HoldingDtoSchema),
+  openOrders: z.array(OrderDtoSchema),
+  totalMarketValue: MoneySchema,
+  totalUnrealizedPnl: MoneySchema,
+});
+export type PortfolioDto = z.infer<typeof PortfolioDtoSchema>;
+
+export const TradeDtoSchema = z.object({
+  id: IdSchema,
+  tickerId: IdSchema,
+  price: MoneySchema,
+  amount: z.number().int().positive(),
+  executedAt: z.string().datetime(),
+});
+export type TradeDto = z.infer<typeof TradeDtoSchema>;

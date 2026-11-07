@@ -1,0 +1,40 @@
+-- Rollback of 0002_gameplay.sql. Destructive: drops gameplay state.
+BEGIN;
+
+DROP TABLE IF EXISTS action_log;
+DROP TABLE IF EXISTS game_state;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS tax_audits;
+DROP TABLE IF EXISTS tax_assessments;
+DROP TABLE IF EXISTS customs_declarations;
+DROP TABLE IF EXISTS shipments;
+DROP TABLE IF EXISTS fleets;
+DROP TABLE IF EXISTS logistics_nodes;
+DROP TABLE IF EXISTS mercenary_orders;
+DROP TABLE IF EXISTS fake_credentials;
+DROP TABLE IF EXISTS heat_events;
+DROP TABLE IF EXISTS criminal_records;
+DROP TABLE IF EXISTS blackmail_contracts;
+DROP TABLE IF EXISTS court_cases;
+DROP TABLE IF EXISTS leases;
+DROP TABLE IF EXISTS properties;
+DROP TABLE IF EXISTS map_nodes;
+DROP TABLE IF EXISTS stock_holdings;
+DROP TABLE IF EXISTS stock_trades;
+DROP TABLE IF EXISTS stock_orders;
+DROP TABLE IF EXISTS stock_tickers;
+DROP TABLE IF EXISTS company_shareholders;
+DROP TABLE IF EXISTS companies;
+DROP TABLE IF EXISTS employments;
+DROP TABLE IF EXISTS jobs;
+DROP TABLE IF EXISTS degrees;
+DROP TABLE IF EXISTS universities;
+DROP TABLE IF EXISTS credit_events;
+DROP TABLE IF EXISTS loan_payments;
+DROP TABLE IF EXISTS loans;
+DROP TABLE IF EXISTS savings_accounts;
+DROP TABLE IF EXISTS ledger_entries;
+DROP TABLE IF EXISTS ledger_transactions;
+DROP TABLE IF EXISTS ledger_accounts;
+
+COMMIT;
