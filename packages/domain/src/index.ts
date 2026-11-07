@@ -13,3 +13,5 @@ export * from './banking.js';
 export * from './stock/orderBook.js';
 export * from './crime/heat.js';
 export * from './tax/auditRisk.js';
+export * from './education.js';
+export * from './timeAndSeasons.js';

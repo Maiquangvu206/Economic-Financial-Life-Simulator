@@ -35,7 +35,7 @@ export function PlayersPage() {
       <div className="rounded-xl border border-dashed border-slate-700 px-6 py-10 text-center text-xs text-slate-500">
         {submitted
           ? `Chưa nối API tra cứu cho "${submitted}". Endpoint dự kiến: GET /api/v1/admin/players?q=`
-          : 'Nhập từ khóa để tra cứu. Mọi hành động can thiệp sẽ được ghi audit log.'}
+          : 'Nhập tên nhân vật để tra cứu: Tiền gửi tiết kiệm (VNĐ), Bất động sản sở hữu, Bậc học vấn (Mặc định THPT), Lịch sử lao động & Thuế.'}
       </div>
     </div>
   );

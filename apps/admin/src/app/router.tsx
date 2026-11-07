@@ -4,6 +4,7 @@ import { AiEventConsolePage } from '../pages/AiEventConsolePage';
 import { MacroDashboardPage } from '../pages/MacroDashboardPage';
 import { MapEditorPage } from '../pages/MapEditorPage';
 import { PlayersPage } from '../pages/PlayersPage';
+import { SeasonCalendarPage } from '../pages/SeasonCalendarPage';
 
 const router = createBrowserRouter([
   {
@@ -14,6 +15,7 @@ const router = createBrowserRouter([
       { path: 'players', element: <PlayersPage /> },
       { path: 'map-editor', element: <MapEditorPage /> },
       { path: 'ai-events', element: <AiEventConsolePage /> },
+      { path: 'calendar-seasons', element: <SeasonCalendarPage /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },

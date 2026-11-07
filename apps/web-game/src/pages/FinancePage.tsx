@@ -12,7 +12,7 @@ import { Badge } from '../shared/ui/Badge';
 import { useToast } from '../shared/ui/Toast';
 
 function moneyMinor(amount: number) {
-  return { amount, currency: 'USD' as const };
+  return { amount, currency: 'VND' as const };
 }
 
 export function FinancePage() {

@@ -6,7 +6,7 @@ import { z } from 'zod';
  *
  * `1_000_00` => 1,000.00 USD.
  */
-export const CurrencySchema = z.enum(['USD']);
+export const CurrencySchema = z.enum(['USD', 'VND']);
 export type Currency = z.infer<typeof CurrencySchema>;
 
 export const MoneySchema = z.object({
