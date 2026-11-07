@@ -1,0 +1,10 @@
+BEGIN;
+
+DROP TABLE IF EXISTS outbox_events;
+DROP TABLE IF EXISTS trust_funds;
+DROP TABLE IF EXISTS wills;
+DROP TABLE IF EXISTS family_trees;
+DROP TABLE IF EXISTS characters;
+DROP TABLE IF EXISTS users;
+
+COMMIT;

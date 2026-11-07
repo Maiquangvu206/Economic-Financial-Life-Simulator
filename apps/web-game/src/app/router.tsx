@@ -1,0 +1,34 @@
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
+import { AppLayout } from '../shared/layout/AppLayout';
+import { BusinessPage } from '../pages/BusinessPage';
+import { CityPage } from '../pages/CityPage';
+import { FinancePage } from '../pages/FinancePage';
+import { LawPage } from '../pages/LawPage';
+import { LoginPage } from '../pages/LoginPage';
+import { OfflineRecapPage } from '../pages/OfflineRecapPage';
+import { RealEstatePage } from '../pages/RealEstatePage';
+import { StockMarketPage } from '../pages/StockMarketPage';
+import { UnderworldPage } from '../pages/UnderworldPage';
+
+const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
+  {
+    path: '/',
+    element: <AppLayout />,
+    children: [
+      { index: true, element: <CityPage /> },
+      { path: 'finance', element: <FinancePage /> },
+      { path: 'real-estate', element: <RealEstatePage /> },
+      { path: 'business', element: <BusinessPage /> },
+      { path: 'stocks', element: <StockMarketPage /> },
+      { path: 'law', element: <LawPage /> },
+      { path: 'underworld', element: <UnderworldPage /> },
+      { path: 'recap', element: <OfflineRecapPage /> },
+      { path: '*', element: <Navigate to="/" replace /> },
+    ],
+  },
+]);
+
+export function AppRouter() {
+  return <RouterProvider router={router} />;
+}

@@ -1,0 +1,63 @@
+name: efls
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: efls-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-efls}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-efls}
+      POSTGRES_DB: ${POSTGRES_DB:-efls}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-efls} -d ${POSTGRES_DB:-efls}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: efls-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot dev migration runner. Applies *.sql except *.down.sql, in order.
+  migrate:
+    image: postgres:16-alpine
+    container_name: efls-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-efls}
+    volumes:
+      - ../db/migrations:/migrations:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        for file in /migrations/*.sql; do
+          case "$$file" in
+            *.down.sql) continue ;;
+          esac;
+          echo "Applying $$file";
+          psql -h postgres -U ${POSTGRES_USER:-efls} -d ${POSTGRES_DB:-efls} -v ON_ERROR_STOP=1 -f "$$file" || exit 1;
+        done
+    restart: 'no'
+
+volumes:
+  postgres-data:
+  redis-data:
