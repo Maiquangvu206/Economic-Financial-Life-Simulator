@@ -78,3 +78,59 @@ user `node` + `dumb-init`.
 - Database/Redis chỉ bind `127.0.0.1` trên host để tránh lộ dữ liệu.
 - Ở production thật, thay Postgres/Redis bằng dịch vụ quản lý hoặc volume bền
   vững, và đặt nginx/TLS phía trước `api-gateway` + `realtime`.
+
+## Chế độ phát triển (auto-reload khi sửa code)
+
+Mount source code trực tiếp vào container, không cần rebuild image mỗi lần:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml --env-file .env --profile app up -d --build
+```
+
+Khi sửa file trong `services/*/src` hoặc `packages/*/dist`, container sẽ sử
+dụng mã mới ngay lập tức (cần restart service để áp dụng nếu không có watcher
+bên trong container).
+
+## Triển khai produzione (CI/CD tự động)
+
+Khi push code lên nhánh `main`, GitHub Actions (`.github/workflows/deploy.yml`)
+sẽ tự động:
+
+1. Build image multi-arch cho tất cả 5 service (game-core, api-gateway,
+   realtime, worker, ai).
+2. Push lên registry được cấu hình trong `REGISTRY` secret.
+3. Gọi webhook deploy trên server production.
+
+Deploy thủ công từ local:
+
+```bash
+REGISTRY=ghcr.io/efls VERSION=v1.2.3 node scripts/deploy.mjs
+```
+
+Các secret cần thiết trong GitHub / server:
+
+| Secret | Mô tả |
+|--------|-------|
+| `REGISTRY` | Địa chỉ registry (ví dụ `ghcr.io/efls`) |
+| `REGISTRY_USERNAME` | Tên đăng nhập registry |
+| `REGISTRY_PASSWORD` | Token/Mật khẩu registry |
+| `DEPLOY_WEBHOOK_URL` | URL webhook để kích hoạt deploy trên server |
+
+## Docker Compose profiles
+
+| Profile | Dịch vụ |
+|---------|---------|
+| (mặc định) | postgres, redis, migrate |
+| `app` | game-core, api-gateway, realtime, worker, ai |
+
+```bash
+# Chỉ chạy data store (để dev Node/Python trên host)
+docker compose -f infra/docker/docker-compose.yml --env-file .env up -d
+
+# Chạy toàn bộ backend
+docker compose -f infra/docker/docker-compose.yml --env-file .env --profile app up -d --build
+
+# Dev mode với auto-reload
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml --env-file .env --profile app up -d --build
+```
+
