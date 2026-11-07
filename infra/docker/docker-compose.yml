@@ -1,5 +1,27 @@
 name: efls
 
+# Local/production-shaped stack.
+#
+# Dependency-only mode (default):
+#   docker compose -f infra/docker/docker-compose.yml up -d
+#
+# Full backend stack (postgres, redis, migrations, core, gateway, realtime,
+# worker, AI):
+#   docker compose -f infra/docker/docker-compose.yml --profile app up -d --build
+#
+# Application services live behind the "app" profile so day-to-day development
+# can keep running Node processes on the host against the same data stores.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+x-node-build: &node-build
+  context: ../..
+  dockerfile: infra/docker/node-service.Dockerfile
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,8 +31,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-efls}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-efls}
       POSTGRES_DB: ${POSTGRES_DB:-efls}
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -18,14 +46,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
+    logging: *default-logging
+    networks: [efls]
 
   redis:
     image: redis:7-alpine
     container_name: efls-redis
     restart: unless-stopped
-    command: ['redis-server', '--appendonly', 'yes']
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
     ports:
-      - '${REDIS_PORT:-6379}:6379'
+      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
     volumes:
       - redis-data:/data
     healthcheck:
@@ -33,8 +64,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    logging: *default-logging
+    networks: [efls]
 
-  # One-shot dev migration runner. Applies *.sql except *.down.sql, in order.
+  # One-shot, idempotent migration runner. Applies *.sql except *.down.sql.
   migrate:
     image: postgres:16-alpine
     container_name: efls-migrate
@@ -42,22 +75,202 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-efls}
       PGPASSWORD: ${POSTGRES_PASSWORD:-efls}
+      PGDATABASE: ${POSTGRES_DB:-efls}
     volumes:
       - ../db/migrations:/migrations:ro
-    entrypoint:
-      - /bin/sh
-      - -c
-      - >
-        for file in /migrations/*.sql; do
-          case "$$file" in
-            *.down.sql) continue ;;
-          esac;
-          echo "Applying $$file";
-          psql -h postgres -U ${POSTGRES_USER:-efls} -d ${POSTGRES_DB:-efls} -v ON_ERROR_STOP=1 -f "$$file" || exit 1;
-        done
+      - ./migrate.sh:/migrate.sh:ro
+    entrypoint: ['/bin/sh', '/migrate.sh']
     restart: 'no'
+    logging: *default-logging
+    networks: [efls]
+
+  ai:
+    profiles: ['app']
+    build:
+      context: ../..
+      dockerfile: infra/docker/ai.Dockerfile
+    image: efls/ai:local
+    container_name: efls-ai
+    restart: unless-stopped
+    init: true
+    environment:
+      APP_ENV: production
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-change-me-ai-token}
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-15000}
+    ports:
+      - '127.0.0.1:${AI_PORT:-8000}:8000'
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [efls]
+
+  game-core:
+    profiles: ['app']
+    build:
+      <<: *node-build
+      args:
+        SERVICE: game-core
+    image: efls/game-core:local
+    container_name: efls-game-core
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      ai:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      CORE_PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-efls}:${POSTGRES_PASSWORD:-efls}@postgres:5432/${POSTGRES_DB:-efls}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN in .env}
+      AI_SERVICE_URL: http://ai:8000
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-change-me-ai-token}
+      AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-15000}
+    ports:
+      - '127.0.0.1:${CORE_PORT:-4000}:4000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/health >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    stop_grace_period: 15s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [efls]
+
+  api-gateway:
+    profiles: ['app']
+    build:
+      <<: *node-build
+      args:
+        SERVICE: api-gateway
+    image: efls/api-gateway:local
+    container_name: efls-api-gateway
+    restart: unless-stopped
+    init: true
+    depends_on:
+      game-core:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: 3000
+      CORE_URL: http://game-core:4000
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:5173}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:5174}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN in .env}
+    ports:
+      - '127.0.0.1:${GATEWAY_PORT:-3000}:3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    stop_grace_period: 15s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [efls]
+
+  realtime:
+    profiles: ['app']
+    build:
+      <<: *node-build
+      args:
+        SERVICE: realtime
+    image: efls/realtime:local
+    container_name: efls-realtime
+    restart: unless-stopped
+    init: true
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      REALTIME_PORT: 5000
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:5173}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:5174}
+      REALTIME_CHANNEL: ${REALTIME_CHANNEL:-efls:realtime}
+    ports:
+      - '127.0.0.1:${REALTIME_PORT:-5000}:5000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:5000/health >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    stop_grace_period: 15s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [efls]
+
+  worker:
+    profiles: ['app']
+    build:
+      <<: *node-build
+      args:
+        SERVICE: worker
+    image: efls/worker:local
+    container_name: efls-worker
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      ai:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-efls}:${POSTGRES_PASSWORD:-efls}@postgres:5432/${POSTGRES_DB:-efls}
+      REDIS_URL: redis://redis:6379
+      GAME_TICK_INTERVAL_MS: ${GAME_TICK_INTERVAL_MS:-86400000}
+      AI_NEWS_CRON: ${AI_NEWS_CRON:-0 6 * * *}
+      AI_SERVICE_URL: http://ai:8000
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-change-me-ai-token}
+      AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-15000}
+      DOMAIN_EVENT_CHANNEL: ${DOMAIN_EVENT_CHANNEL:-efls:domain-events}
+      WORKER_METRICS_PORT: 6060
+    ports:
+      - '127.0.0.1:${WORKER_METRICS_PORT:-6060}:6060'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:6060/health >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    stop_grace_period: 30s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [efls]
 
 volumes:
   postgres-data:
   redis-data:
+
+networks:
+  efls:
+    driver: bridge

@@ -8,8 +8,8 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 - [x] Auth + character cơ bản, migration nền.
 - [x] Gateway, realtime skeleton, worker outbox relay.
 - [x] AI service với fake provider + guardrail.
-- [ ] Chạy `pnpm install`, build/typecheck/test xanh.
-- [ ] Docker compose postgres/redis + migration chạy thật.
+- [x] Chạy `pnpm install`, build/typecheck/test xanh.
+- [x] Docker compose backend đầy đủ + migration runner idempotent.
 - [ ] CI xanh trên repo.
 
 ## Phase 1 — Vòng đời & tài chính cá nhân

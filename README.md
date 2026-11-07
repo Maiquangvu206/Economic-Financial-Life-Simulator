@@ -72,13 +72,18 @@ Yêu cầu: Node ≥ 20, pnpm ≥ 9, Python ≥ 3.11, Docker.
 cp .env.example .env
 
 pnpm install
-pnpm infra:up            # postgres + redis + migration 0001
+pnpm infra:up            # postgres + redis + migration (chạy service trên host)
+
+# Hoặc chạy toàn bộ backend trong Docker (postgres, redis, core, gateway,
+# realtime, worker, AI) với healthcheck + thứ tự khởi động:
+pnpm infra:stack
 
 pnpm dev                 # web (5173), admin (5174), gateway (3000), core (4000),
-                         # realtime (5000), worker (6000)
-
+                         # realtime (5000), worker (6060)
 pnpm ai:dev              # FastAPI (8000) — cửa sổ khác
 ```
+
+Chi tiết Docker: [infra/docker/README.md](infra/docker/README.md).
 
 Kiểm tra:
 
@@ -101,6 +106,7 @@ pnpm ai:test
 | `pnpm lint`                    | ESLint toàn repo                        |
 | `pnpm format`                  | Prettier                                |
 | `pnpm infra:up` / `infra:down` | PostgreSQL + Redis + migrate            |
+| `pnpm infra:stack`             | Toàn bộ backend trong Docker Compose    |
 | `pnpm ai:dev` / `ai:test`      | AI service / pytest                     |
 
 ## Ranh giới trong 30 giây
@@ -127,6 +133,6 @@ pnpm ai:test
 | Gateway + realtime + outbox relay        | ✅ skeleton chạy được                   |
 | Domain modules còn lại                   | 📄 README + chuẩn, chưa implement       |
 | AI service + fake provider + guardrail   | ✅ có test, provider thật cần API key   |
-| Docker deploy đầy đủ                     | 🚧 compose chỉ dependencies + nginx mẫu |
+| Docker backend stack + migration runner  | ✅ compose `--profile app`, healthcheck |
 
 Xem [docs/roadmap.md](docs/roadmap.md) cho thứ tự triển khai tiếp theo.

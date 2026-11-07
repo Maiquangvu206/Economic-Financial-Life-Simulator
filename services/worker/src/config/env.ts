@@ -13,7 +13,7 @@ const EnvSchema = z.object({
   AI_SERVICE_TOKEN: z.string().default(''),
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   DOMAIN_EVENT_CHANNEL: z.string().default('efls:domain-events'),
-  WORKER_METRICS_PORT: z.coerce.number().int().positive().default(6000),
+  WORKER_METRICS_PORT: z.coerce.number().int().positive().default(6060),
   LOG_LEVEL: z.string().default('info'),
 });
 

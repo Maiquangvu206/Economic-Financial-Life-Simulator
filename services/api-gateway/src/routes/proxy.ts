@@ -8,12 +8,17 @@ import type { AuthedRequest } from '../middleware/auth.js';
  *
  * The gateway is the only public entry point. It strips client-supplied
  * identity headers and injects a trusted internal token + actor identity.
+ *
+ * `mountPath` is required because Express removes the mount prefix from
+ * `req.url` before the middleware runs. Without restoring it, core would
+ * receive `/register` instead of `/api/v1/auth/register`.
  */
-export function coreProxy() {
+export function coreProxy(mountPath = '') {
   return createProxyMiddleware({
     target: env.CORE_URL,
     changeOrigin: true,
     xfwd: true,
+    pathRewrite: (path) => `${mountPath}${path}`,
     on: {
       proxyReq: (proxyReq, req) => {
         const original = req as Request & AuthedRequest;

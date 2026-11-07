@@ -1,0 +1,26 @@
+# Build context hygiene: never send local artifacts into Docker.
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.turbo/
+**/.turbo/
+coverage/
+**/coverage/
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.egg-info/
+**/*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.git/
+.gitignore
+.github/
+.env
+.env.*
+!.env.example
+*.log
+postgres-data/
+redis-data/
