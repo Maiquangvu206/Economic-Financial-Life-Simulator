@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { useEffect, useRef, useState } from 'react';
 import { MapScene } from './scenes/MapScene';
+import { useGameStore } from '../store/game';
 
 export interface PhaserGameProps {
   onSelectPlot?: (plotId: string) => void;
@@ -10,6 +11,7 @@ export function PhaserGame({ onSelectPlot }: PhaserGameProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const [selectedPlot, setSelectedPlot] = useState<string | null>(null);
+  const activeHoliday = useGameStore((state) => state.activeHoliday);
 
   useEffect(() => {
     if (!containerRef.current || gameRef.current) return;
@@ -42,6 +44,13 @@ export function PhaserGame({ onSelectPlot }: PhaserGameProps) {
       gameRef.current = null;
     };
   }, [onSelectPlot]);
+
+  // Kích hoạt pháo hoa khi đến ngày Tết / Nghỉ Lễ
+  useEffect(() => {
+    if (!gameRef.current) return;
+    const isHoliday = Boolean(activeHoliday);
+    gameRef.current.events.emit('holiday:fireworks', isHoliday);
+  }, [activeHoliday]);
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-800 bg-surface-900">

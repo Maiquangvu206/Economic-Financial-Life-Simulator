@@ -54,6 +54,9 @@ export function AppLayout() {
     period,
     activeHoliday,
     education,
+    lastHolidayLetter,
+    claimHolidayGift,
+    dismissHolidayLetter,
     tickTime,
     setTimeSpeed,
     togglePause,
@@ -226,6 +229,54 @@ export function AppLayout() {
         <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
+
+        {/* Modal Thư chúc mừng Lễ/Tết & Nhận Lì xì May mắn */}
+        {lastHolidayLetter && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-in fade-in duration-300">
+            <div className="w-full max-w-lg rounded-3xl border-2 border-amber-500/80 bg-surface-900 p-6 shadow-2xl shadow-amber-500/20 text-center space-y-4">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 to-rose-500 text-3xl shadow-lg shadow-rose-500/30">
+                🧧
+              </div>
+
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-widest text-amber-400">
+                  {lastHolidayLetter.sender}
+                </span>
+                <h2 className="mt-1 text-lg font-heading font-black text-white">
+                  {lastHolidayLetter.title}
+                </h2>
+              </div>
+
+              <div className="rounded-2xl border border-amber-900/40 bg-surface-950/70 p-4 text-xs leading-relaxed text-slate-300 text-left">
+                {lastHolidayLetter.content}
+              </div>
+
+              <div className="rounded-2xl border border-emerald-800 bg-emerald-950/60 p-4 text-center">
+                <p className="text-xs text-emerald-400 font-medium">Phong bao phúc lợi chuyển vào tài khoản:</p>
+                <p className="text-2xl font-mono font-black text-emerald-300 mt-1">
+                  +{formatMoney(lastHolidayLetter.bonusCash)}
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={claimHolidayGift}
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-amber-500 to-emerald-500 py-3 text-sm font-bold text-slate-950 transition hover:brightness-110 shadow-lg shadow-emerald-500/20"
+                >
+                  🎉 Nhận Lì Xì Ngay
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissHolidayLetter}
+                  className="rounded-2xl border border-slate-700 bg-slate-800/80 px-5 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-700 transition"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

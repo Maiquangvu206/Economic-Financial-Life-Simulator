@@ -4,6 +4,7 @@ import { RoadLayer } from '../layers/RoadLayer';
 import { BuildingLayer } from '../layers/BuildingLayer';
 import { DecorationLayer } from '../layers/DecorationLayer';
 import { SelectionLayer } from '../layers/SelectionLayer';
+import { FireworksLayer } from '../layers/FireworksLayer';
 import { MapData, ZoneType } from '../map/MapData';
 
 const TILE = 48;
@@ -16,6 +17,7 @@ export class MapScene extends Phaser.Scene {
   private buildings!: BuildingLayer;
   private decos!: DecorationLayer;
   private selection!: SelectionLayer;
+  private fireworks!: FireworksLayer;
 
   private nodePosMap: Map<string, { x: number; y: number }> = new Map();
   private zoneMap: Map<string, ZoneType> = new Map();
@@ -78,6 +80,16 @@ export class MapScene extends Phaser.Scene {
     this.buildings = new BuildingLayer(this);
     this.decos = new DecorationLayer(this);
     this.selection = new SelectionLayer(this);
+    this.fireworks = new FireworksLayer(this);
+
+    // Lắng nghe sự kiện bật/tắt pháo hoa từ React Store
+    this.game.events.on('holiday:fireworks', (enabled: boolean) => {
+      if (enabled) {
+        this.fireworks.start();
+      } else {
+        this.fireworks.stop();
+      }
+    });
 
     this.renderMap();
 
@@ -170,6 +182,10 @@ export class MapScene extends Phaser.Scene {
 
   private getProperties(): any[] {
     return [];
+  }
+
+  override update(): void {
+    this.fireworks?.update();
   }
 
   setMapData(mapData: MapData): void {

@@ -20,6 +20,9 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 - [x] Vay ngân hàng, grace period (grace_period_end), hạn mức theo tín dụng. Phạt/phát mại để worker tick (next).
 - [x] **Chuẩn hóa tiền tệ & định dạng Việt Nam**: Chuyển toàn bộ hệ thống tiền sang VNĐ (`₫`, `triệu ₫`, `tỷ ₫`), hỗ trợ đơn vị tiền tệ VND trong `@efls/contracts` và `@efls/domain`.
 - [x] **Thời gian thực & 4 mùa chuẩn Việt Nam**: HUD tự động cập nhật giờ phút (Rạng sáng, Ban ngày, Hoàng hôn, Ban đêm), ngày/tháng/năm và 4 mùa (Xuân, Hạ, Thu, Đông) kèm ambient filter; chỉ admin điều chỉnh, người chơi chỉ xem.
+- [x] **Hiệu ứng Ngày Lễ, Tết & Lì xì Phúc lợi**:
+  - Khi đến ngày Tết hoặc Lễ lớn (Tết Nguyên Đán, 30/4 - 1/5, 2/9, Giỗ Tổ Hùng Vương), bản đồ thành phố 2D của Phaser tự động kích hoạt hiệu ứng **Pháo hoa chào mừng** (`FireworksLayer`).
+  - Hệ thống tự động gửi **Thư chúc mừng Lễ/Tết** của UBND & Quỹ Phúc lợi xã hội kèm tiền Lì xì/thưởng Tết (**+2.000.000 ₫** dịp Tết, **+1.000.000 ₫** dịp Lễ) trực tiếp vào tài khoản ngân hàng của người chơi.
 - [x] **Khởi đầu học vấn chuẩn Việt Nam**: Nhân vật mặc định khởi đầu với bằng tốt nghiệp THPT (Cấp 3) và giấy phép lái xe máy A1.
 - [ ] Test rule + integration test transaction tiền.
 
@@ -50,6 +53,10 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 
 ## Quản trị Vận hành & Lao động (Admin Control Panel)
 
+- [x] **Trung tâm Thông báo Hệ thống (`/broadcast`)**:
+  - Soạn thảo và phát sóng thông báo khẩn cấp (Urgent), bảo trì server, sự kiện/lễ hội, chính sách kinh tế/thuế hoặc bản tin thành phố.
+  - Phân vùng đối tượng nhận tin: Toàn bộ máy chủ, riêng Lực lượng Công nhân, Giới Đầu tư hoặc Chủ Doanh nghiệp.
+  - Hỗ trợ ghim thông báo (Pinned announcement) trực tiếp lên thanh tiêu đề/HUD người chơi và quản lý lịch sử phát sóng.
 - [x] **Mùa vụ & Lịch nghỉ Công nhân (`/calendar-seasons`)**:
   - Can thiệp 4 mùa (Xuân, Hạ, Thu, Đông) và thời tiết tức thì (Nắng, Mưa, Bão, Mây).
   - Lịch nghỉ lễ chuẩn Việt Nam (Tết Nguyên Đán, Giỗ Tổ Hùng Vương, 30/4 - 1/5, Quốc khánh 2/9) kèm khả năng thêm ngày nghỉ mới.

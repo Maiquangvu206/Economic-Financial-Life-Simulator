@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard vĩ mô', end: true },
+  { to: '/broadcast', label: 'Thông báo hệ thống' },
   { to: '/calendar-seasons', label: 'Mùa & Lịch nghỉ Công nhân' },
   { to: '/players', label: 'Người chơi' },
   { to: '/map-editor', label: 'Map Editor' },

@@ -28,6 +28,10 @@ export interface GameState {
   weather: 'sunny' | 'rainy' | 'storm' | 'cloudy' | 'cold';
   activeHoliday: GameHoliday | null;
 
+  // Hộp thư quà Tết & Lì xì
+  holidayGiftClaimed: Record<string, boolean>; // Lưu id holiday đã nhận quà trong năm
+  lastHolidayLetter: { title: string; sender: string; content: string; bonusCash: number } | null;
+
   // Nhân vật: Học vấn khởi điểm chỉ có THPT
   education: {
     level: 'high_school' | 'vocational' | 'bachelor' | 'master' | 'doctorate';
@@ -47,6 +51,8 @@ export interface GameState {
   loanCount: number;
 
   // Actions
+  dismissHolidayLetter: () => void;
+  claimHolidayGift: () => void;
   tickTime: (deltaMinutes?: number) => void;
   setTimeSpeed: (speed: number) => void;
   togglePause: () => void;
@@ -93,6 +99,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   period: 'day',
   weather: 'sunny',
   activeHoliday: null,
+  holidayGiftClaimed: {},
+  lastHolidayLetter: null,
 
   // Học vấn khởi điểm chỉ có THPT
   education: {
@@ -112,11 +120,24 @@ export const useGameStore = create<GameState>((set, get) => ({
   expensePerMonth: 4_500_000,
   loanCount: 0,
 
+  dismissHolidayLetter: () => set({ lastHolidayLetter: null }),
+
+  claimHolidayGift: () => {
+    const state = get();
+    if (!state.lastHolidayLetter) return;
+    const bonus = state.lastHolidayLetter.bonusCash;
+    set((s) => ({
+      cash: s.cash + bonus,
+      netWorth: s.netWorth + bonus,
+      lastHolidayLetter: null,
+    }));
+  },
+
   tickTime: (deltaMinutes = 5) => {
     const state = get();
     if (state.isPaused) return;
 
-    let { minute, hour, day, month, year } = state;
+    let { minute, hour, day, month, year, holidayGiftClaimed } = state;
     minute += deltaMinutes;
 
     if (minute >= 60) {
@@ -138,6 +159,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (month > 12) {
       year += Math.floor((month - 1) / 12);
       month = ((month - 1) % 12) + 1;
+      // Đầu năm mới reset danh sách nhận quà
+      holidayGiftClaimed = {};
     }
 
     const season = calculateSeason(month);
@@ -145,6 +168,25 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const holiday =
       DEFAULT_HOLIDAYS.find((h) => h.day === day && h.month === month) ?? null;
+
+    let newLetter = state.lastHolidayLetter;
+
+    // Tự động gửi thư chúc mừng & Lì xì Tết / Tiền thưởng Lễ
+    if (holiday) {
+      const claimKey = `${year}-${holiday.id}`;
+      if (!holidayGiftClaimed[claimKey]) {
+        holidayGiftClaimed = { ...holidayGiftClaimed, [claimKey]: true };
+        const isTet = holiday.id.includes('tet');
+        newLetter = {
+          title: isTet ? '🧧 THƯ CHÚC TẾT & LÌ XÌ ĐẦU NĂM' : `🏮 THƯ CHÚC MỪNG DỊP LỄ ${holiday.nameVi.toUpperCase()}`,
+          sender: isTet ? 'Ủy ban Nhân dân Thành phố & Hiệp hội Doanh nghiệp' : 'Bộ Lao động & Quỹ Phúc lợi Công dân',
+          content: isTet
+            ? `Nhân dịp Tết Nguyên Đán năm ${year}, kính chúc công dân và gia đình An Khang Thịnh Vượng, Vạn Sự Như Ý! Ủy ban gửi tặng bạn phong bao lì xì may mắn để khởi đầu năm mới hanh thông.`
+            : `Nhân dịp kỷ niệm ${holiday.nameVi}, xin gửi tới bạn lời chúc mừng nồng nhiệt cùng khoản tiền thưởng phúc lợi xã hội đã được chuyển vào tài khoản!`,
+          bonusCash: isTet ? 2_000_000 : 1_000_000, // 2 triệu lì xì Tết, 1 triệu ngày lễ
+        };
+      }
+    }
 
     set({
       minute,
@@ -155,6 +197,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       season,
       period,
       activeHoliday: holiday,
+      holidayGiftClaimed,
+      lastHolidayLetter: newLetter,
     });
   },
 

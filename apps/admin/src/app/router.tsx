@@ -5,6 +5,7 @@ import { MacroDashboardPage } from '../pages/MacroDashboardPage';
 import { MapEditorPage } from '../pages/MapEditorPage';
 import { PlayersPage } from '../pages/PlayersPage';
 import { SeasonCalendarPage } from '../pages/SeasonCalendarPage';
+import { SystemBroadcastPage } from '../pages/SystemBroadcastPage';
 
 const router = createBrowserRouter([
   {
@@ -12,10 +13,11 @@ const router = createBrowserRouter([
     element: <AdminLayout />,
     children: [
       { index: true, element: <MacroDashboardPage /> },
+      { path: 'broadcast', element: <SystemBroadcastPage /> },
+      { path: 'calendar-seasons', element: <SeasonCalendarPage /> },
       { path: 'players', element: <PlayersPage /> },
       { path: 'map-editor', element: <MapEditorPage /> },
       { path: 'ai-events', element: <AiEventConsolePage /> },
-      { path: 'calendar-seasons', element: <SeasonCalendarPage /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },
