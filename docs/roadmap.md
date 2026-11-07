@@ -62,6 +62,7 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
   - Lịch nghỉ lễ chuẩn Việt Nam (Tết Nguyên Đán, Giỗ Tổ Hùng Vương, 30/4 - 1/5, Quốc khánh 2/9) kèm khả năng thêm ngày nghỉ mới.
   - Quản lý chế độ tiền lương làm thêm giờ (OT 150% - 300% theo Bộ luật Lao động Việt Nam) và tác động năng suất công nhân.
 - [x] **Dashboard Vĩ mô Chuẩn Việt Nam**: Chuyển đổi toàn bộ tiền tệ sang VNĐ, đo lường nợ xấu, CPI và cung tiền M2.
+- [x] **Nhật ký Can thiệp & Kiểm toán Hệ thống (`/audit-logs`)**: Ghi nhận toàn bộ thao tác can thiệp của Quản trị viên (Actor, IP, Hành động, Mục tiêu, Chi tiết, Trạng thái) phục vụ kiểm toán và an ninh.
 
 ## Phase 3 — Doanh nghiệp & chứng khoán
 

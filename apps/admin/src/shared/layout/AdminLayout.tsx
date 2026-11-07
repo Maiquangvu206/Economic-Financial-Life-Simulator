@@ -5,9 +5,10 @@ const NAV_ITEMS = [
   { to: '/', label: 'Dashboard vĩ mô', end: true },
   { to: '/broadcast', label: 'Thông báo hệ thống' },
   { to: '/calendar-seasons', label: 'Mùa & Lịch nghỉ Công nhân' },
-  { to: '/players', label: 'Người chơi' },
   { to: '/map-editor', label: 'Map Editor' },
+  { to: '/players', label: 'Người chơi' },
   { to: '/ai-events', label: 'AI & Sự kiện' },
+  { to: '/audit-logs', label: 'Nhật ký Audit Log' },
 ];
 
 export function AdminLayout() {
