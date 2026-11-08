@@ -106,10 +106,11 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 
 ## Phase 5 — Chợ đen & thám tử
 
-- [ ] Bằng chứng, blackmail, sting, heist, sabotage.
-- [ ] Heat Level, Đại án Công an.
-- [ ] Bảo hiểm, vệ sĩ, phòng thủ.
-- [ ] Cân bằng kinh tế ngầm.
+- [x] **Bằng chứng, blackmail, sting, heist, sabotage** — Migration `0011_phase5.sql` (bảng `underworld_evidences`, `sting_operations`) + module `underworld` (`GET /api/v1/underworld/overview`, `POST /crime`, `/evidence/collect` (thuê thám tử, tạo `mercenary_orders`), `/evidence/sell`, `/evidence/submit` (nộp tòa, tạo `court_cases` + `evidences`), `/blackmail/start`, `/blackmail/:id/collect`, `/sting`). Catalog 8 dịch vụ ngầm cân bằng rủi ro–tiền thưởng, xúc xắc bị bắt = `risk + heat/4`, payout từ `market`, phạt chuyển `government`, ghi án tích + mở vụ án.
+- [x] **Heat Level, Đại án Công an** — Dùng rule `@efls/domain` (`applyHeat`, `shouldTriggerSweep`): mọi hành vi phi pháp cộng heat vào `heat_events` + `characters.heat_level`; `POST /sweep/trigger` (và tự động sau khi crime đẩy heat ≥ 80/manhunt): phạt 10% tiền mặt, giam 30 ngày, hạ heat về 40, ghi `police_sweeps`, phát event `sweep.triggered.v1`.
+- [x] **Bảo hiểm, vệ sĩ, phòng thủ** — Bảng `insurance_policies`, `POST /protection/buy` (vệ sĩ 5tr/tháng bảo vệ 20tr, bảo hiểm 10tr bảo vệ 100tr, trừ phí qua ledger, hạ heat −2). Giấy tờ giả: `POST /credentials/buy` (fake_id 2tr / business_license 8tr / shell_company 15tr, quality ngẫu nhiên 40–90, bảng `fake_credentials`).
+- [x] **Cân bằng kinh tế ngầm** — Payout/nguy cơ/heat theo catalog (VD `heist` 20–100tr, rủi ro 50%, heat +18; `forgery` 1–5tr, rủi ro 10%); `undergroundEarned` tính thu nhập ngầm 30 ngày từ ledger `kind LIKE 'crime_%'`; mua dịch vụ trừ qua ledger `market`.
+- [x] **UI Phase 5** — `UnderworldPage` viết lại thành tabbed page (Dịch vụ ngầm / Thám tử & Bằng chứng / Tống tiền & Gài bẫy / Bảo vệ & Đại án) + modal thuê thám tử, mở tống tiền, gài bẫy; StatCard heat/thu nhập ngầm/bằng chứng/giấy tờ giả; Contracts mở rộng `http/underworld.ts`.
 
 ## Phase 6 — AI nâng cao & vận hành
 
