@@ -12,6 +12,8 @@ import { bankingRouter } from './modules/banking/banking.routes.js';
 import { charactersRouter } from './modules/characters/characters.routes.js';
 import { mapRouter } from './modules/map/map.routes.js';
 import { realEstateRouter } from './modules/real-estate/real-estate.routes.js';
+import { auctionRouter } from './modules/auctions/auction.routes.js';
+import { stockMarketRouter } from './modules/stock-market/stock-market.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -45,6 +47,8 @@ export function createApp(): Express {
   app.use('/api/v1/characters', attachActor, charactersRouter);
   app.use('/api/v1/map', mapRouter);
   app.use('/api/v1/real-estate', realEstateRouter);
+  app.use('/api/v1/auctions', auctionRouter);
+  app.use('/api/v1/stock-market', stockMarketRouter);
   app.use('/api/v1/admin', attachActor, adminRouter);
 
   app.use((_req, res) => {

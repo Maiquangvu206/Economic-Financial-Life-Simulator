@@ -9,7 +9,7 @@ import { Badge } from '../shared/ui/Badge';
 import { GameInput } from '../shared/ui/GameInput';
 import { formatMoney, formatCompact } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
-import { type RealEstateOverviewDto, type PropertyDto } from '@efls/contracts';
+import { type RealEstateOverviewDto, type PropertyDto, type AuctionDto } from '@efls/contracts';
 
 function statusBadge(status: PropertyDto['status']) {
   switch (status) {
@@ -152,6 +152,55 @@ function RentModal({ open, onClose, property, onRent, loading }: RentModalProps)
   );
 }
 
+interface BidModalProps {
+  open: boolean;
+  onClose: () => void;
+  auction: AuctionDto;
+  onBid: (auction: AuctionDto, amountMinor: number) => void;
+  loading: boolean;
+}
+
+function BidModal({ open, onClose, auction, onBid, loading }: BidModalProps) {
+  return (
+    <Modal open={open} onClose={onClose} title="Đặt giá đấu">
+      <div className="space-y-3">
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-600">Tài sản</span>
+          <span className="font-medium">{auction.propertyName}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-600">Giá hiện tại</span>
+          <span className="font-mono text-emerald-700">
+            {formatMoney(auction.currentBid.amount)}
+          </span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-600">Bước tối thiểu</span>
+          <span className="font-mono text-slate-500">+1.000 ₫</span>
+        </div>
+        <GameInput
+          label="Giá bạn đặt (VNĐ)"
+          value={String(auction.currentBid.amount + 1)}
+          type="number"
+          placeholder="0"
+        />
+        <p className="text-[11px] text-slate-500">
+          Tiền sẽ bị khóa trong escrow cho đến khi phiên kết thúc. Nếu bị vượt giá, tiền sẽ được
+          hoàn trả.
+        </p>
+        <GameButton
+          variant="primary"
+          onClick={() => onBid(auction, auction.currentBid.amount + 1)}
+          loading={loading}
+          disabled={loading}
+        >
+          Đặt giá
+        </GameButton>
+      </div>
+    </Modal>
+  );
+}
+
 export function RealEstatePage() {
   const {
     data: overview,
@@ -162,9 +211,20 @@ export function RealEstatePage() {
     queryFn: () => apiRequest<RealEstateOverviewDto>('/api/v1/real-estate/overview'),
   });
 
+  const {
+    data: auctions,
+    isLoading: auctionsLoading,
+    refetch: refetchAuctions,
+  } = useQuery<AuctionDto[]>({
+    queryKey: ['auctions'],
+    queryFn: () => apiRequest<AuctionDto[]>('/api/v1/auctions'),
+    enabled: !isLoading,
+  });
+
   const [buyModal, setBuyModal] = useState<PropertyDto | null>(null);
   const [listModal, setListModal] = useState<PropertyDto | null>(null);
   const [rentModal, setRentModal] = useState<PropertyDto | null>(null);
+  const [bidModal, setBidModal] = useState<AuctionDto | null>(null);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
   const owned = overview?.properties.filter((p) => p.isMine) ?? [];
@@ -188,6 +248,7 @@ export function RealEstatePage() {
       });
       setBuyModal(null);
       void refetch();
+      void refetchAuctions();
     } catch {
       // Lỗi đã được xử lý bởi apiRequest (ném ra)
     } finally {
@@ -207,6 +268,7 @@ export function RealEstatePage() {
       });
       setListModal(null);
       void refetch();
+      void refetchAuctions();
     } catch {
       //
     } finally {
@@ -223,6 +285,27 @@ export function RealEstatePage() {
       });
       setRentModal(null);
       void refetch();
+      void refetchAuctions();
+    } catch {
+      //
+    } finally {
+      setLoadingAction(null);
+    }
+  }
+
+  async function handlePlaceBid(auction: AuctionDto, amountMinor: number) {
+    setLoadingAction(auction.id);
+    try {
+      await apiRequest<AuctionDto>(`/api/v1/auctions/${auction.id}/bid`, {
+        method: 'POST',
+        body: JSON.stringify({
+          auctionId: auction.id,
+          amount: { amount: amountMinor, currency: 'VND' },
+        }),
+      });
+      setBidModal(null);
+      void refetchAuctions();
+      void refetch();
     } catch {
       //
     } finally {
@@ -235,7 +318,7 @@ export function RealEstatePage() {
       <div className="flex flex-col items-center justify-center h-full">
         <PageHeader
           title="Bất động sản"
-          description="Quản lý nhà đất, cho thuê và đầu tư tại Việt Nam."
+          description="Quản lý nhà đất, cho thuê và đấu giá tại Việt Nam."
         />
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
         <p className="mt-4 text-sm text-slate-600">Đang tải danh sách bất động sản...</p>
@@ -247,7 +330,7 @@ export function RealEstatePage() {
     <div className="space-y-5">
       <PageHeader
         title="Bất động sản"
-        description="Mua bán, cho thuê và theo dõi danh mục nhà đất của bạn. Tất cả giao dịch được xác thực bằng VNĐ."
+        description="Mua bán, cho thuê và đấu giá nhà đất. Tất cả giao dịch được xác thực bằng VNĐ."
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -332,7 +415,7 @@ export function RealEstatePage() {
                       <Badge variant="default">{propertyTypeLabel(property.propertyType)}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
-                      {statusBadge(property.status)}&nbsp; ({property.location.x},{' '}
+                      {statusBadge(property.status)} &nbsp; ({property.location.x},{' '}
                       {property.location.y})
                     </div>
                     <div className="mt-2 flex items-baseline gap-1">
@@ -363,8 +446,79 @@ export function RealEstatePage() {
             )}
           </div>
         </Panel>
+
+        {/* Đấu giá */}
+        <Panel title="Đấu giá tài sản phát mại" borderColor="amber">
+          <div className="space-y-3">
+            {auctionsLoading ? (
+              <div className="text-center py-4 text-xs text-slate-500 animate-pulse">
+                Đang tải phiên đấu giá…
+              </div>
+            ) : (auctions ?? []).length > 0 ? (
+              (auctions ?? []).map((auction) => (
+                <div
+                  key={auction.id}
+                  className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-800">{auction.propertyName}</span>
+                      <Badge variant="default">{auction.sellerName}</Badge>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Kết thúc{' '}
+                      <span className="font-mono">
+                        {new Date(auction.endsAt).toLocaleString('vi-VN', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                      &nbsp;·&nbsp; {auction.status}
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1">
+                      <span className="font-mono text-lg font-bold text-emerald-700">
+                        {formatMoney(auction.currentBid.amount)}
+                      </span>
+                      <span className="text-xs text-slate-500 ml-2">
+                        (khởi điểm {formatMoney(auction.startingPrice.amount)})
+                      </span>
+                    </div>
+                    {auction.highestBidderName && (
+                      <div className="mt-1 text-xs text-slate-500">
+                        Cao nhất: {auction.highestBidderName}
+                      </div>
+                    )}
+                  </div>
+                  <GameButton
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setBidModal(auction);
+                    }}
+                    disabled={loadingAction === auction.id || auction.isHighestBidder}
+                  >
+                    {loadingAction === auction.id ? 'Đang xử lý…' : 'Đặt giá'}
+                  </GameButton>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-4 text-xs text-slate-500">
+                Chưa có phiên đấu giá nào đang diễn ra.
+              </div>
+            )}
+          </div>
+        </Panel>
       </div>
 
+      <BidModal
+        open={!!bidModal}
+        onClose={() => setBidModal(null)}
+        auction={bidModal!}
+        onBid={(a, amt) => a && handlePlaceBid(a, amt)}
+        loading={bidModal ? isActionLoading(bidModal.id) : false}
+      />
       <BuyModal
         open={!!buyModal}
         onClose={() => setBuyModal(null)}

@@ -24,7 +24,7 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
   - Khi đến ngày Tết hoặc Lễ lớn (Tết Nguyên Đán, 30/4 - 1/5, 2/9, Giỗ Tổ Hùng Vương), bản đồ thành phố 2D của Phaser tự động kích hoạt hiệu ứng **Pháo hoa chào mừng** (`FireworksLayer`).
   - Hệ thống tự động gửi **Thư chúc mừng Lễ/Tết** của UBND & Quỹ Phúc lợi xã hội kèm tiền Lì xì/thưởng Tết (**+2.000.000 ₫** dịp Tết, **+1.000.000 ₫** dịp Lễ) trực tiếp vào tài khoản ngân hàng của người chơi.
 - [x] **Khởi đầu học vấn chuẩn Việt Nam**: Nhân vật mặc định khởi đầu với bằng tốt nghiệp THPT (Cấp 3) và giấy phép lái xe máy A1.
-- [ ] Test rule + integration test transaction tiền.
+- [x] **Test rule + integration test transaction tiền**: `services/game-core/src/shared/ledger/ledger.integration.test.ts` (2 tests: chuyển tiền đồng bộ số dú + từ chối vượt hạn mức), chạy qua `pnpm --filter @efls/game-core test`.
 
 ## Hướng dẫn giao diện (UI/UX) — Game 2D nhiều hoạt động
 
@@ -35,7 +35,7 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 - [x] Micro-interaction: nút active glow, số tiền tăng giảm đổi màu, check-icon bay khi giao dịch thành công, heat level pulse đỏ khi cao.
 - [x] Mapping scene ↔ trang React: City↔CityPage, Ngân hàng↔FinancePage, Chứng khoán↔StockMarketPage, BĐS↔RealEstatePage, Doanh nghiệp↔BusinessPage, Pháp lý↔LawPage, Chợ đen↔UnderworldPage, Offline Recap↔OfflineRecapPage.
 - [x] Sprint A (2 tuần): Tailwind theme game + AppLayout shell + CityScene cơ bản + kết nối FinancePage overlay.
-- [ ] Sprint B (2 tuần): FinancePage thực tế kết nối API banking, StockMarketPage, RealEstatePage, OfflineRecapPage.
+- [x] Sprint B (2 tuần): **FinancePage** (tổng quan tài khoản, vay/trả nợ, gửi/rut tiết kiệm), **RealEstatePage** (mua/đặt bán/cho thuê + đấu giá), **StockMarketPage** (danh sách mã, đặt lệnh mua/bán, danh mục, lịch sử giao dịch) và **OfflineRecapPage** (báo cáo offline dimostasi) đã kết nối API thực tế.
 
 ## Phase 2 — Bất động sản & bản đồ
 
@@ -59,7 +59,7 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
   - Cơ chế tương tác chuẩn: Click 1 lần hiển thị thông số hiện tại ở thanh dưới; click lần 2 (hoặc double click) gán phân khu/đường mới.
 - [x] **Map editor ghi server có version**: tải bản đồ từ server, lưu lên server với kiểm soát phiên bản (optimistic concurrency), thông báo xung đột 409.
 - [x] **Phaser render dữ liệu thật, click ô đất**: MapScene render terrain/đường/công trình từ server; CityPage click ô đất hiển thị chi tiết + nút mua, phản hồi sở hữu ngay sau khi giao dịch.
-- [ ] Đấu giá tài sản phát mại.
+- [x] **Đấu giá tài sản phát mại**: Migration `0007_auctions.sql` tạo bảng `auctions` (giá khởi điểm, giá cao nhất, thời gian kết thúc, trạng thái). Contracts `http/auction.ts` (AuctionDto, PlaceBid/Create/Cancel request). Module `auctions` (repository/service/controller/routes) với API `GET /api/v1/auctions`, `POST /api/v1/auctions/:id/bid`, `POST /api/v1/auctions/:id/end`, `POST /api/v1/auctions/cancel`, `POST /api/v1/auctions` (tạo). Tiền đặt giá giữ trong escrow, hoàn trả khi bị vượt giá, thanh toán người bán và chuyển chủ sở hữu khi phiên kết thúc. Đã kiểm thử API end-to-end (tạo, đặt giá, từ chối giá thấp).
 
 ## Quản trị Vận hành & Lao động (Admin Control Panel)
 
