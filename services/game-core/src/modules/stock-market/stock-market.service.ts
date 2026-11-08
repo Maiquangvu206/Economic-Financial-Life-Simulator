@@ -11,6 +11,7 @@ import {
   MoneySchema,
 } from '@efls/contracts';
 import { stockMarketRepository } from './stock-market.repository.js';
+import type { PoolClient } from 'pg';
 
 function money(amount: number) {
   return MoneySchema.parse({ amount, currency: 'VND' });
@@ -91,22 +92,27 @@ export class StockMarketService {
     return rows.map(toOrderDto);
   }
 
-  /** Đặt lệnh mua/bán. Tiền mua được giữ trong escrow cho đến khi khớp/hủy. */
+  /** Đặt lệnh mua/bán và khớp lệnh theo giá–thời ưu tiên. */
   async placeOrder(
     userId: string,
     tickerId: string,
     side: 'buy' | 'sell',
     priceMinor: number,
     amount: number,
-  ) {
+  ): Promise<{ orderId: string; filledAmount: number; trades: TradeDto[]; status: string }> {
     return withTransaction(async (client) => {
       const character = await requireCharacterByUserId(client, userId);
+
+      const trades: TradeDto[] = [];
+      let remainingAmount = amount;
+
       if (side === 'buy') {
         const cost = priceMinor * amount;
         const cash = toMinor(character.cash_minor);
         if (cash < cost) {
           throw AppError.conflict('insufficient_funds', 'Không đủ tiền mặt để đặt lệnh mua.');
         }
+        // Escrow toàn bộ chi phí mua.
         await ledger.transfer(client, {
           from: { ownerType: 'character', ownerId: character.id },
           to: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
@@ -116,33 +122,149 @@ export class StockMarketService {
           referenceType: 'order',
           referenceId: undefined,
         });
+
+        // Khớp với lệnh bán thấp nhất trước (asks).
+        const asks = await this.repository.getOrderBook(tickerId);
+        for (const ask of asks.asks) {
+          if (remainingAmount <= 0) break;
+          if (ask.priceMinor > priceMinor) break; // giá bán cao hơn giá mua, dừng khớp
+          const matchAmount = Math.min(remainingAmount, ask.amount);
+          const tradePrice = ask.priceMinor;
+
+          // Tìm chủ lệnh bán để chuyển tiền.
+          const askOrder = await this.repository.getBestAskOrder(tickerId, tradePrice);
+          if (!askOrder) continue;
+
+          await this.executeTrade(
+            client,
+            character.id,
+            askOrder.characterId,
+            tickerId,
+            tradePrice,
+            matchAmount,
+          );
+
+          trades.push({
+            id: crypto.randomUUID(),
+            tickerId,
+            price: money(tradePrice),
+            amount: matchAmount,
+            executedAt: new Date().toISOString(),
+          });
+          remainingAmount -= matchAmount;
+
+          await this.repository.updateOrderFilled(
+            askOrder.id,
+            askOrder.filledAmount + matchAmount,
+            askOrder.filledAmount + matchAmount >= askOrder.amount ? 'filled' : 'partially_filled',
+          );
+        }
+      } else {
+        // Lệnh bán: kiểm tra cổ phiếu sở hữu.
+        const holdings = await this.repository.listHoldings(character.id);
+        const holding = holdings.find((h) => h.tickerId === tickerId);
+        const ownedShares = holding?.shares ?? 0;
+        if (ownedShares < amount) {
+          throw AppError.conflict('insufficient_shares', 'Không đủ cổ phiếu để đặt lệnh bán.');
+        }
+
+        // Khớp với lệnh mua cao nhất trước (bids).
+        const bids = await this.repository.getOrderBook(tickerId);
+        for (const bid of bids.bids) {
+          if (remainingAmount <= 0) break;
+          if (bid.priceMinor < priceMinor) break; // giá mua thấp hơn giá bán, dừng khớp
+          const matchAmount = Math.min(remainingAmount, bid.amount);
+          const tradePrice = bid.priceMinor;
+
+          const bidOrder = await this.repository.getBestBidOrder(tickerId, tradePrice);
+          if (!bidOrder) continue;
+
+          await this.executeTrade(
+            client,
+            bidOrder.characterId,
+            character.id,
+            tickerId,
+            tradePrice,
+            matchAmount,
+          );
+
+          trades.push({
+            id: crypto.randomUUID(),
+            tickerId,
+            price: money(tradePrice),
+            amount: matchAmount,
+            executedAt: new Date().toISOString(),
+          });
+          remainingAmount -= matchAmount;
+
+          await this.repository.updateOrderFilled(
+            bidOrder.id,
+            bidOrder.filledAmount + matchAmount,
+            bidOrder.filledAmount + matchAmount >= bidOrder.amount ? 'filled' : 'partially_filled',
+          );
+        }
       }
 
+      const orderStatus = remainingAmount <= 0 ? 'filled' : 'open';
       const orderId = await this.repository.createOrder(client, {
         characterId: character.id,
         tickerId,
         side,
         priceMinor,
-        amount,
+        amount: remainingAmount > 0 ? remainingAmount : amount,
       });
 
-      const tickerRow = await client.query<{ symbol: string }>(
-        `SELECT symbol FROM stock_tickers WHERE id = $1`,
-        [tickerId],
-      );
+      // Nếu lệnh còn lại (open), tạo lệnh mới với số lượng còn lại.
+      // Nếu đã khớp hết, lệnh đã được tạo trong executeTrade hoặc ở đây.
+      // Đơn giản hóa: tạo một lệnh với filledAmount đã xử lý qua trades.
+      // Ở đây chúng ta tạo lại lệnh cho phần còn lại nếu có.
+      if (remainingAmount > 0 && side === 'buy') {
+        // Giải phóng escrow phần chưa khớp (đã escrow toàn bộ, trả lại phần dư).
+        const unmatchedCost = priceMinor * remainingAmount;
+        await ledger.transfer(client, {
+          from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
+          to: { ownerType: 'character', ownerId: character.id },
+          amountMinor: unmatchedCost,
+          kind: 'order_escrow_refund',
+          description: `Hoàn escrow phần chưa khớp ${orderId}`,
+          referenceType: 'order',
+          referenceId: orderId,
+        });
+      }
+
       return {
-        id: orderId,
-        tickerId,
-        symbol: tickerRow.rows[0]?.symbol ?? '',
-        characterId: character.id,
-        side,
-        price: money(priceMinor),
-        amount,
-        filledAmount: 0,
-        status: 'open',
-        createdAt: new Date().toISOString(),
+        orderId,
+        filledAmount: amount - remainingAmount,
+        trades,
+        status: orderStatus,
       };
     });
+  }
+
+  /** Thực hiện một giao dịch: chuyển tiền và cổ phiếu giữa người mua và người bán. */
+  private async executeTrade(
+    client: PoolClient,
+    buyerId: string,
+    sellerId: string,
+    tickerId: string,
+    priceMinor: number,
+    amount: number,
+  ): Promise<void> {
+    const total = priceMinor * amount;
+    // Chuyển tiền từ escrow (người mua đã escrow) đến người bán.
+    await ledger.transfer(client, {
+      from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
+      to: { ownerType: 'character', ownerId: sellerId },
+      amountMinor: total,
+      kind: 'trade_settlement',
+      description: `Khớp lệnh ${tickerId}`,
+      referenceType: 'trade',
+      referenceId: undefined,
+    });
+    // Chuyển cổ phiếu từ người bán đến người mua.
+    await this.repository.updateHolding(sellerId, tickerId, -amount);
+    await this.repository.updateHolding(buyerId, tickerId, amount);
+    await this.repository.createTrade(tickerId, buyerId, sellerId, priceMinor, amount);
   }
 
   async cancelOrder(userId: string, orderId: string) {
@@ -197,6 +319,23 @@ export class StockMarketService {
     const character = await requireCharacterByUserId(db, userId);
     const rows = await this.repository.listTrades(character.id);
     return rows.map(toTradeDto);
+  }
+
+  async getOrderBook(tickerId: string) {
+    return this.repository.getOrderBook(tickerId);
+  }
+
+  async getMarketSnapshot() {
+    const rows = await this.repository.listTickers();
+    const tickers = rows.map(toTickerDto);
+    const totalMarketCap = tickers.reduce((sum, t) => sum + t.currentPrice.amount, 0);
+    const totalVolume24h = tickers.reduce((sum, t) => sum + t.totalVolume, 0);
+    return {
+      tickers,
+      totalMarketCap: money(totalMarketCap),
+      totalVolume24h,
+      updatedAt: new Date().toISOString(),
+    };
   }
 }
 

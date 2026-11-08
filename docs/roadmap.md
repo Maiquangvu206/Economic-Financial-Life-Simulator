@@ -91,11 +91,10 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 
 ## Phase 3 — Doanh nghiệp & chứng khoán
 
-- [ ] Công ty, OPEX, nhân sự, doanh thu.
-- [ ] IPO, shareholder, HĐQT.
-- [ ] Order book + matching, tick giá, nến realtime.
-- [ ] Cổ tức, hostile takeover.
-- [ ] Read model thị trường cho dashboard.
+- [x] **Công ty, OPEX, nhân sự, doanh thu**: Module `corporations` + API `GET /api/v1/corporations`, `GET /:id`, `POST /` (thành lập, trừ vốn từ ví cá nhân), `POST /:id/invest` (đầu tư vốn, đồng bộ cash/valuation qua ledger). Contracts `http/companies.ts` (`CompanyDto`, `CreateCompanyRequest`, `CompanyInvestRequest`, `CompanyOverviewDto`).
+- [x] **IPO, cổ cổ đông, HĐQT**: `POST /:id/ipo` (chuyển status sang 'ipo', tạo `stock_ticker`, cấp cổ phiếu ban đầu cho chủ sở hữu), `POST /:id/dividend` (phát cổ tức theo tỉ lệ sở hữu, trừ tiền công ty, phân chia đến từng cổ đông), `POST /:id/takeover` (khiêu kích thác đoá khi sở hữu >51% cổ phiếu, chuyển chủ sở hữu mới).
+- [x] **Order book + matching, tick giá, nến realtime**: Module `stock-market` với engine khớp lệnh giá–thời ưu tiên (`POST /orders` tự khớp lệnh mua/bán, escrow tiền mua, chuyển cổ phiếu sau khớp), `GET /orderbook/:tickerId` (sổ lệnh mua/bán), `GET /snapshot` (tổng vốn thị trường, khối lượng 24h), `GET /portfolio` (cổ phiếu sở hữu, lệnh mở, lãi/lỗ), `GET /trades` (lịch sử giao dịch).
+- [x] **Read model thị trường cho dashboard**: `GET /api/v1/stock-market/snapshot` cung cấp tổng vốn, danh sách mã, thay đổi giá 24h.
 
 ## Phase 4 — Pháp lý, xã hội, giáo dục
 

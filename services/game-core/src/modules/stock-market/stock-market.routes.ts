@@ -12,6 +12,8 @@ export const stockMarketRouter: Router = Router();
 stockMarketRouter.use(attachActor);
 
 stockMarketRouter.get('/tickers', asyncHandler(controller.getTickers));
+stockMarketRouter.get('/orderbook/:tickerId', asyncHandler(controller.getOrderBook));
+stockMarketRouter.get('/snapshot', asyncHandler(controller.getMarketSnapshot));
 stockMarketRouter.get('/orders', asyncHandler(controller.getOrders));
 stockMarketRouter.post(
   '/orders',

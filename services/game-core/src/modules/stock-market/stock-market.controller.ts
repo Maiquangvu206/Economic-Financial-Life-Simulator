@@ -11,6 +11,17 @@ export class StockMarketController {
     res.status(200).json(tickers);
   };
 
+  getOrderBook = async (req: Request, res: Response): Promise<void> => {
+    const { tickerId } = req.params as { tickerId: string };
+    const book = await this.service.getOrderBook(tickerId);
+    res.status(200).json(book);
+  };
+
+  getMarketSnapshot = async (_req: Request, res: Response): Promise<void> => {
+    const snapshot = await this.service.getMarketSnapshot();
+    res.status(200).json(snapshot);
+  };
+
   getOrders = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
     const orders = await this.service.getOrders(userId);
@@ -20,8 +31,8 @@ export class StockMarketController {
   placeOrder = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
     const { tickerId, side, price, amount } = req.body as PlaceOrderRequest;
-    const order = await this.service.placeOrder(userId, tickerId, side, price.amount, amount);
-    res.status(201).json(order);
+    const result = await this.service.placeOrder(userId, tickerId, side, price.amount, amount);
+    res.status(201).json(result);
   };
 
   cancelOrder = async (req: Request, res: Response): Promise<void> => {

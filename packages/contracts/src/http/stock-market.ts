@@ -73,3 +73,24 @@ export const TradeDtoSchema = z.object({
   executedAt: z.string().datetime(),
 });
 export type TradeDto = z.infer<typeof TradeDtoSchema>;
+
+export const MarketSnapshotDtoSchema = z.object({
+  tickers: z.array(TickerDtoSchema),
+  totalMarketCap: MoneySchema,
+  totalVolume24h: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime(),
+});
+export type MarketSnapshotDto = z.infer<typeof MarketSnapshotDtoSchema>;
+
+export const MatchResultSchema = z.object({
+  trades: z.array(TradeDtoSchema),
+  filledAmount: z.number().int().nonnegative(),
+  remainingAmount: z.number().int().nonnegative(),
+});
+export type MatchResult = z.infer<typeof MatchResultSchema>;
+
+export const TakeoverRequestSchema = z.object({
+  companyId: IdSchema.optional(),
+  buyerCharacterId: IdSchema,
+});
+export type TakeoverRequest = z.infer<typeof TakeoverRequestSchema>;

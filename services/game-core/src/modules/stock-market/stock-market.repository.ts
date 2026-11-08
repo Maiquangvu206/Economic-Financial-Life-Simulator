@@ -145,6 +145,149 @@ export class StockMarketRepository {
     );
     return result.rows;
   }
+
+  /** Sổ lệnh: mua (cao nhất trước) và bán (thấp nhất trước). */
+  async getOrderBook(tickerId: string): Promise<{
+    bids: Array<{ priceMinor: number; amount: number }>;
+    asks: Array<{ priceMinor: number; amount: number }>;
+  }> {
+    const [bidsResult, asksResult] = await Promise.all([
+      this.db.query<{ priceMinor: string; amount: string }>(
+        `SELECT price_minor AS "priceMinor", (amount - filled_amount) AS "amount"
+         FROM stock_orders
+         WHERE ticker_id = $1::uuid AND side = 'buy' AND status IN ('open', 'partially_filled')
+         ORDER BY price_minor DESC, created_at ASC`,
+        [tickerId],
+      ),
+      this.db.query<{ priceMinor: string; amount: string }>(
+        `SELECT price_minor AS "priceMinor", (amount - filled_amount) AS "amount"
+         FROM stock_orders
+         WHERE ticker_id = $1::uuid AND side = 'sell' AND status IN ('open', 'partially_filled')
+         ORDER BY price_minor ASC, created_at ASC`,
+        [tickerId],
+      ),
+    ]);
+    return {
+      bids: bidsResult.rows.map((r) => ({
+        priceMinor: Number(r.priceMinor),
+        amount: Number(r.amount),
+      })),
+      asks: asksResult.rows.map((r) => ({
+        priceMinor: Number(r.priceMinor),
+        amount: Number(r.amount),
+      })),
+    };
+  }
+
+  /** Cập nhật tiến độ khớp lệnh. */
+  async updateOrderFilled(orderId: string, filledAmount: number, status: string): Promise<void> {
+    await this.db.query(
+      `UPDATE stock_orders SET filled_amount = $2, status = $3, updated_at = now() WHERE id = $1::uuid`,
+      [orderId, filledAmount, status],
+    );
+  }
+
+  /** Ghi lại một giao dịch khớp lệnh. */
+  async createTrade(
+    tickerId: string,
+    buyerCharacterId: string,
+    sellerCharacterId: string,
+    priceMinor: number,
+    amount: number,
+  ): Promise<void> {
+    await this.db.query(
+      `INSERT INTO stock_trades (id, ticker_id, buyer_character_id, seller_character_id, price_minor, amount)
+       VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, $4::bigint, $5)`,
+      [tickerId, buyerCharacterId, sellerCharacterId, priceMinor, amount],
+    );
+    await this.db.query(
+      `UPDATE stock_tickers SET current_price_minor = $2::bigint, previous_close_minor = current_price_minor,
+               total_volume = total_volume + $3, updated_at = now()
+       WHERE id = $1::uuid`,
+      [tickerId, priceMinor, amount],
+    );
+  }
+
+  /** Cập nhật số cổ phiếu sở hữu của một nhân vật (dùng sau khi khớp mua/bán). */
+  async updateHolding(characterId: string, tickerId: string, deltaShares: number): Promise<void> {
+    await this.db.query(
+      `INSERT INTO stock_holdings (character_id, ticker_id, shares, updated_at)
+       VALUES ($1::uuid, $2::uuid, $3, now())
+       ON CONFLICT (character_id, ticker_id)
+       UPDATE SET shares = stock_holdings.shares + EXCLUDED.shares, updated_at = now()`,
+      [characterId, tickerId, deltaShares],
+    );
+  }
+
+  /** Lệnh bán tốt nhất ở một mức giá (dùng khi khớp lệnh mua). */
+  async getBestAskOrder(
+    tickerId: string,
+    priceMinor: number,
+  ): Promise<{
+    id: string;
+    characterId: string;
+    filledAmount: number;
+    amount: number;
+  } | null> {
+    const result = await this.db.query<{
+      id: string;
+      character_id: string;
+      filled_amount: string;
+      amount: string;
+    }>(
+      `SELECT id, character_id AS "characterId", filled_amount AS "filledAmount", amount
+       FROM stock_orders
+       WHERE ticker_id = $1::uuid AND side = 'sell' AND price_minor = $2::bigint
+         AND status IN ('open', 'partially_filled')
+         AND (amount - filled_amount) > 0
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [tickerId, priceMinor],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      characterId: row.character_id,
+      filledAmount: Number(row.filled_amount),
+      amount: Number(row.amount),
+    };
+  }
+
+  /** Lệnh mua tốt nhất ở một mức giá (dùng khi khớp lệnh bán). */
+  async getBestBidOrder(
+    tickerId: string,
+    priceMinor: number,
+  ): Promise<{
+    id: string;
+    characterId: string;
+    filledAmount: number;
+    amount: number;
+  } | null> {
+    const result = await this.db.query<{
+      id: string;
+      character_id: string;
+      filled_amount: string;
+      amount: string;
+    }>(
+      `SELECT id, character_id AS "characterId", filled_amount AS "filledAmount", amount
+       FROM stock_orders
+       WHERE ticker_id = $1::uuid AND side = 'buy' AND price_minor = $2::bigint
+         AND status IN ('open', 'partially_filled')
+         AND (amount - filled_amount) > 0
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [tickerId, priceMinor],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      characterId: row.character_id,
+      filledAmount: Number(row.filled_amount),
+      amount: Number(row.amount),
+    };
+  }
 }
 
 export const stockMarketRepository = new StockMarketRepository();
