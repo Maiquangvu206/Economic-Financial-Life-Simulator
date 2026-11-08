@@ -3,6 +3,7 @@ import { RedirectIfAuthenticated, RequireAuth } from '../features/auth/guards';
 import { AppLayout } from '../shared/layout/AppLayout';
 import { BusinessPage } from '../pages/BusinessPage';
 import { CityPage } from '../pages/CityPage';
+import { EducationPage } from '../pages/EducationPage';
 import { FinancePage } from '../pages/FinancePage';
 import { LawPage } from '../pages/LawPage';
 import { LoginPage } from '../pages/LoginPage';
@@ -32,6 +33,7 @@ const router = createBrowserRouter([
           { path: 'real-estate', element: <RealEstatePage /> },
           { path: 'business', element: <BusinessPage /> },
           { path: 'stocks', element: <StockMarketPage /> },
+          { path: 'education', element: <EducationPage /> },
           { path: 'law', element: <LawPage /> },
           { path: 'underworld', element: <UnderworldPage /> },
           { path: 'recap', element: <OfflineRecapPage /> },

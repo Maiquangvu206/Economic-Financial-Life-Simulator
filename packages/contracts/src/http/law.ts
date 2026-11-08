@@ -45,3 +45,41 @@ export type LawOverviewDto = z.infer<typeof LawOverviewDtoSchema>;
 
 export const HireLawyerRequestSchema = z.object({ caseId: IdSchema });
 export type HireLawyerRequest = z.infer<typeof HireLawyerRequestSchema>;
+
+export const EvidenceDtoSchema = z.object({
+  id: IdSchema,
+  caseId: IdSchema,
+  submittedById: IdSchema,
+  strength: z.number().int().min(0).max(100),
+  description: z.string(),
+  createdAt: z.string().datetime(),
+});
+export type EvidenceDto = z.infer<typeof EvidenceDtoSchema>;
+
+export const SubmitEvidenceRequestSchema = z.object({
+  caseId: IdSchema,
+  strength: z.number().int().min(1).max(100),
+  description: z.string().min(1).max(500),
+});
+export type SubmitEvidenceRequest = z.infer<typeof SubmitEvidenceRequestSchema>;
+
+export const OpenCaseRequestSchema = z.object({
+  crimeType: CrimeTypeSchema,
+});
+export type OpenCaseRequest = z.infer<typeof OpenCaseRequestSchema>;
+
+export const TrialDtoSchema = z.object({
+  caseId: IdSchema,
+  aiProposal: z.enum(['guilty', 'not_guilty']),
+  finalVerdict: z.enum(['guilty', 'not_guilty']),
+  reason: z.string(),
+  fine: MoneySchema,
+  prisonDays: z.number().int(),
+  evidenceStrength: z.number().int(),
+});
+export type TrialDto = z.infer<typeof TrialDtoSchema>;
+
+export const LawOverviewExtDtoSchema = LawOverviewDtoSchema.extend({
+  evidences: z.array(EvidenceDtoSchema),
+});
+export type LawOverviewExtDto = z.infer<typeof LawOverviewExtDtoSchema>;

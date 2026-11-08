@@ -49,17 +49,17 @@ function BuyModal({ open, onClose, property, onBuy, loading }: BuyModalProps) {
       <div className="space-y-3">
         <div className="flex justify-between text-sm">
           <span className="text-slate-600">Tài sản</span>
-          <span className="font-medium">{property.name}</span>
+          <span className="font-medium">{property?.name ?? 'Không tên'}</span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-slate-600">Giá mua</span>
           <span className="font-mono text-emerald-700">
-            {formatMoney(property.purchasePrice.amount)}
+            {formatMoney(property?.purchasePrice?.amount ?? 0)}
           </span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-slate-600">Vùng</span>
-          <span>{property.zoneType}</span>
+          <span>{property?.zoneType}</span>
         </div>
         <p className="text-[11px] text-slate-500">
           Tiền sẽ được trừ khỏi ví và quyền sở hữu chuyển về bạn ngay lập tức.
@@ -81,14 +81,14 @@ interface ListModalProps {
 }
 
 function ListModal({ open, onClose, property, onList, loading }: ListModalProps) {
-  const [askingPrice, setAskingPrice] = useState(String(property.purchasePrice.amount));
+  const [askingPrice, setAskingPrice] = useState(String(property?.purchasePrice?.amount ?? 0));
 
   return (
     <Modal open={open} onClose={onClose} title="Đặt bán bất động sản">
       <div className="space-y-3">
         <div className="flex justify-between text-sm">
           <span className="text-slate-600">Tài sản</span>
-          <span className="font-medium">{property.name}</span>
+          <span className="font-medium">{property?.name ?? 'Không tên'}</span>
         </div>
         <GameInput
           label="Giá bán đề xuất (VNĐ)"
@@ -122,14 +122,14 @@ interface RentModalProps {
 }
 
 function RentModal({ open, onClose, property, onRent, loading }: RentModalProps) {
-  const [monthlyRent, setMonthlyRent] = useState(String(property.monthlyRent.amount));
+  const [monthlyRent, setMonthlyRent] = useState(String(property?.monthlyRent?.amount ?? 0));
 
   return (
     <Modal open={open} onClose={onClose} title="Cho thuê bất động sản">
       <div className="space-y-3">
         <div className="flex justify-between text-sm">
           <span className="text-slate-600">Tài sản</span>
-          <span className="font-medium">{property.name}</span>
+          <span className="font-medium">{property?.name ?? 'Không tên'}</span>
         </div>
         <GameInput
           label="Tiền thuê hàng tháng (VNĐ)"
@@ -166,12 +166,12 @@ function BidModal({ open, onClose, auction, onBid, loading }: BidModalProps) {
       <div className="space-y-3">
         <div className="flex justify-between text-sm">
           <span className="text-slate-600">Tài sản</span>
-          <span className="font-medium">{auction.propertyName}</span>
+          <span className="font-medium">{auction?.propertyName ?? 'Không tên'}</span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-slate-600">Giá hiện tại</span>
           <span className="font-mono text-emerald-700">
-            {formatMoney(auction.currentBid.amount)}
+            {formatMoney(auction?.currentBid?.amount ?? 0)}
           </span>
         </div>
         <div className="flex justify-between text-sm">
@@ -180,7 +180,7 @@ function BidModal({ open, onClose, auction, onBid, loading }: BidModalProps) {
         </div>
         <GameInput
           label="Giá bạn đặt (VNĐ)"
-          value={String(auction.currentBid.amount + 1)}
+          value={String((auction?.currentBid?.amount ?? 0) + 1)}
           type="number"
           placeholder="0"
         />
@@ -190,7 +190,7 @@ function BidModal({ open, onClose, auction, onBid, loading }: BidModalProps) {
         </p>
         <GameButton
           variant="primary"
-          onClick={() => onBid(auction, auction.currentBid.amount + 1)}
+          onClick={() => auction && onBid(auction, (auction?.currentBid?.amount ?? 0) + 1)}
           loading={loading}
           disabled={loading}
         >
@@ -363,7 +363,9 @@ export function RealEstatePage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800">{property.name}</span>
+                      <span className="font-semibold text-slate-800">
+                        {property?.name ?? 'Không tên'}
+                      </span>
                       <Badge variant="default">{propertyTypeLabel(property.propertyType)}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
@@ -411,7 +413,9 @@ export function RealEstatePage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800">{property.name}</span>
+                      <span className="font-semibold text-slate-800">
+                        {property?.name ?? 'Không tên'}
+                      </span>
                       <Badge variant="default">{propertyTypeLabel(property.propertyType)}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
@@ -420,11 +424,11 @@ export function RealEstatePage() {
                     </div>
                     <div className="mt-2 flex items-baseline gap-1">
                       <span className="font-mono text-lg font-bold text-emerald-700">
-                        {formatMoney(property.purchasePrice.amount)}
+                        {formatMoney(property?.purchasePrice?.amount ?? 0)}
                       </span>
                       {property.askingPrice != null && (
                         <span className="text-xs text-slate-500 ml-2">
-                          (bán: {formatMoney(property.askingPrice.amount)})
+                          (bán: {formatMoney(property?.askingPrice?.amount ?? 0)})
                         </span>
                       )}
                     </div>
@@ -462,30 +466,34 @@ export function RealEstatePage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800">{auction.propertyName}</span>
-                      <Badge variant="default">{auction.sellerName}</Badge>
+                      <span className="font-semibold text-slate-800">
+                        {auction?.propertyName ?? 'Không tên'}
+                      </span>
+                      <Badge variant="default">{auction?.sellerName ?? 'Không rõ'}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
                       Kết thúc{' '}
                       <span className="font-mono">
-                        {new Date(auction.endsAt).toLocaleString('vi-VN', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {auction?.endsAt
+                          ? new Date(auction.endsAt).toLocaleString('vi-VN', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '—'}
                       </span>
-                      &nbsp;·&nbsp; {auction.status}
+                      &nbsp;·&nbsp; {auction?.status}
                     </div>
                     <div className="mt-2 flex items-baseline gap-1">
                       <span className="font-mono text-lg font-bold text-emerald-700">
-                        {formatMoney(auction.currentBid.amount)}
+                        {formatMoney(auction?.currentBid?.amount ?? 0)}
                       </span>
                       <span className="text-xs text-slate-500 ml-2">
-                        (khởi điểm {formatMoney(auction.startingPrice.amount)})
+                        (khởi điểm {formatMoney(auction?.startingPrice?.amount ?? 0)})
                       </span>
                     </div>
-                    {auction.highestBidderName && (
+                    {auction?.highestBidderName && (
                       <div className="mt-1 text-xs text-slate-500">
                         Cao nhất: {auction.highestBidderName}
                       </div>
@@ -497,9 +505,9 @@ export function RealEstatePage() {
                     onClick={() => {
                       setBidModal(auction);
                     }}
-                    disabled={loadingAction === auction.id || auction.isHighestBidder}
+                    disabled={loadingAction === auction?.id || auction?.isHighestBidder}
                   >
-                    {loadingAction === auction.id ? 'Đang xử lý…' : 'Đặt giá'}
+                    {loadingAction === auction?.id ? 'Đang xử lý…' : 'Đặt giá'}
                   </GameButton>
                 </div>
               ))

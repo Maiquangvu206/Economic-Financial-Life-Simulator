@@ -15,6 +15,10 @@ import { realEstateRouter } from './modules/real-estate/real-estate.routes.js';
 import { auctionRouter } from './modules/auctions/auction.routes.js';
 import { corporationRouter } from './modules/corporations/corporation.routes.js';
 import { stockMarketRouter } from './modules/stock-market/stock-market.routes.js';
+import { socialRouter } from './modules/social/social.routes.js';
+import { lawRouter } from './modules/law/law.routes.js';
+import { educationRouter } from './modules/education/education.routes.js';
+import { taxRouter } from './modules/tax/tax.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -51,6 +55,10 @@ export function createApp(): Express {
   app.use('/api/v1/auctions', auctionRouter);
   app.use('/api/v1/corporations', corporationRouter);
   app.use('/api/v1/stock-market', stockMarketRouter);
+  app.use('/api/v1/social', socialRouter);
+  app.use('/api/v1/law', lawRouter);
+  app.use('/api/v1/education', educationRouter);
+  app.use('/api/v1/tax', taxRouter);
   app.use('/api/v1/admin', attachActor, adminRouter);
 
   app.use((_req, res) => {

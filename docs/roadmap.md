@@ -98,10 +98,11 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 
 ## Phase 4 — Pháp lý, xã hội, giáo dục
 
-- [ ] Hôn nhân/prenup, cây gia tộc, di chúc/trust fund.
-- [ ] Tòa án + AI thẩm phán (proposal + rule).
-- [ ] Bằng cấp, mở khóa tính năng.
-- [ ] Audit thuế, tố giác, hủy giấy phép.
+- [x] **Hôn nhân/prenup, cây gia tộc, di chúc/trust fund** — Migration `0008_phase4.sql` (bảng `marriage_contracts`) + module `social` (`GET /api/v1/social/overview`, `POST /marriage/marry`, `POST /marriage/divorce`, `POST /will`, `POST /trust-fund/deposit`), contracts `http/social.ts`.
+- [x] **Tòa án + AI thẩm phán (proposal + rule)** — Module `law` (`GET /api/v1/law/overview`, `POST /cases`, `POST /evidence`, `POST /cases/:caseId/trial`): AI đề xuất verdict theo độ mạnh bằng chứng, core áp ngưỡng cứng 60/100 để chốt bản án, ghi án tích, trừ phạt qua ledger, bảng `evidences`.
+- [x] **Bằng cấp, mở khóa tính năng** — Module `education` (`GET /api/v1/education/overview`, `POST /enroll`, `POST /graduate`): seed 6 trường VN, học phí trừ qua ledger (`tuition_payments`), tốt nghiệp mở khóa IPO / tự bào chữa / giảm rủi ro audit / ghế HĐQT, cộng `skill_progress`. Contracts mở rộng `http/careers.ts`.
+- [x] **Audit thuế, tố giác, hủy giấy phép** — Module `tax` (`GET /api/v1/tax/overview`, `POST /assess`, `POST /pay`, `POST /audit/start`, `POST /report`, `POST /licenses/revoke`): thuế 10% trên tiền mặt, kiểm toán theo risk = heat + nợ quá hạn (≥60 bị phạt 10%), tố giác tăng heat của target, thu hồi `business_licenses`. Contracts mở rộng `http/tax.ts`.
+- [x] **UI Phase 4** — `LawPage` viết lại thành tabbed page (Tòa án & Bằng chứng / Hôn nhân & Di chúc / Thuế & Giấy phép) với modal nộp bằng chứng, kết hôn, di chúc, nạp trust fund, tố giác; `EducationPage` mới (ghi danh, tốt nghiệp, mở khóa); route `/education` + điều hướng sidebar.
 
 ## Phase 5 — Chợ đen & thám tử
 

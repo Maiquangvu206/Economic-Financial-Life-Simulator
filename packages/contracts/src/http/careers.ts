@@ -62,3 +62,32 @@ export type ApplyJobRequest = z.infer<typeof ApplyJobRequestSchema>;
 
 export const EnrollUniversityRequestSchema = z.object({ universityId: IdSchema });
 export type EnrollUniversityRequest = z.infer<typeof EnrollUniversityRequestSchema>;
+
+export const UnlockedFeatureSchema = z.enum([
+  'ipo',
+  'self_defense',
+  'lower_audit_risk',
+  'board_seat',
+]);
+export type UnlockedFeature = z.infer<typeof UnlockedFeatureSchema>;
+
+export const GraduateRequestSchema = z.object({ degreeId: IdSchema });
+export type GraduateRequest = z.infer<typeof GraduateRequestSchema>;
+
+export const GraduationDtoSchema = z.object({
+  degree: DegreeDtoSchema,
+  unlockedFeatures: z.array(UnlockedFeatureSchema),
+  skillProgress: z.array(
+    z.object({
+      skill: z.string(),
+      progress: z.number().int().min(0).max(100),
+    }),
+  ),
+});
+export type GraduationDto = z.infer<typeof GraduationDtoSchema>;
+
+export const CareersOverviewExtDtoSchema = CareersOverviewDtoSchema.extend({
+  unlockedFeatures: z.array(UnlockedFeatureSchema),
+  tuitionPaidTotal: z.number(),
+});
+export type CareersOverviewExtDto = z.infer<typeof CareersOverviewExtDtoSchema>;

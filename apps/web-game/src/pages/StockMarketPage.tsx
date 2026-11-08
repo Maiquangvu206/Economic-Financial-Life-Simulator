@@ -24,6 +24,7 @@ interface PlaceOrderModalProps {
 }
 
 function PlaceOrderModal({ open, onClose, ticker, onPlace, loading }: PlaceOrderModalProps) {
+  if (!ticker) return null;
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [price, setPrice] = useState(String(ticker.currentPrice.amount));
   const [amount, setAmount] = useState('1');
