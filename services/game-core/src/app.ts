@@ -23,6 +23,7 @@ import { underworldRouter } from './modules/underworld/underworld.routes.js';
 import { npcRouter } from './modules/npc/npc.routes.js';
 import { gmRouter } from './modules/gm/gm.routes.js';
 import { observabilityRouter } from './modules/observability/observability.routes.js';
+import { politicsRouter } from './modules/politics/politics.routes.js';
 import { observabilityService } from './modules/observability/observability.service.js';
 
 export function createApp(): Express {
@@ -98,6 +99,7 @@ export function createApp(): Express {
   app.use('/api/v1/npc', npcRouter);
   app.use('/api/v1/gm', gmRouter);
   app.use('/api/v1/observability', observabilityRouter);
+  app.use('/api/v1/politics', politicsRouter);
   app.use('/api/v1/admin', attachActor, adminRouter);
 
   app.use((_req, res) => {

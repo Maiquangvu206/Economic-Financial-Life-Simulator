@@ -14,6 +14,7 @@ export * from './stock/orderBook.js';
 export * from './crime/heat.js';
 export * from './npc.js';
 export * from './gm.js';
+export * from './elections.js';
 export * from './tax/auditRisk.js';
 export * from './education.js';
 export * from './timeAndSeasons.js';

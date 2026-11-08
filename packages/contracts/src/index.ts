@@ -24,6 +24,7 @@ export * from './http/real-estate.js';
 export * from './http/law.js';
 export * from './http/social.js';
 export * from './http/observability.js';
+export * from './http/politics.js';
 export * from './http/underworld.js';
 export * from './http/logistics.js';
 export * from './http/auction.js';

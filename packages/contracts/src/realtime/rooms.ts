@@ -10,6 +10,7 @@ export const Rooms = {
   chat: (channelId: string) => `chat_room:${channelId}`,
   character: (characterId: string) => `character_room:${characterId}`,
   admin: () => 'admin_room',
+  election: (electionId: string) => `election_room:${electionId}`,
 } as const;
 
 export type RoomName = ReturnType<(typeof Rooms)[keyof typeof Rooms]>;

@@ -9,6 +9,7 @@ const ALLOWED_PATTERNS = [
   /^courtroom_session:[\w-]+$/,
   /^character_room:[\w-]+$/,
   /^admin_room$/,
+  /^election_room:[\w-]+$/,
 ];
 
 /**

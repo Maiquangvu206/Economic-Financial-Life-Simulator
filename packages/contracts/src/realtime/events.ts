@@ -29,6 +29,12 @@ export type CourtStatementPayload = z.infer<typeof CourtStatementPayloadSchema>;
 export interface ServerToClientEvents {
   'presence:sync': (payload: { room: string; characterIds: string[] }) => void;
   'player:moved': (payload: { characterId: string; x: number; y: number; at: number }) => void;
+  'election:votes': (payload: {
+    electionId: string;
+    candidateId: string;
+    votes: number;
+    at: number;
+  }) => void;
   'chat:message': (payload: {
     channelId: string;
     characterId: string;

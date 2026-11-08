@@ -4,6 +4,7 @@ import { evaluateLoanHealth } from './banking.js';
 import { applyHeat, decayHeat, heatTier } from './crime/heat.js';
 import { evaluateNpcDeal } from './npc.js';
 import { applyGmAdjustment } from './gm.js';
+import { candidateScore, electionWinner } from './elections.js';
 import { calculateAuditRisk } from './tax/auditRisk.js';
 import { matchOrderBook } from './stock/orderBook.js';
 
@@ -121,6 +122,19 @@ describe('gm macro adjustment', () => {
   it('do_nothing leaves state untouched', () => {
     const result = applyGmAdjustment({ action: 'do_nothing', magnitude: 1, current });
     expect(result.next).toEqual(current);
+  });
+});
+describe('election scoring', () => {
+  it('adds 10 votes per 1tr donation', () => {
+    expect(candidateScore({ votes: 5, donationsMinor: 2_000_000 })).toBe(25);
+  });
+
+  it('picks deterministic winner on tie by smaller id', () => {
+    const winner = electionWinner([
+      { id: 'b', votes: 10, donationsMinor: 0 },
+      { id: 'a', votes: 10, donationsMinor: 0 },
+    ]);
+    expect(winner).toBe('a');
   });
 });
 describe('audit risk', () => {

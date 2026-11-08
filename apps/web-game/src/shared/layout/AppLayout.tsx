@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: '/stocks', label: 'Chứng khoán', symbol: '↗' },
   { to: '/education', label: 'Giáo dục', symbol: '🎓' },
   { to: '/law', label: 'Pháp lý', symbol: '§' },
+  { to: '/politics', label: 'Chính trị', symbol: '⚖' },
   { to: '/underworld', label: 'Chợ đen', symbol: '☠' },
   { to: '/recap', label: 'Offline Recap', symbol: '◷' },
 ];

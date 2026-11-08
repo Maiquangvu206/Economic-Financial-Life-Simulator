@@ -121,9 +121,8 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 - [x] **Load test realtime, order book, tick** — Script `scripts/loadtest.mjs` (`pnpm loadtest`): bắn đồng thời vào 6 endpoint gateway, tính p50/p95/avg/max + success rate, in báo cáo JSON (env `EFLS_TOKEN`, `EFLS_CONCURRENCY`, `EFLS_ROUNDS`).
 - [x] **Observability: metrics, tracing, alerting** — Game-core thêm `GET /metrics` (Prometheus: `efls_http_requests_total` đếm in-memory, `efls_outbox_pending` từ DB, `efls_uptime_seconds`) kèm `GET /health` đã có; pino-http ghi requestId làm tracing cơ bản; worker `/health` trên cổng 6060. Alerting: rate-limit/auth đã có; gợi ý dùng Prometheus + Alertmanager scrape `/metrics`.
 
-## Phase 7 — Mở rộng (GDD Module 1–4)
+## Phase 7 — Mở rộng (GDD Module 1–4) — rút gọn: chỉ giữ Chính trị
 
-- [ ] Chính trị & bầu cử.
-- [ ] Options/futures.
-- [ ] Cross-server trade.
-- [ ] VR/AR & spatial web.
+- [x] **Chính trị & bầu cử (Thị trưởng)** — Migration `0013_phase7.sql` (bảng `elections`, `candidates`, `votes`) + module `politics` (`GET /api/v1/politics/overview`, `POST /api/v1/politics/elections`, `/candidacy` (phí 5tr), `/vote` (1 người 1 phiếu), `/donate` (1tr = +10 điểm theo rule `@efls/domain` `candidateScore`), `/elections/:id/end` chốt winner theo `electionWinner` deterministic), contracts `http/politics.ts`. UI `PoliticsPage` (route `/politics`, sidebar "Chính trị").
+- [x] **Kết quả do admin chốt (không phải người chơi)** — `POST /politics/elections/:id/end` yêu cầu role `admin`/`moderator` (kiểm tra `req.actorRole` trong service, trả 403 `forbidden` nếu là player); người chơi chỉ xem kết quả sau khi admin chốt. Nút UI ghi "Chốt kết quả (admin)".
+- [x] **Đã loại bỏ theo yêu cầu**: Options/futures, Cross-server trade, VR/AR & spatial web (module, contracts, UI, realtime room `spatial`, bảng DB `futures_contracts`/`cross_server_listings`/`spatial_sessions` đã DROP qua migration `0014_drop_phase7_extra.sql`). Realtime giữ lại `election_room` + event `election:votes` phục vụ chính trị.
