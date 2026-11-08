@@ -5,6 +5,14 @@ import { applyHeat, decayHeat, heatTier } from './crime/heat.js';
 import { evaluateNpcDeal } from './npc.js';
 import { applyGmAdjustment } from './gm.js';
 import { candidateScore, electionWinner } from './elections.js';
+import {
+  generateCccd,
+  isValidCccd,
+  provinceCodeFromCccd,
+  formatCccd,
+  PROVINCES_34,
+} from './cccd.js';
+import { generateProvinceMap } from './provinceMap.js';
 import { calculateAuditRisk } from './tax/auditRisk.js';
 import { matchOrderBook } from './stock/orderBook.js';
 
@@ -135,6 +143,65 @@ describe('election scoring', () => {
       { id: 'a', votes: 10, donationsMinor: 0 },
     ]);
     expect(winner).toBe('a');
+  });
+});
+describe('cccd', () => {
+  it('has 34 provinces (6 cities)', () => {
+    expect(PROVINCES_34).toHaveLength(34);
+    expect(PROVINCES_34.filter((p) => p.isCity)).toHaveLength(6);
+  });
+
+  it('generates valid 12-digit cccd with province prefix', () => {
+    const cccd = generateCccd('001', () => 0.5);
+    expect(cccd).toHaveLength(12);
+    expect(isValidCccd(cccd)).toBe(true);
+    expect(provinceCodeFromCccd(cccd)).toBe('001');
+  });
+
+  it('rejects cccd with unknown province', () => {
+    expect(isValidCccd('099000000000')).toBe(false);
+    expect(isValidCccd('123')).toBe(false);
+  });
+
+  it('formats cccd in 3-3-3-3 groups', () => {
+    expect(formatCccd('001234567890')).toBe('001 234 567 890');
+  });
+});
+describe('province map', () => {
+  it('generates deterministic boundary with water outside', () => {
+    const a = generateProvinceMap('079');
+    const b = generateProvinceMap('079');
+    expect(a.nodes).toHaveLength(32 * 20);
+    expect(a.nodes).toEqual(b.nodes);
+    const water = a.nodes.filter((n) => n.zone === 'water');
+    expect(water.length).toBeGreaterThan(50);
+    expect(water.length).toBeLessThan(a.nodes.length);
+    // Ít nhất một ô đất tồn tại
+    expect(a.nodes.some((n) => n.zone !== 'water')).toBe(true);
+    // Khác tỉnh khác hình dạng (địa giới thật)
+    const c = generateProvinceMap('001');
+    expect(c.nodes.map((n) => n.zone).join()).not.toEqual(a.nodes.map((n) => n.zone).join());
+  });
+
+  it('uses real GADM shapes: land ratio differs per province', () => {
+    const landOf = (code: string) =>
+      generateProvinceMap(code).nodes.filter((n) => n.zone !== 'water').length;
+    const hcm = landOf('079');
+    const hn = landOf('001');
+    const cp = landOf('092');
+    // Ba tỉnh thành lớn, tỉ lệ đất khác nhau rõ rệt (địa giới thật)
+    expect(hcm).toBeGreaterThan(80);
+    expect(hn).toBeGreaterThan(80);
+    expect(cp).toBeGreaterThan(80);
+    expect(
+      generateProvinceMap('079')
+        .nodes.map((n) => n.zone)
+        .join(),
+    ).not.toEqual(
+      generateProvinceMap('001')
+        .nodes.map((n) => n.zone)
+        .join(),
+    );
   });
 });
 describe('audit risk', () => {

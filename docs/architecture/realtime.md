@@ -13,15 +13,16 @@
 
 Xem `packages/contracts/src/realtime/rooms.ts`.
 
-| Room                           | Mục đích                           |
-| ------------------------------ | ---------------------------------- |
-| `city_map_room:<cityId>`       | vị trí người chơi, sự kiện khu vực |
-| `stock_market_room`            | tick thị trường chung              |
-| `ticker_room:<tickerId>`       | order book/giá của một mã          |
-| `courtroom_session:<caseId>`   | phiên tòa                          |
-| `chat_room:<channelId>`        | chat kênh/khu vực                  |
-| `character_room:<characterId>` | thông báo cá nhân                  |
-| `admin_room`                   | cảnh báo vận hành                  |
+| Room                           | Mục đích                            |
+| ------------------------------ | ----------------------------------- |
+| `city_map_room:<cityId>`       | vị trí người chơi, sự kiện khu vực  |
+| `stock_market_room`            | tick thị trường chung               |
+| `ticker_room:<tickerId>`       | order book/giá của một mã           |
+| `courtroom_session:<caseId>`   | phiên tòa                           |
+| `chat_room:<channelId>`        | chat kênh/khu vực                   |
+| `private:<targetCharacterId>`  | chat riêng tư 1-1 (chỉ 2 phía nhận) |
+| `character_room:<characterId>` | thông báo cá nhân                   |
+| `admin_room`                   | cảnh báo vận hành                   |
 
 Client không được tự join room ngoài allowlist. Membership phiên tòa và kênh chat phải được
 kiểm tra ở server khi nối dữ liệu thật.

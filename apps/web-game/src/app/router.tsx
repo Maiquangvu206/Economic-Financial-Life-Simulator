@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { RedirectIfAuthenticated, RequireAuth } from '../features/auth/guards';
 import { AppLayout } from '../shared/layout/AppLayout';
 import { BusinessPage } from '../pages/BusinessPage';
+import { CharacterPage } from '../pages/CharacterPage';
 import { CityPage } from '../pages/CityPage';
 import { EducationPage } from '../pages/EducationPage';
 import { FinancePage } from '../pages/FinancePage';
@@ -30,6 +31,7 @@ const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: <CityPage /> },
+          { path: 'character', element: <CharacterPage /> },
           { path: 'finance', element: <FinancePage /> },
           { path: 'real-estate', element: <RealEstatePage /> },
           { path: 'business', element: <BusinessPage /> },

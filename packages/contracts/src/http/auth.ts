@@ -12,6 +12,8 @@ export const RegisterRequestSchema = z.object({
   email: z.string().email(),
   username: z.string().min(3).max(32),
   password: z.string().min(8).max(128),
+  fullName: z.string().min(2).max(80).optional(),
+  birthplaceCode: z.string().length(3).optional(),
 });
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 

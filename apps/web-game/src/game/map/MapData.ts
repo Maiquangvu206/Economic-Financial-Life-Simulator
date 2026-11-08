@@ -44,4 +44,7 @@ export interface MapData {
   roads: MapRoad[];
   properties: MapProperty[];
   meta: MapMeta;
+  /** Tỉnh/thành của bản đồ đang hiển thị. */
+  provinceCode?: string;
+  provinceName?: string;
 }

@@ -45,6 +45,8 @@ function allowChat(socketId: string): boolean {
   return true;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export function createRealtimeServer(): {
   httpServer: HttpServer;
   io: GameServer;
@@ -118,14 +120,43 @@ export function createRealtimeServer(): {
       const parsed = ChatSendPayloadSchema.safeParse(payload);
       if (!parsed.success || !allowChat(socket.id)) return;
 
-      const room = Rooms.chat(parsed.data.channelId);
+      const { channelId, message } = parsed.data;
+      const at = Date.now();
+
+      // Chat riêng tư: channelId dạng "private:<targetCharacterId>".
+      // Chỉ gửi cho người gửi và người nhận (room cá nhân), không lộ ra phòng public.
+      if (channelId.startsWith('private:')) {
+        const targetId = channelId.slice('private:'.length);
+        if (!UUID_RE.test(targetId) || targetId === actor.id) return;
+        io.to(Rooms.character(targetId)).emit('chat:message', {
+          channelId,
+          characterId: actor.id,
+          displayName: 'Người chơi',
+          message,
+          at,
+          toCharacterId: targetId,
+          fromPrivate: true,
+        });
+        socket.emit('chat:message', {
+          channelId,
+          characterId: actor.id,
+          displayName: 'Bạn',
+          message,
+          at,
+          toCharacterId: targetId,
+          fromPrivate: true,
+        });
+        return;
+      }
+
+      // Chat tổng / kênh công khai: phát cho mọi người trong phòng.
+      const room = Rooms.chat(channelId);
       io.to(room).emit('chat:message', {
-        channelId: parsed.data.channelId,
+        channelId,
         characterId: actor.id,
-        // TODO: resolve display name from a cached character projection.
         displayName: 'Người chơi',
-        message: parsed.data.message,
-        at: Date.now(),
+        message,
+        at,
       });
     });
 

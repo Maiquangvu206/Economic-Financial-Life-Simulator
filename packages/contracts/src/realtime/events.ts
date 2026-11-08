@@ -8,8 +8,9 @@ export const JoinRoomPayloadSchema = z.object({
 });
 export type JoinRoomPayload = z.infer<typeof JoinRoomPayloadSchema>;
 
+/** Channel: public ("global", "hcmc") hoặc "private:<characterUuid>" cho DM 1-1. */
 export const ChatSendPayloadSchema = z.object({
-  channelId: IdSchema,
+  channelId: z.string().min(1).max(120),
   message: z.string().min(1).max(1000),
 });
 export type ChatSendPayload = z.infer<typeof ChatSendPayloadSchema>;
@@ -41,6 +42,8 @@ export interface ServerToClientEvents {
     displayName: string;
     message: string;
     at: number;
+    toCharacterId?: string;
+    fromPrivate?: boolean;
   }) => void;
   'market:tick': (payload: {
     tickerId: string;

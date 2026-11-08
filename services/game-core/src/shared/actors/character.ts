@@ -5,6 +5,8 @@ export interface CharacterRef {
   id: string;
   user_id: string;
   full_name: string;
+  cccd: string | null;
+  birthplace: string | null;
   cash_minor: string;
   credit_score: number;
   heat_level: number;
@@ -16,7 +18,7 @@ export interface CharacterRef {
 /** Resolve the caller's character. Core endpoints operate on the actor, not an id. */
 export async function requireCharacterByUserId(db: Db, userId: string): Promise<CharacterRef> {
   const result = await db.query<CharacterRef>(
-    `SELECT id, user_id, full_name, cash_minor, credit_score, heat_level, health_energy,
+    `SELECT id, user_id, full_name, cccd, birthplace, cash_minor, credit_score, heat_level, health_energy,
             marital_status, spouse_id
      FROM characters WHERE user_id = $1 ORDER BY created_at ASC LIMIT 1`,
     [userId],
@@ -28,7 +30,7 @@ export async function requireCharacterByUserId(db: Db, userId: string): Promise<
 
 export async function requireCharacterById(db: Db, characterId: string): Promise<CharacterRef> {
   const result = await db.query<CharacterRef>(
-    `SELECT id, user_id, full_name, cash_minor, credit_score, heat_level, health_energy,
+    `SELECT id, user_id, full_name, cccd, birthplace, cash_minor, credit_score, heat_level, health_energy,
             marital_status, spouse_id
      FROM characters WHERE id = $1`,
     [characterId],

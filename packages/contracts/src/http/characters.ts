@@ -10,6 +10,9 @@ export const CharacterDtoSchema = z.object({
   id: IdSchema,
   userId: IdSchema,
   fullName: z.string(),
+  cccd: z.string().nullable(),
+  birthplace: z.string().nullable(),
+  birthplaceName: z.string().nullable(),
   age: z.number().int().min(0),
   healthEnergy: z.number().int().min(0).max(100),
   creditScore: z.number().int().min(300).max(850),
@@ -22,8 +25,17 @@ export const CharacterDtoSchema = z.object({
 });
 export type CharacterDto = z.infer<typeof CharacterDtoSchema>;
 
+export const ProvinceDtoSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  region: z.enum(['Bắc', 'Trung', 'Nam']),
+  isCity: z.boolean(),
+});
+export type ProvinceDto = z.infer<typeof ProvinceDtoSchema>;
+
 export const CreateCharacterRequestSchema = z.object({
   fullName: z.string().min(2).max(80),
+  birthplaceCode: z.string().length(3).optional(),
   startingZone: ZoneTypeSchema.optional(),
 });
 export type CreateCharacterRequest = z.infer<typeof CreateCharacterRequestSchema>;

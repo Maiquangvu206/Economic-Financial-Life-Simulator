@@ -11,6 +11,44 @@ function isStaffRole(role: string): boolean {
   return role === 'admin' || role === 'moderator';
 }
 
+// 34 tỉnh/thành theo domain PROVINCES_34 + seed 0016_provinces_official.sql (mã chính thức 2025).
+const PROVINCES_34_STATIC: { code: string; name: string }[] = [
+  { code: '001', name: 'Thành phố Hà Nội' },
+  { code: '004', name: 'Tỉnh Cao Bằng' },
+  { code: '008', name: 'Tỉnh Tuyên Quang' },
+  { code: '011', name: 'Tỉnh Điện Biên' },
+  { code: '012', name: 'Tỉnh Lai Châu' },
+  { code: '014', name: 'Tỉnh Sơn La' },
+  { code: '015', name: 'Tỉnh Lào Cai' },
+  { code: '019', name: 'Tỉnh Thái Nguyên' },
+  { code: '020', name: 'Tỉnh Lạng Sơn' },
+  { code: '022', name: 'Tỉnh Quảng Ninh' },
+  { code: '024', name: 'Tỉnh Bắc Ninh' },
+  { code: '025', name: 'Tỉnh Phú Thọ' },
+  { code: '031', name: 'Thành phố Hải Phòng' },
+  { code: '033', name: 'Tỉnh Hưng Yên' },
+  { code: '037', name: 'Tỉnh Ninh Bình' },
+  { code: '038', name: 'Tỉnh Thanh Hóa' },
+  { code: '040', name: 'Tỉnh Nghệ An' },
+  { code: '042', name: 'Tỉnh Hà Tĩnh' },
+  { code: '044', name: 'Tỉnh Quảng Trị' },
+  { code: '046', name: 'Thành phố Huế' },
+  { code: '048', name: 'Thành phố Đà Nẵng' },
+  { code: '051', name: 'Tỉnh Quảng Ngãi' },
+  { code: '052', name: 'Tỉnh Gia Lai' },
+  { code: '056', name: 'Tỉnh Khánh Hòa' },
+  { code: '066', name: 'Tỉnh Đắk Lắk' },
+  { code: '068', name: 'Tỉnh Lâm Đồng' },
+  { code: '075', name: 'Tỉnh Đồng Nai' },
+  { code: '079', name: 'Thành phố Hồ Chí Minh' },
+  { code: '080', name: 'Tỉnh Tây Ninh' },
+  { code: '082', name: 'Tỉnh Đồng Tháp' },
+  { code: '086', name: 'Tỉnh Vĩnh Long' },
+  { code: '091', name: 'Tỉnh An Giang' },
+  { code: '092', name: 'Thành phố Cần Thơ' },
+  { code: '096', name: 'Tỉnh Cà Mau' },
+];
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -20,6 +58,8 @@ export function LoginPage() {
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [birthplaceCode, setBirthplaceCode] = useState('001');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +72,10 @@ export function LoginPage() {
 
     try {
       const path = mode === 'login' ? '/api/v1/auth/login' : '/api/v1/auth/register';
-      const body = mode === 'login' ? { email, password } : { email, username, password };
+      const body =
+        mode === 'login'
+          ? { email, password }
+          : { email, username, password, fullName: fullName.trim() || username, birthplaceCode };
 
       const response = await apiRequest<unknown>(path, {
         method: 'POST',
@@ -178,18 +221,54 @@ export function LoginPage() {
 
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
             {mode === 'register' ? (
-              <label className="block text-xs font-medium text-slate-600">
-                Tên công dân
-                <input
-                  required
-                  minLength={3}
-                  maxLength={32}
-                  value={username}
-                  onChange={(event) => setUsername(event.target.value)}
-                  placeholder="Nguyễn Văn An"
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
+              <>
+                <label className="block text-xs font-medium text-slate-600">
+                  Tên công dân
+                  <input
+                    required
+                    minLength={3}
+                    maxLength={32}
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    placeholder="Nguyễn Văn An"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+
+                <label className="block text-xs font-medium text-slate-600">
+                  Họ và tên nhân vật
+                  <input
+                    required
+                    minLength={2}
+                    maxLength={80}
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    placeholder="Nguyễn Văn An"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                  />
+                  <span className="mt-1 block text-[10px] font-normal text-slate-400">
+                    Chỉ được chọn một lần lúc đăng ký (hoặc khi sinh con mới).
+                  </span>
+                </label>
+
+                <label className="block text-xs font-medium text-slate-600">
+                  Nơi sinh (1 trong 34 tỉnh/thành)
+                  <select
+                    value={birthplaceCode}
+                    onChange={(event) => setBirthplaceCode(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                  >
+                    {PROVINCES_34_STATIC.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.code} · {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-[10px] font-normal text-slate-400">
+                    CCCD 12 số của bạn sẽ mang mã tỉnh nơi sinh (3 số đầu).
+                  </span>
+                </label>
+              </>
             ) : null}
 
             <label className="block text-xs font-medium text-slate-600">

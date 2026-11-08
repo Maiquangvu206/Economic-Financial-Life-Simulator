@@ -2,12 +2,14 @@ import { useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSessionStore } from '../../features/auth/sessionStore';
+import { ChatWidget } from '../../features/chat/ChatWidget';
 import { useGameStore } from '../../store/game';
 import { formatCompact, formatMoney, formatVietnamDate, formatVietnamTime } from '../lib/format';
 import { Badge } from '../ui/Badge';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Thành phố', symbol: '▦', end: true },
+  { to: '/character', label: 'Nhân vật', symbol: '🪪' },
   { to: '/finance', label: 'Tài chính', symbol: '₫' },
   { to: '/real-estate', label: 'Bất động sản', symbol: '⌂' },
   { to: '/business', label: 'Doanh nghiệp', symbol: '◇' },
@@ -115,6 +117,7 @@ export function AppLayout() {
 
   return (
     <div className="relative flex min-h-screen bg-surface-50 text-slate-900 font-sans">
+      <ChatWidget />
       {/* Overlay ánh sáng theo giờ/mùa */}
       <div
         className={clsx(

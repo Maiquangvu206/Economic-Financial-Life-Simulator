@@ -34,6 +34,9 @@ export const MapDtoSchema = z.object({
   nodes: z.array(MapNodeDtoSchema),
   roads: z.array(MapRoadDtoSchema),
   meta: MapMetaDtoSchema,
+  /** Mã tỉnh/thành của bản đồ (001 = Hà Nội, bản đồ lưu DB). */
+  provinceCode: z.string().optional(),
+  provinceName: z.string().optional(),
 });
 export type MapDto = z.infer<typeof MapDtoSchema>;
 

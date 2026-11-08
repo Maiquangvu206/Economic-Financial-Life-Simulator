@@ -79,7 +79,8 @@ export class AuthService {
       email: input.email,
       username: input.username,
       passwordHash,
-      fullName: input.username,
+      fullName: input.fullName?.trim() ? input.fullName : input.username,
+      birthplaceCode: input.birthplaceCode ?? '001',
     });
 
     return issueTokens(user);

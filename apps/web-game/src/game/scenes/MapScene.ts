@@ -24,6 +24,7 @@ export class MapScene extends Phaser.Scene {
   private rows = 24;
 
   private mapData: MapData | null = null;
+  private mapLabel: string | null = null;
 
   constructor() {
     super('MapScene');
@@ -33,6 +34,9 @@ export class MapScene extends Phaser.Scene {
     this.nodePosMap.clear();
     this.zoneMap.clear();
     this.mapData = data?.mapData ?? null;
+    this.mapLabel = this.mapData
+      ? `🗺 ${this.mapData.provinceName ?? 'Bản đồ'}${this.mapData.provinceCode ? ` (${this.mapData.provinceCode})` : ''}`
+      : null;
 
     if (this.mapData) {
       this.cols = this.mapData.meta.cols || this.cols;
@@ -126,6 +130,7 @@ export class MapScene extends Phaser.Scene {
       cols: this.cols,
       rows: this.rows,
       zoneAt: (col: number, row: number) => this.zoneMap.get(`${col}-${row}`) ?? 'residential',
+      label: this.mapLabel ?? undefined,
     });
 
     this.decos.render({
@@ -196,6 +201,7 @@ export class MapScene extends Phaser.Scene {
     this.nodePosMap.clear();
     this.zoneMap.clear();
     this.mapData = mapData;
+    this.mapLabel = `🗺 ${mapData.provinceName ?? 'Bản đồ'}${mapData.provinceCode ? ` (${mapData.provinceCode})` : ''}`;
     this.cols = mapData.meta.cols || this.cols;
     this.rows = mapData.meta.rows || this.rows;
     for (const node of mapData.nodes) {
