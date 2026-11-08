@@ -4,7 +4,7 @@ import { z } from 'zod';
  * Money is ALWAYS stored and transported as an integer amount of minor units
  * (cents) plus a currency. Never use floats for money.
  *
- * `1_000_00` => 1,000.00 USD.
+ * `1_000_00` => 1.000 ₫ (VND).
  */
 export const CurrencySchema = z.enum(['USD', 'VND']);
 export type Currency = z.infer<typeof CurrencySchema>;

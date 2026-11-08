@@ -109,19 +109,19 @@ REGISTRY=ghcr.io/efls VERSION=v1.2.3 node scripts/deploy.mjs
 
 Các secret cần thiết trong GitHub / server:
 
-| Secret | Mô tả |
-|--------|-------|
-| `REGISTRY` | Địa chỉ registry (ví dụ `ghcr.io/efls`) |
-| `REGISTRY_USERNAME` | Tên đăng nhập registry |
-| `REGISTRY_PASSWORD` | Token/Mật khẩu registry |
+| Secret               | Mô tả                                       |
+| -------------------- | ------------------------------------------- |
+| `REGISTRY`           | Địa chỉ registry (ví dụ `ghcr.io/efls`)     |
+| `REGISTRY_USERNAME`  | Tên đăng nhập registry                      |
+| `REGISTRY_PASSWORD`  | Token/Mật khẩu registry                     |
 | `DEPLOY_WEBHOOK_URL` | URL webhook để kích hoạt deploy trên server |
 
 ## Docker Compose profiles
 
-| Profile | Dịch vụ |
-|---------|---------|
-| (mặc định) | postgres, redis, migrate |
-| `app` | game-core, api-gateway, realtime, worker, ai |
+| Profile    | Dịch vụ                                      |
+| ---------- | -------------------------------------------- |
+| (mặc định) | postgres, redis, migrate                     |
+| `app`      | game-core, api-gateway, realtime, worker, ai |
 
 ```bash
 # Chỉ chạy data store (để dev Node/Python trên host)
@@ -133,4 +133,3 @@ docker compose -f infra/docker/docker-compose.yml --env-file .env --profile app 
 # Dev mode với auto-reload
 docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml --env-file .env --profile app up -d --build
 ```
-

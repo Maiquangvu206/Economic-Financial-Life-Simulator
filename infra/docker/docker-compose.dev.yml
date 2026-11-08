@@ -50,5 +50,15 @@ services:
     environment:
       APP_ENV: development
       LOG_LEVEL: debug
-    command: ['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000', '--proxy-headers', '--reload']
+    command:
+      [
+        'uvicorn',
+        'app.main:app',
+        '--host',
+        '0.0.0.0',
+        '--port',
+        '8000',
+        '--proxy-headers',
+        '--reload',
+      ]
     restart: 'no'

@@ -9,11 +9,12 @@ interface GameButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANT: Record<string, string> = {
   primary:
-    'bg-emerald-500 text-white hover:bg-emerald-400 active:bg-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.4)]',
-  outline: 'border border-slate-600 text-slate-200 hover:bg-slate-800 hover:text-emerald-300',
+    'bg-emerald-500 text-white hover:bg-emerald-600 active:bg-emerald-700 shadow-sm shadow-emerald-500/30',
+  outline:
+    'border border-slate-200 bg-white text-slate-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700',
   danger:
-    'bg-rose-600 text-white hover:bg-rose-500 active:bg-rose-700 shadow-[0_0_15px_rgba(239,68,68,0.3)]',
-  ghost: 'text-slate-400 hover:bg-slate-800 hover:text-emerald-300',
+    'bg-rose-500 text-white hover:bg-rose-600 active:bg-rose-700 shadow-sm shadow-rose-500/25',
+  ghost: 'text-slate-600 hover:bg-slate-100 hover:text-emerald-700',
 };
 
 const SIZE: Record<string, string> = {
@@ -35,7 +36,7 @@ export const GameButton = forwardRef<HTMLButtonElement, GameButtonProps>(
       {...props}
     >
       {loading && (
-        <span className="mr-2 animate-spin block h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+        <span className="mr-2 block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
       )}
       {children}
     </button>

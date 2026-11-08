@@ -65,11 +65,39 @@ export interface GameState {
 }
 
 const DEFAULT_HOLIDAYS: GameHoliday[] = [
-  { id: 'tet_duong', nameVi: 'Tết Dương Lịch', day: 1, month: 1, isDaysOff: true, otPayMultiplier: 3.0 },
-  { id: 'tet_nguyen_dan', nameVi: 'Tết Nguyên Đán', day: 10, month: 2, isDaysOff: true, otPayMultiplier: 3.0 },
-  { id: 'hung_kings', nameVi: 'Giỗ Tổ Hùng Vương', day: 18, month: 4, isDaysOff: true, otPayMultiplier: 3.0 },
+  {
+    id: 'tet_duong',
+    nameVi: 'Tết Dương Lịch',
+    day: 1,
+    month: 1,
+    isDaysOff: true,
+    otPayMultiplier: 3.0,
+  },
+  {
+    id: 'tet_nguyen_dan',
+    nameVi: 'Tết Nguyên Đán',
+    day: 10,
+    month: 2,
+    isDaysOff: true,
+    otPayMultiplier: 3.0,
+  },
+  {
+    id: 'hung_kings',
+    nameVi: 'Giỗ Tổ Hùng Vương',
+    day: 18,
+    month: 4,
+    isDaysOff: true,
+    otPayMultiplier: 3.0,
+  },
   { id: 'le_30_4', nameVi: '30/4 - 1/5', day: 30, month: 4, isDaysOff: true, otPayMultiplier: 3.0 },
-  { id: 'quoc_khanh', nameVi: 'Quốc khánh 2/9', day: 2, month: 9, isDaysOff: true, otPayMultiplier: 3.0 },
+  {
+    id: 'quoc_khanh',
+    nameVi: 'Quốc khánh 2/9',
+    day: 2,
+    month: 9,
+    isDaysOff: true,
+    otPayMultiplier: 3.0,
+  },
 ];
 
 function calculateSeason(month: number): Season {
@@ -166,8 +194,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const season = calculateSeason(month);
     const period = calculateDayPeriod(hour);
 
-    const holiday =
-      DEFAULT_HOLIDAYS.find((h) => h.day === day && h.month === month) ?? null;
+    const holiday = DEFAULT_HOLIDAYS.find((h) => h.day === day && h.month === month) ?? null;
 
     let newLetter = state.lastHolidayLetter;
 
@@ -178,8 +205,12 @@ export const useGameStore = create<GameState>((set, get) => ({
         holidayGiftClaimed = { ...holidayGiftClaimed, [claimKey]: true };
         const isTet = holiday.id.includes('tet');
         newLetter = {
-          title: isTet ? '🧧 THƯ CHÚC TẾT & LÌ XÌ ĐẦU NĂM' : `🏮 THƯ CHÚC MỪNG DỊP LỄ ${holiday.nameVi.toUpperCase()}`,
-          sender: isTet ? 'Ủy ban Nhân dân Thành phố & Hiệp hội Doanh nghiệp' : 'Bộ Lao động & Quỹ Phúc lợi Công dân',
+          title: isTet
+            ? '🧧 THƯ CHÚC TẾT & LÌ XÌ ĐẦU NĂM'
+            : `🏮 THƯ CHÚC MỪNG DỊP LỄ ${holiday.nameVi.toUpperCase()}`,
+          sender: isTet
+            ? 'Ủy ban Nhân dân Thành phố & Hiệp hội Doanh nghiệp'
+            : 'Bộ Lao động & Quỹ Phúc lợi Công dân',
           content: isTet
             ? `Nhân dịp Tết Nguyên Đán năm ${year}, kính chúc công dân và gia đình An Khang Thịnh Vượng, Vạn Sự Như Ý! Ủy ban gửi tặng bạn phong bao lì xì may mắn để khởi đầu năm mới hanh thông.`
             : `Nhân dịp kỷ niệm ${holiday.nameVi}, xin gửi tới bạn lời chúc mừng nồng nhiệt cùng khoản tiền thưởng phúc lợi xã hội đã được chuyển vào tài khoản!`,

@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
+import { RedirectIfAuthenticated, RequireAuth } from '../features/auth/guards';
 import { AppLayout } from '../shared/layout/AppLayout';
 import { BusinessPage } from '../pages/BusinessPage';
 import { CityPage } from '../pages/CityPage';
@@ -11,20 +12,32 @@ import { StockMarketPage } from '../pages/StockMarketPage';
 import { UnderworldPage } from '../pages/UnderworldPage';
 
 const router = createBrowserRouter([
-  { path: '/login', element: <LoginPage /> },
   {
-    path: '/',
-    element: <AppLayout />,
+    path: '/login',
+    element: (
+      <RedirectIfAuthenticated>
+        <LoginPage />
+      </RedirectIfAuthenticated>
+    ),
+  },
+  {
+    element: <RequireAuth />,
     children: [
-      { index: true, element: <CityPage /> },
-      { path: 'finance', element: <FinancePage /> },
-      { path: 'real-estate', element: <RealEstatePage /> },
-      { path: 'business', element: <BusinessPage /> },
-      { path: 'stocks', element: <StockMarketPage /> },
-      { path: 'law', element: <LawPage /> },
-      { path: 'underworld', element: <UnderworldPage /> },
-      { path: 'recap', element: <OfflineRecapPage /> },
-      { path: '*', element: <Navigate to="/" replace /> },
+      {
+        path: '/',
+        element: <AppLayout />,
+        children: [
+          { index: true, element: <CityPage /> },
+          { path: 'finance', element: <FinancePage /> },
+          { path: 'real-estate', element: <RealEstatePage /> },
+          { path: 'business', element: <BusinessPage /> },
+          { path: 'stocks', element: <StockMarketPage /> },
+          { path: 'law', element: <LawPage /> },
+          { path: 'underworld', element: <UnderworldPage /> },
+          { path: 'recap', element: <OfflineRecapPage /> },
+          { path: '*', element: <Navigate to="/" replace /> },
+        ],
+      },
     ],
   },
 ]);

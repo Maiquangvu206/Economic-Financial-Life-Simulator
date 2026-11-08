@@ -63,7 +63,6 @@ export class CityScene extends Phaser.Scene {
     for (let row = 0; row < ROWS; row += 1) {
       for (let col = 0; col < COLS; col += 1) {
         const zone = this.zoneFor(col, row);
-        const color = ZONE_COLORS[zone] ?? ZONE_COLORS.residential;
 
         this.plotGraphics
           .fillStyle((ZONE_COLORS[zone] ?? ZONE_COLORS.residential) as number, 0.18)

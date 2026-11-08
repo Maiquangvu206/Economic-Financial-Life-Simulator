@@ -83,6 +83,10 @@ pnpm dev                 # web (5173), admin (5174), gateway (3000), core (4000)
 pnpm ai:dev              # FastAPI (8000) — cửa sổ khác
 ```
 
+> **Đăng nhập:** chỉ có một cổng duy nhất tại `http://localhost:5173/login`.
+> Hệ thống tự định tuyến theo vai trò — `player` vào game, `admin`/`moderator`
+> được bàn giao phiên (mã dùng một lần) sang bảng điều khiển `5174`.
+
 Chi tiết Docker: [infra/docker/README.md](infra/docker/README.md).
 
 Kiểm tra:

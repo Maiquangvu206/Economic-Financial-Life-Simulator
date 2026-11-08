@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import { LayerBase } from './LayerBase';
 
 const TILE = 48;
@@ -18,7 +18,7 @@ export class SelectionLayer extends LayerBase {
     this.container.add(this.selector);
 
     this.hover = this.scene.add
-      .rectangle(0, 0, TILE - 4, TILE - 4, 0x64748b, 0.1)
+      .rectangle(0, 0, TILE - 4, TILE - 4, 0x64748b, 0.15)
       .setStrokeStyle(1, 0x94a3b8, 0.5)
       .setVisible(false);
     this.container.add(this.hover);

@@ -21,7 +21,7 @@ export function CityPage() {
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
-        <p className="mt-4 text-sm text-slate-400">Đang tải thành phố...</p>
+        <p className="mt-4 text-sm text-slate-600">Đang tải thành phố...</p>
       </div>
     );
   }
@@ -39,11 +39,11 @@ export function CityPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-heading font-bold tracking-tight">Thành phố trung tâm</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-600">
             Bản đồ 2D do Phaser render. Mọi thay đổi vị trí và giao dịch đất đều do server xác thực.
           </p>
         </div>
-        <div className="rounded-full border border-slate-800 px-3 py-1 text-[11px] text-slate-400">
+        <div className="rounded-full border border-slate-200 px-3 py-1 text-[11px] text-slate-600">
           Tick kế tiếp: 23:59:59
         </div>
       </div>
@@ -78,19 +78,19 @@ export function CityPage() {
           <Panel title="Nhân vật đang chơi" borderColor="emerald">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">Họ tên</span>
+                <span className="text-slate-600">Họ tên</span>
                 <span className="font-semibold">{character.fullName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Tuổi</span>
+                <span className="text-slate-600">Tuổi</span>
                 <span>{character.age} tuổi</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Sức khỏe / Năng lượng</span>
+                <span className="text-slate-600">Sức khỏe / Năng lượng</span>
                 <span>{character.healthEnergy}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Vị trí</span>
+                <span className="text-slate-600">Vị trí</span>
                 <span>
                   ({character.location.x}, {character.location.y})
                 </span>

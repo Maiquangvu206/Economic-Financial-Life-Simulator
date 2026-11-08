@@ -1,17 +1,18 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import { LayerBase } from './LayerBase';
-import { ZoneType } from '../map/MapData';
+import type { ZoneType } from '../map/MapData';
 
 const TILE = 48;
 
+/** Bảng màu pastel: bản đồ sáng, dễ nhìn, vẫn phân biệt rõ từng vùng. */
 const ZONE_COLORS: Record<ZoneType, number> = {
-  residential: 0x0b3d2e,
-  commercial: 0x1e3a8a,
-  industrial: 0x4d3a1a,
-  civic: 0x4c1d95,
-  port: 0x0f4c5c,
-  slum: 0x334155,
-  water: 0x0c4a6e,
+  residential: 0xd1fae5,
+  commercial: 0xdbeafe,
+  industrial: 0xfef3c7,
+  civic: 0xede9fe,
+  port: 0xcffafe,
+  slum: 0xe2e8f0,
+  water: 0xbae6fd,
 };
 
 export class TerrainLayer extends LayerBase {
@@ -36,8 +37,8 @@ export class TerrainLayer extends LayerBase {
         const color = ZONE_COLORS[zone] ?? ZONE_COLORS.residential;
 
         const tile = this.scene.add
-          .rectangle(col * TILE + TILE / 2, row * TILE + TILE / 2, TILE - 2, TILE - 2, color, 0.2)
-          .setStrokeStyle(1, 0x1e293b, 0.4);
+          .rectangle(col * TILE + TILE / 2, row * TILE + TILE / 2, TILE - 2, TILE - 2, color, 0.9)
+          .setStrokeStyle(1, 0xffffff, 0.9);
 
         this.container.add(tile);
         this.tiles.set(`${col}-${row}`, tile);
@@ -55,7 +56,7 @@ export class TerrainLayer extends LayerBase {
     const key = `${col}-${row}`;
     const tile = this.tiles.get(key);
     if (tile) {
-      tile.setFillStyle(ZONE_COLORS[zone] ?? ZONE_COLORS.residential, 0.5);
+      tile.setFillStyle(ZONE_COLORS[zone] ?? ZONE_COLORS.residential, 1);
     }
   }
 }

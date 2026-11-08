@@ -1,15 +1,15 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import { LayerBase } from './LayerBase';
-import { MapProperty } from '../map/MapData';
+import type { MapProperty } from '../map/MapData';
 
 const TILE = 48;
 
 const BUILDING_COLORS: Record<string, number> = {
-  apartment: 0x94a3b8,
-  house: 0x6366f1,
-  office: 0x10b981,
-  warehouse: 0xf59e0b,
-  port_berth: 0x0c4a6e,
+  apartment: 0xc7d2fe,
+  house: 0xa5b4fc,
+  office: 0x6ee7b7,
+  warehouse: 0xfcd34d,
+  port_berth: 0x7dd3fc,
 };
 
 export class BuildingLayer extends LayerBase {
@@ -32,7 +32,7 @@ export class BuildingLayer extends LayerBase {
       if (!pos) continue;
 
       const height = 20 + (prop.valueMinor % 40);
-      const color = BUILDING_COLORS[prop.type] ?? 0x94a3b8;
+      const color = BUILDING_COLORS[prop.type] ?? 0xc7d2fe;
 
       const building = this.scene.add
         .rectangle(
@@ -41,15 +41,15 @@ export class BuildingLayer extends LayerBase {
           TILE - 14,
           height,
           color,
-          0.35,
+          0.95,
         )
-        .setStrokeStyle(1, 0x334155, 0.5)
+        .setStrokeStyle(1, 0x94a3b8, 0.8)
         .setInteractive({ useHandCursor: true })
         .on('pointerdown', () => {
           this.scene.events.emit('property:selected', prop);
         });
 
-      // Cửa sổ glowing dots
+      // Cửa sổ phát sáng nhẹ
       const windowRows = Math.max(1, Math.floor(height / 10));
       for (let wr = 0; wr < windowRows; wr += 1) {
         const wy = pos.y * TILE + TILE / 2 - height / 2 + 6 + wr * 10;
@@ -59,8 +59,8 @@ export class BuildingLayer extends LayerBase {
           wy,
           4,
           4,
-          0xfbbf24,
-          Math.random() > 0.7 ? 1 : 0.35,
+          0xf59e0b,
+          Math.random() > 0.7 ? 0.95 : 0.35,
         );
         win.setDepth(3);
         this.container.add(win);
@@ -80,7 +80,7 @@ export class BuildingLayer extends LayerBase {
   setOwnerHighlight(propId: string, ownerId: string | null): void {
     const b = this.buildings.get(propId);
     if (!b) return;
-    b.setAlpha(ownerId ? 0.7 : 0.25);
-    b.setStrokeStyle(1, ownerId ? 0x10b981 : 0x334155, ownerId ? 0.8 : 0.5);
+    b.setAlpha(ownerId ? 1 : 0.65);
+    b.setStrokeStyle(1, ownerId ? 0x10b981 : 0x94a3b8, ownerId ? 1 : 0.7);
   }
 }

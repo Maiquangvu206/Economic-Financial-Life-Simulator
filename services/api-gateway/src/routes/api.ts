@@ -4,10 +4,13 @@ import rateLimit from 'express-rate-limit';
 import { requireAccessToken, requireRole } from '../middleware/auth.js';
 import { coreProxy } from './proxy.js';
 
-/** Auth endpoints are public but heavily rate limited. */
+/**
+ * Auth endpoints are public but rate limited. The single login portal makes
+ * up to three auth calls per sign-in (login, SSO handoff, SSO exchange).
+ */
 const authLimiter = rateLimit({
   windowMs: 60_000,
-  limit: 10,
+  limit: 30,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: (req: Request) => req.ip ?? 'unknown',

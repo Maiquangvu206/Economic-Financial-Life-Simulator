@@ -153,4 +153,3 @@ export const VIETNAM_STANDARD_HOLIDAYS: VietnamHoliday[] = [
     productivityBonus: -0.5,
   },
 ];
-

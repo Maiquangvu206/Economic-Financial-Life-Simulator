@@ -17,7 +17,7 @@ export function UnderworldPage() {
         { title: 'Heat & phòng thủ', body: 'Càn quét toàn server, bảo hiểm và vệ sĩ.' },
       ]}
     >
-      <div className="rounded-xl border border-amber-900/60 bg-amber-950/20 p-4 text-xs text-amber-200/80">
+      <div className="rounded-xl border border-amber-200/60 bg-amber-50 p-4 text-xs text-amber-800/90">
         Cảnh báo: mọi hành động phi pháp đều làm tăng Heat Level và có thể kích hoạt Đại án Công an
         trên toàn server.
       </div>

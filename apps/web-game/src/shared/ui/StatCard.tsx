@@ -1,4 +1,4 @@
-import { clsx, type ClassValue } from 'clsx';
+import { clsx } from 'clsx';
 
 export interface StatCardProps {
   label: string;
@@ -8,17 +8,17 @@ export interface StatCardProps {
 }
 
 const TONE_CLASS: Record<string, string> = {
-  default: 'text-slate-100',
-  positive: 'text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.25)]',
-  negative: 'text-rose-400 shadow-[0_0_12px_rgba(239,68,68,0.25)]',
-  warning: 'text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.25)]',
+  default: 'text-slate-900',
+  positive: 'text-emerald-600',
+  negative: 'text-rose-600',
+  warning: 'text-amber-600',
 };
 
 export function StatCard({ label, value, hint, tone = 'default' }: StatCardProps) {
   return (
     <div
       className={clsx(
-        'rounded-2xl border border-slate-800 bg-surface-900/80 p-5 backdrop-blur-sm shadow-sm transition-all hover:border-slate-600',
+        'rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md',
         TONE_CLASS[tone ?? 'default'],
       )}
     >

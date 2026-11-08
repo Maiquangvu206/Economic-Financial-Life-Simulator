@@ -1,13 +1,13 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import { LayerBase } from './LayerBase';
-import { MapRoad } from '../map/MapData';
+import type { MapRoad } from '../map/MapData';
 
 const TILE = 48;
 
 const ROAD_STYLE: Record<string, { color: number; alpha: number; lineWidth: number }> = {
-  arterial: { color: 0x10b981, alpha: 0.6, lineWidth: 6 },
-  collector: { color: 0x64748b, alpha: 0.5, lineWidth: 4 },
-  local: { color: 0x475569, alpha: 0.4, lineWidth: 3 },
+  arterial: { color: 0x34d399, alpha: 0.9, lineWidth: 6 },
+  collector: { color: 0x94a3b8, alpha: 0.9, lineWidth: 4 },
+  local: { color: 0xcbd5e1, alpha: 1, lineWidth: 3 },
 };
 
 export class RoadLayer extends LayerBase {

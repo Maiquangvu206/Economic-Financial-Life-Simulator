@@ -15,13 +15,13 @@ export const GameInput = forwardRef<HTMLInputElement, GameInputProps>(
       <input
         ref={ref}
         className={cn(
-          'flex h-10 w-full rounded-xl border border-slate-700 bg-surface-850/80 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all disabled:opacity-50',
-          error && 'border-rose-500/50 focus:ring-rose-500',
+          'flex h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition-all focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-100 disabled:opacity-50',
+          error && 'border-rose-300 focus:border-rose-400 focus:ring-rose-100',
           className,
         )}
         {...props}
       />
-      {error && <p className="text-[11px] text-rose-400">{error}</p>}
+      {error && <p className="text-[11px] text-rose-600">{error}</p>}
     </div>
   ),
 );

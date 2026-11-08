@@ -31,7 +31,7 @@ export const JudgeVerdictProposalSchema = z.object({
   meta: AiProposalMetaSchema,
   verdict: z.enum(['guilty', 'not_guilty', 'settlement']),
   sentenceYears: z.number().int().min(0).max(100),
-  fine: z.object({ amount: z.number().int().nonnegative(), currency: z.literal('USD') }),
+  fine: z.object({ amount: z.number().int().nonnegative(), currency: z.literal('VND') }),
   reasoning: z.string(),
   confidence: z.number().min(0).max(1),
 });

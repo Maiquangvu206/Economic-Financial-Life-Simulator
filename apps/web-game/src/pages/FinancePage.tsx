@@ -137,7 +137,7 @@ export function FinancePage() {
   if (isLoading) {
     return (
       <Panel title="Đang tải..." borderColor="default">
-        <p className="text-sm text-slate-400">Đang tải bảng cân đối từ server...</p>
+        <p className="text-sm text-slate-600">Đang tải bảng cân đối từ server...</p>
       </Panel>
     );
   }
@@ -145,7 +145,7 @@ export function FinancePage() {
   if (error) {
     return (
       <Panel title="Lỗi tải dữ liệu" borderColor="rose">
-        <p className="text-sm text-rose-400">
+        <p className="text-sm text-rose-600">
           {error instanceof Error ? error.message : String(error)}
         </p>
         <GameButton
@@ -161,7 +161,7 @@ export function FinancePage() {
   if (!overview) {
     return (
       <Panel title="Chưa có dữ liệu" borderColor="default">
-        <p className="text-sm text-slate-400">Vui lòng đăng nhập lại.</p>
+        <p className="text-sm text-slate-600">Vui lòng đăng nhập lại.</p>
       </Panel>
     );
   }
@@ -173,7 +173,7 @@ export function FinancePage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-heading font-bold tracking-tight">Trung tâm Tài chính</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-600">
             Bảng cân đối tài sản / nợ, gửi tiết kiệm, vay ngân hàng. Tất cả do server xác thực.
           </p>
         </div>
@@ -217,8 +217,8 @@ export function FinancePage() {
         <Panel title="Tín dụng & Hạn mức vay" borderColor="emerald">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-400">Credit Score</span>
-              <span className="font-mono font-bold text-emerald-300">{overview.creditScore}</span>
+              <span className="text-sm text-slate-600">Credit Score</span>
+              <span className="font-mono font-bold text-emerald-700">{overview.creditScore}</span>
             </div>
             <Badge
               variant={
@@ -233,7 +233,7 @@ export function FinancePage() {
             </Badge>
             <div className="mt-2">
               <span className="text-[11px] text-slate-500 block">Hạn mức vay tối đa</span>
-              <span className="font-mono font-semibold text-emerald-300">
+              <span className="font-mono font-semibold text-emerald-700">
                 {formatMoney(overview.maxLoanAmount.amount)}
               </span>
             </div>
@@ -250,14 +250,14 @@ export function FinancePage() {
         <Panel title="Tài khoản Tiết kiệm" borderColor="default">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-400">Số dư</span>
-              <span className="font-mono font-bold text-emerald-300">
+              <span className="text-sm text-slate-600">Số dư</span>
+              <span className="font-mono font-bold text-emerald-700">
                 {formatMoney(overview.savingsAccount.balance.amount)}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-400">Lãi suất/năm</span>
-              <span className="font-mono text-slate-300">
+              <span className="text-sm text-slate-600">Lãi suất/năm</span>
+              <span className="font-mono text-slate-700">
                 {overview.savingsAccount.annualRatePct}%
               </span>
             </div>
@@ -282,10 +282,10 @@ export function FinancePage() {
                 {overview.loans.map((loan) => (
                   <li
                     key={loan.id}
-                    className="flex items-center justify-between p-2 rounded-lg border border-slate-800 bg-surface-850/50"
+                    className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-slate-50/80"
                   >
                     <div>
-                      <div className="font-mono text-sm text-slate-200">
+                      <div className="font-mono text-sm text-slate-800">
                         {loan.outstanding.amount.toLocaleString('vi-VN')} /{' '}
                         {loan.principal.amount.toLocaleString('vi-VN')}
                       </div>
@@ -324,7 +324,7 @@ export function FinancePage() {
       <Modal open={loanModal} onClose={() => setLoanModal(false)} title="Đơn vay ngân hàng">
         <form onSubmit={handleApplyLoan} className="space-y-4">
           <GameInput
-            label="Số tiền vay (USD)"
+            label="Số tiền vay (VNĐ)"
             value={loanAmount}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoanAmount(e.target.value)}
             placeholder="Nhập số tiền..."

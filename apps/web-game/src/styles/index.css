@@ -4,32 +4,61 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   body {
-    @apply min-h-screen bg-surface-950 text-slate-100;
+    @apply min-h-screen bg-surface-50 text-slate-900 antialiased;
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(167, 243, 208, 0.45), transparent 42%),
+      radial-gradient(circle at 88% 4%, rgba(191, 219, 254, 0.45), transparent 38%),
+      radial-gradient(circle at 50% 100%, rgba(254, 215, 170, 0.35), transparent 45%);
+    background-attachment: fixed;
   }
 
   ::selection {
-    @apply bg-emerald-500/30;
+    @apply bg-emerald-200 text-emerald-950;
+  }
+
+  /* Thanh trượt (slider) theo tông sáng pastel */
+  input[type='range'] {
+    @apply h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200;
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 1rem;
+    width: 1rem;
+    border-radius: 9999px;
+    background: #10b981;
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  }
+
+  input[type='range']::-moz-range-thumb {
+    height: 1rem;
+    width: 1rem;
+    border: 2px solid #ffffff;
+    border-radius: 9999px;
+    background: #10b981;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
   }
 }
 
 @layer components {
   .panel {
-    @apply rounded-xl border border-slate-800 bg-surface-900/80 p-4 shadow-sm;
+    @apply rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm;
   }
 
   .panel-title {
-    @apply text-sm font-semibold text-slate-200;
+    @apply text-sm font-semibold text-slate-800;
   }
 
   .nav-link {
-    @apply flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-slate-800/60 hover:text-slate-100;
+    @apply flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-900;
   }
 
   .nav-link-active {
-    @apply bg-emerald-950/60 text-emerald-300 ring-1 ring-inset ring-emerald-900;
+    @apply bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200;
   }
 }

@@ -10,7 +10,9 @@ interface HolidayItem {
 }
 
 export function SeasonCalendarPage() {
-  const [selectedSeason, setSelectedSeason] = useState<'spring' | 'summer' | 'autumn' | 'winter'>('spring');
+  const [selectedSeason, setSelectedSeason] = useState<'spring' | 'summer' | 'autumn' | 'winter'>(
+    'spring',
+  );
   const [currentWeather, setCurrentWeather] = useState('sunny');
   const [timeSpeedMultiplier, setTimeSpeedMultiplier] = useState(1);
   const [otRatePercent, setOtRatePercent] = useState(300); // 300% theo Bộ luật Lao động VN
@@ -76,13 +78,13 @@ export function SeasonCalendarPage() {
   };
 
   const handleToggleHoliday = (id: string) => {
-    setHolidays((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, isOff: !h.isOff } : h)),
-    );
+    setHolidays((prev) => prev.map((h) => (h.id === id ? { ...h, isOff: !h.isOff } : h)));
   };
 
   const handleApplyChanges = () => {
-    setStatusMessage('Đã cập nhật cấu hình Mùa & Chính sách Lịch nghỉ Công nhân tới toàn bộ cụm Server!');
+    setStatusMessage(
+      'Đã cập nhật cấu hình Mùa & Chính sách Lịch nghỉ Công nhân tới toàn bộ cụm Server!',
+    );
     setTimeout(() => setStatusMessage(null), 3500);
   };
 
@@ -90,24 +92,25 @@ export function SeasonCalendarPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-100">
+          <h1 className="text-xl font-bold text-slate-900">
             Quản trị Mùa, Thời tiết & Lịch nghỉ Công nhân
           </h1>
-          <p className="mt-1 text-xs text-slate-400">
-            Điều chỉnh chu kỳ 4 mùa, thời tiết tức thì và chính sách nghỉ lễ / làm thêm giờ (OT) chuẩn Luật Lao động Việt Nam.
+          <p className="mt-1 text-xs text-slate-600">
+            Điều chỉnh chu kỳ 4 mùa, thời tiết tức thì và chính sách nghỉ lễ / làm thêm giờ (OT)
+            chuẩn Luật Lao động Việt Nam.
           </p>
         </div>
         <button
           type="button"
           onClick={handleApplyChanges}
-          className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 transition hover:bg-amber-400 shadow-md shadow-amber-500/20"
+          className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20"
         >
           Áp dụng thay đổi tức thì
         </button>
       </div>
 
       {statusMessage && (
-        <div className="rounded-xl border border-emerald-800 bg-emerald-950/60 p-3 text-xs font-semibold text-emerald-300">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">
           ✓ {statusMessage}
         </div>
       )}
@@ -115,39 +118,45 @@ export function SeasonCalendarPage() {
       {/* Grid 2 cột: Mùa/Thời tiết & Chính sách công nhân */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Panel 1: Điều phối Mùa & Tốc độ thời gian */}
-        <div className="rounded-2xl border border-slate-800 bg-surface-900/70 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-amber-400 uppercase tracking-wider">
+        <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">
             1. Cấu hình Mùa & Chu kỳ Thời tiết
           </h2>
 
           <div className="space-y-2">
-            <label className="text-xs text-slate-300">Chọn mùa khí hậu hiện tại:</label>
+            <label className="text-xs text-slate-700">Chọn mùa khí hậu hiện tại:</label>
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
                 { id: 'spring', label: '🌸 Mùa Xuân', desc: 'Mát mẻ, mưa phùn, năng suất +10%' },
                 { id: 'summer', label: '☀️ Mùa Hạ', desc: 'Nắng nóng gay gắt, hao thể lực +25%' },
-                { id: 'autumn', label: '🍂 Mùa Thu', desc: 'Dễ chịu, sản xuất & kinh doanh đỉnh cao' },
+                {
+                  id: 'autumn',
+                  label: '🍂 Mùa Thu',
+                  desc: 'Dễ chịu, sản xuất & kinh doanh đỉnh cao',
+                },
                 { id: 'winter', label: '❄️ Mùa Đông', desc: 'Se lạnh rét buốt, chi phí sưởi ấm' },
               ].map((m) => (
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() => setSelectedSeason(m.id as any)}
+                  onClick={() =>
+                    setSelectedSeason(m.id as 'spring' | 'summer' | 'autumn' | 'winter')
+                  }
                   className={`rounded-xl border p-3 text-left transition ${
                     selectedSeason === m.id
-                      ? 'border-amber-500 bg-amber-950/40 text-amber-300 ring-1 ring-amber-500'
-                      : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700'
+                      ? 'border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500'
+                      : 'border-slate-200 bg-slate-100 text-slate-600 hover:border-slate-300'
                   }`}
                 >
-                  <p className="font-semibold text-slate-200">{m.label}</p>
-                  <p className="text-[11px] text-slate-400 mt-1">{m.desc}</p>
+                  <p className="font-semibold text-slate-800">{m.label}</p>
+                  <p className="text-[11px] text-slate-600 mt-1">{m.desc}</p>
                 </button>
               ))}
             </div>
           </div>
 
           <div className="space-y-2 pt-2">
-            <label className="text-xs text-slate-300">Tình trạng thời tiết tức thì:</label>
+            <label className="text-xs text-slate-700">Tình trạng thời tiết tức thì:</label>
             <div className="flex gap-2">
               {[
                 { id: 'sunny', label: 'Nắng ráo ☀️' },
@@ -161,8 +170,8 @@ export function SeasonCalendarPage() {
                   onClick={() => setCurrentWeather(w.id)}
                   className={`flex-1 rounded-xl border py-2 text-xs font-medium transition ${
                     currentWeather === w.id
-                      ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
-                      : 'border-slate-800 bg-slate-900/40 text-slate-400 hover:text-white'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-slate-200 bg-slate-100 text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   {w.label}
@@ -173,8 +182,8 @@ export function SeasonCalendarPage() {
 
           <div className="space-y-2 pt-2">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-300">Tốc độ trôi thời gian tự động:</span>
-              <span className="font-mono font-bold text-amber-300">{timeSpeedMultiplier}x</span>
+              <span className="text-slate-700">Tốc độ trôi thời gian tự động:</span>
+              <span className="font-mono font-bold text-amber-700">{timeSpeedMultiplier}x</span>
             </div>
             <input
               type="range"
@@ -188,15 +197,17 @@ export function SeasonCalendarPage() {
         </div>
 
         {/* Panel 2: Chính sách Lao động & Làm thêm giờ (OT) */}
-        <div className="rounded-2xl border border-slate-800 bg-surface-900/70 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-amber-400 uppercase tracking-wider">
+        <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">
             2. Quy định Lao động & Tiền lương Công nhân
           </h2>
 
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-300">Hệ số lương làm thêm ngày lễ (OT):</span>
-              <span className="font-mono font-bold text-emerald-400">{otRatePercent}% (x{(otRatePercent / 100).toFixed(1)})</span>
+              <span className="text-slate-700">Hệ số lương làm thêm ngày lễ (OT):</span>
+              <span className="font-mono font-bold text-emerald-600">
+                {otRatePercent}% (x{(otRatePercent / 100).toFixed(1)})
+              </span>
             </div>
             <input
               type="range"
@@ -209,38 +220,49 @@ export function SeasonCalendarPage() {
             />
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-xs space-y-2">
-            <p className="font-semibold text-slate-200">Chỉ số phúc lợi & Công nhân toàn server:</p>
-            <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
-              <div>Tổng lực lượng lao động: <span className="font-bold text-slate-200">24.500</span></div>
-              <div>Tỷ lệ nghỉ lễ có lương: <span className="font-bold text-emerald-400">100%</span></div>
-              <div>Bảo hiểm Xã hội (BHXH): <span className="font-bold text-slate-200">Bắt buộc</span></div>
-              <div>Quỹ thưởng Tết dự phòng: <span className="font-bold text-amber-400">12,5 tỷ ₫</span></div>
+          <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 text-xs space-y-2">
+            <p className="font-semibold text-slate-800">Chỉ số phúc lợi & Công nhân toàn server:</p>
+            <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+              <div>
+                Tổng lực lượng lao động: <span className="font-bold text-slate-800">24.500</span>
+              </div>
+              <div>
+                Tỷ lệ nghỉ lễ có lương: <span className="font-bold text-emerald-600">100%</span>
+              </div>
+              <div>
+                Bảo hiểm Xã hội (BHXH): <span className="font-bold text-slate-800">Bắt buộc</span>
+              </div>
+              <div>
+                Quỹ thưởng Tết dự phòng: <span className="font-bold text-amber-600">12,5 tỷ ₫</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Danh sách Lịch nghỉ Lễ & Thêm ngày nghỉ mới */}
-      <div className="rounded-2xl border border-slate-800 bg-surface-900/70 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-amber-400 uppercase tracking-wider">
+      <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">
           3. Lịch nghỉ Lễ & Điều động Công nhân
         </h2>
 
-        <div className="divide-y divide-slate-800/80 overflow-hidden rounded-xl border border-slate-800 bg-surface-950/60">
+        <div className="divide-y divide-slate-200/80 overflow-hidden rounded-xl border border-slate-200 bg-slate-100/70">
           {holidays.map((item) => (
-            <div key={item.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-3">
+            <div
+              key={item.id}
+              className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-3"
+            >
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm text-slate-100">{item.nameVi}</span>
-                  <span className="text-xs font-mono text-amber-400 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/60">
+                  <span className="font-semibold text-sm text-slate-900">{item.nameVi}</span>
+                  <span className="text-xs font-mono text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
                     {item.dateStr}
                   </span>
-                  <span className="text-xs text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded">
+                  <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
                     Lương OT x{item.otMultiplier}
                   </span>
                 </div>
-                <p className="text-xs text-slate-400">{item.workerImpact}</p>
+                <p className="text-xs text-slate-600">{item.workerImpact}</p>
               </div>
 
               <div className="flex items-center gap-3">
@@ -249,8 +271,8 @@ export function SeasonCalendarPage() {
                   onClick={() => handleToggleHoliday(item.id)}
                   className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
                     item.isOff
-                      ? 'bg-rose-950/60 text-rose-300 border border-rose-800'
-                      : 'bg-slate-800 text-slate-400'
+                      ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                      : 'bg-slate-100 text-slate-600'
                   }`}
                 >
                   {item.isOff ? 'Đang áp dụng nghỉ lễ' : 'Đã bỏ nghỉ lễ'}
@@ -267,18 +289,18 @@ export function SeasonCalendarPage() {
             placeholder="Tên ngày nghỉ / Sự kiện công nhân (VD: Ngày truyền thống ngành Than)..."
             value={newHolidayName}
             onChange={(e) => setNewHolidayName(e.target.value)}
-            className="flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none"
+            className="flex-1 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-800 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none"
           />
           <input
             type="text"
             placeholder="Thời gian (VD: 12/11 - 1 ngày)..."
             value={newHolidayDate}
             onChange={(e) => setNewHolidayDate(e.target.value)}
-            className="w-full sm:w-56 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none"
+            className="w-full sm:w-56 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-800 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none"
           />
           <button
             type="submit"
-            className="rounded-xl bg-slate-800 border border-slate-700 px-4 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 transition"
+            className="rounded-xl bg-slate-100 border border-slate-300 px-4 py-2 text-xs font-bold text-slate-800 hover:bg-slate-200 transition"
           >
             + Thêm ngày nghỉ
           </button>
@@ -287,4 +309,3 @@ export function SeasonCalendarPage() {
     </div>
   );
 }
-

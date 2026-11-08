@@ -22,7 +22,7 @@ export function ModulePlaceholder({
         title={title}
         description={description}
         actions={
-          <span className="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400">
+          <span className="rounded-full border border-slate-300 px-2.5 py-1 text-[11px] text-slate-600">
             {status}
           </span>
         }

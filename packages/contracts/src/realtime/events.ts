@@ -38,7 +38,7 @@ export interface ServerToClientEvents {
   }) => void;
   'market:tick': (payload: {
     tickerId: string;
-    price: { amount: number; currency: 'USD' };
+    price: { amount: number; currency: 'VND' };
     changePct: number;
     at: number;
   }) => void;
@@ -61,7 +61,7 @@ export interface ServerToClientEvents {
   'macro:snapshot': (payload: {
     inflationPct: number;
     cpi: number;
-    moneySupply: { amount: number; currency: 'USD' };
+    moneySupply: { amount: number; currency: 'VND' };
     at: number;
   }) => void;
 }

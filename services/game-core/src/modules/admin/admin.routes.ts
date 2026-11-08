@@ -16,10 +16,10 @@ adminRouter.get('/macro/snapshot', (req, res: Response) => {
   const snapshot: MacroSnapshotDto = {
     tick: 0,
     inGameYear: 1,
-    moneySupply: { amount: 0, currency: 'USD' },
+    moneySupply: { amount: 0, currency: 'VND' },
     inflationPct: 0,
     cpi: 100,
-    marketCap: { amount: 0, currency: 'USD' },
+    marketCap: { amount: 0, currency: 'VND' },
     concurrentUsers: 0,
     activeCourtCases: 0,
     generatedAt: new Date().toISOString(),

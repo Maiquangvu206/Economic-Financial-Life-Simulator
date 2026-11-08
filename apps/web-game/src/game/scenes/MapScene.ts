@@ -5,7 +5,7 @@ import { BuildingLayer } from '../layers/BuildingLayer';
 import { DecorationLayer } from '../layers/DecorationLayer';
 import { SelectionLayer } from '../layers/SelectionLayer';
 import { FireworksLayer } from '../layers/FireworksLayer';
-import { MapData, ZoneType } from '../map/MapData';
+import type { MapData, MapProperty, MapRoad, ZoneType } from '../map/MapData';
 
 const TILE = 48;
 const COLS = 40;
@@ -46,14 +46,14 @@ export class MapScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.cameras.main.setBackgroundColor('#020617');
+    this.cameras.main.setBackgroundColor('#f8fafc');
     this.cameras.main.setBounds(0, 0, COLS * TILE, ROWS * TILE);
     this.cameras.main.setZoom(1);
 
     // Zoom bằng chuột
     this.input.on(
       'wheel',
-      (pointer: Phaser.Input.Pointer, _gameObjects: any[], deltaX: number, deltaY: number) => {
+      (pointer: Phaser.Input.Pointer, _gameObjects: unknown[], deltaX: number, deltaY: number) => {
         const zoom = this.cameras.main.zoom;
         const newZoom = Phaser.Math.Clamp(zoom - deltaY * 0.001, 0.5, 2);
         this.cameras.main.setZoom(newZoom);
@@ -176,11 +176,11 @@ export class MapScene extends Phaser.Scene {
     return lights;
   }
 
-  private getRoads(): any[] {
+  private getRoads(): MapRoad[] {
     return [];
   }
 
-  private getProperties(): any[] {
+  private getProperties(): MapProperty[] {
     return [];
   }
 

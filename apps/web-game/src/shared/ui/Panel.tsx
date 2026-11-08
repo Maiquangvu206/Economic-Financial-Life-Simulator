@@ -9,27 +9,27 @@ interface PanelProps {
 }
 
 const BORDER: Record<string, string> = {
-  default: 'border-slate-800',
-  emerald: 'border-emerald-500/30',
-  amber: 'border-amber-500/30',
-  rose: 'border-rose-500/30',
+  default: 'border-slate-200',
+  emerald: 'border-emerald-200',
+  amber: 'border-amber-200',
+  rose: 'border-rose-200',
 };
 
 export function Panel({ children, title, subtitle, borderColor = 'default' }: PanelProps) {
   return (
     <div
       className={cn(
-        'rounded-2xl border bg-surface-900/80 p-5 backdrop-blur-sm shadow-game-glow',
+        'rounded-2xl border bg-white/90 p-5 shadow-sm backdrop-blur-sm',
         BORDER[borderColor ?? 'default'],
       )}
     >
       {title && (
         <div className="mb-3 flex items-center gap-2">
-          <h3 className="text-sm font-heading font-semibold text-slate-100 tracking-tight">
+          <h3 className="text-sm font-heading font-semibold text-slate-800 tracking-tight">
             {title}
           </h3>
           {subtitle && (
-            <span className="text-[10px] uppercase tracking-wider text-slate-500">{subtitle}</span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-400">{subtitle}</span>
           )}
         </div>
       )}

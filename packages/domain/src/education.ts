@@ -163,4 +163,3 @@ export const VIETNAM_CERTIFICATES: Record<CertificateType, CertificateInfo> = {
     employabilityBonus: 35,
   },
 };
-

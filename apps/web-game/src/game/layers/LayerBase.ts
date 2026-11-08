@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 
 export abstract class LayerBase {
   protected scene: Phaser.Scene;
@@ -11,7 +11,7 @@ export abstract class LayerBase {
     this.container.setDepth(0);
   }
 
-  abstract render(data: any): void;
+  abstract render(data: unknown): void;
 
   abstract clear(): void;
 

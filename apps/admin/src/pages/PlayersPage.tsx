@@ -22,7 +22,7 @@ export function PlayersPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Tên nhân vật, email hoặc character id"
-          className="w-full max-w-md rounded-lg border border-slate-700 bg-surface-850 px-3 py-2 text-sm outline-none focus:border-amber-600"
+          className="w-full max-w-md rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-amber-600"
         />
         <button
           type="submit"
@@ -32,7 +32,7 @@ export function PlayersPage() {
         </button>
       </form>
 
-      <div className="rounded-xl border border-dashed border-slate-700 px-6 py-10 text-center text-xs text-slate-500">
+      <div className="rounded-xl border border-dashed border-slate-300 px-6 py-10 text-center text-xs text-slate-500">
         {submitted ? `Chưa có kết quả cho "${submitted}".` : 'Nhập thông tin nhân vật cần tra cứu.'}
       </div>
     </div>

@@ -40,7 +40,7 @@ async function main() {
 
   console.log('\n[deploy] All images ready. Restarting stack...');
   await run(
-    `docker compose -f infra/docker/docker-compose.yml --env-file .env --profile app up -d`
+    `docker compose -f infra/docker/docker-compose.yml --env-file .env --profile app up -d`,
   );
 
   console.log('\n[deploy] Done. Stack restarted with new images.');

@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import { LayerBase } from './LayerBase';
 
 const TILE = 48;
@@ -20,10 +20,10 @@ export class DecorationLayer extends LayerBase {
         t.x * TILE + TILE / 2,
         t.y * TILE + TILE / 2,
         10,
-        0x14532d,
+        0x86efac,
         0.6,
       );
-      tree.setStrokeStyle(1, 0x064e3b, 0.8);
+      tree.setStrokeStyle(1, 0x22c55e, 0.8);
       this.container.add(tree);
       this.decos.push(tree);
     }
@@ -36,7 +36,7 @@ export class DecorationLayer extends LayerBase {
         0xfbbf24,
         0.5,
       );
-      light.setStrokeStyle(1, 0xf59e0b, 0.6);
+      light.setStrokeStyle(1, 0xf59e0b, 0.8);
       this.container.add(light);
       this.decos.push(light);
     }

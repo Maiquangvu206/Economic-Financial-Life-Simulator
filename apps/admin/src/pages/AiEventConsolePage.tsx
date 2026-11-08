@@ -33,12 +33,12 @@ export function AiEventConsolePage() {
         <section className="panel space-y-3">
           <h2 className="panel-title">Kích hoạt sự kiện</h2>
 
-          <label className="block text-xs text-slate-400">
+          <label className="block text-xs text-slate-600">
             Loại sự kiện
             <select
               value={eventType}
               onChange={(event) => setEventType(event.target.value as typeof eventType)}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-surface-850 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
             >
               {EVENTS.map((event) => (
                 <option key={event.value} value={event.value}>
@@ -48,8 +48,8 @@ export function AiEventConsolePage() {
             </select>
           </label>
 
-          <label className="block text-xs text-slate-400">
-            Mức độ: <span className="font-mono text-slate-200">{severity.toFixed(2)}</span>
+          <label className="block text-xs text-slate-600">
+            Mức độ: <span className="font-mono text-slate-800">{severity.toFixed(2)}</span>
             <input
               type="range"
               min={0}
@@ -61,7 +61,7 @@ export function AiEventConsolePage() {
             />
           </label>
 
-          <label className="block text-xs text-slate-400">
+          <label className="block text-xs text-slate-600">
             Thời lượng (năm in-game)
             <input
               type="number"
@@ -69,18 +69,18 @@ export function AiEventConsolePage() {
               max={20}
               value={duration}
               onChange={(event) => setDuration(Number(event.target.value))}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-surface-850 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
             />
           </label>
 
-          <label className="block text-xs text-slate-400">
+          <label className="block text-xs text-slate-600">
             Lý do (audit log)
             <textarea
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               rows={3}
               maxLength={500}
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-surface-850 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
             />
           </label>
 
@@ -92,7 +92,7 @@ export function AiEventConsolePage() {
             Kích hoạt
           </button>
 
-          {notice ? <p className="text-xs text-amber-300">{notice}</p> : null}
+          {notice ? <p className="text-xs text-amber-700">{notice}</p> : null}
         </section>
 
         <section className="panel space-y-3">
@@ -102,24 +102,24 @@ export function AiEventConsolePage() {
             đổi prompt phải qua review và chạy eval trước khi bật production.
           </p>
           <dl className="grid grid-cols-2 gap-2 text-xs">
-            <div className="rounded-lg border border-slate-800 p-2">
+            <div className="rounded-lg border border-slate-200 p-2">
               <dt className="text-slate-500">Provider</dt>
-              <dd className="mt-0.5 font-mono text-slate-200">fake</dd>
+              <dd className="mt-0.5 font-mono text-slate-800">fake</dd>
             </div>
-            <div className="rounded-lg border border-slate-800 p-2">
+            <div className="rounded-lg border border-slate-200 p-2">
               <dt className="text-slate-500">Timeout</dt>
-              <dd className="mt-0.5 font-mono text-slate-200">15s</dd>
+              <dd className="mt-0.5 font-mono text-slate-800">15s</dd>
             </div>
-            <div className="rounded-lg border border-slate-800 p-2">
+            <div className="rounded-lg border border-slate-200 p-2">
               <dt className="text-slate-500">Judge model</dt>
-              <dd className="mt-0.5 font-mono text-slate-200">—</dd>
+              <dd className="mt-0.5 font-mono text-slate-800">—</dd>
             </div>
-            <div className="rounded-lg border border-slate-800 p-2">
+            <div className="rounded-lg border border-slate-200 p-2">
               <dt className="text-slate-500">News model</dt>
-              <dd className="mt-0.5 font-mono text-slate-200">—</dd>
+              <dd className="mt-0.5 font-mono text-slate-800">—</dd>
             </div>
           </dl>
-          <p className="rounded-lg border border-amber-900/60 bg-amber-950/20 p-2 text-[11px] text-amber-200/80">
+          <p className="rounded-lg border border-amber-200/60 bg-amber-50 p-2 text-[11px] text-amber-800/90">
             Không cấp quyền ghi trực tiếp cho AI. Mọi output phải qua schema validation và rule
             engine của game-core.
           </p>

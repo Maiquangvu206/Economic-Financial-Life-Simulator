@@ -21,7 +21,7 @@ export function PhaserGame({ onSelectPlot }: PhaserGameProps) {
       parent: containerRef.current,
       width: 40 * 48,
       height: 24 * 48,
-      backgroundColor: '#020617',
+      backgroundColor: '#f8fafc',
       pixelArt: false,
       scale: {
         mode: Phaser.Scale.FIT,
@@ -53,11 +53,11 @@ export function PhaserGame({ onSelectPlot }: PhaserGameProps) {
   }, [activeHoliday]);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-800 bg-surface-900">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div ref={containerRef} className="aspect-[40/24] w-full" />
-      <div className="flex items-center justify-between border-t border-slate-800 px-3 py-2 text-[11px] text-slate-500">
+      <div className="flex items-center justify-between border-t border-slate-200 px-3 py-2 text-[11px] text-slate-500">
         <span>Click vào ô đất để xem chi tiết</span>
-        <span className="font-mono text-slate-400">{selectedPlot ?? '—'}</span>
+        <span className="font-mono text-slate-600">{selectedPlot ?? '—'}</span>
       </div>
     </div>
   );

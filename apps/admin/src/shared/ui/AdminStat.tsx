@@ -6,10 +6,10 @@ export interface AdminStatProps {
 }
 
 const TONE: Record<NonNullable<AdminStatProps['tone']>, string> = {
-  default: 'text-slate-100',
-  positive: 'text-emerald-300',
-  negative: 'text-rose-300',
-  warning: 'text-amber-300',
+  default: 'text-slate-900',
+  positive: 'text-emerald-700',
+  negative: 'text-rose-600',
+  warning: 'text-amber-700',
 };
 
 export function AdminStat({ label, value, hint, tone = 'default' }: AdminStatProps) {

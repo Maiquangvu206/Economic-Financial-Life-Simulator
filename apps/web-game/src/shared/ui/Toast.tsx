@@ -9,10 +9,10 @@ interface Toast {
 }
 
 const VARIANT: Record<string, string> = {
-  success: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
-  warning: 'border-amber-500/30 bg-amber-500/10 text-amber-200',
-  error: 'border-rose-500/30 bg-rose-500/10 text-rose-200',
-  info: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-200',
+  success: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  warning: 'border-amber-200 bg-amber-50 text-amber-800',
+  error: 'border-rose-200 bg-rose-50 text-rose-800',
+  info: 'border-indigo-200 bg-indigo-50 text-indigo-800',
 };
 
 interface UseToastReturn {
@@ -41,17 +41,17 @@ export function ToastContainer() {
   const { toasts, dismiss } = useToast();
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+    <div className="pointer-events-none fixed right-4 top-4 z-50 flex flex-col gap-2">
       {toasts.map((t) => (
         <div
           key={t.id}
           className={cn(
-            'pointer-events-auto flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium shadow-xl shadow-black/40 animate-[slide-in_0.3s_ease-out]',
+            'pointer-events-auto flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium shadow-soft animate-[slide-in_0.2s_ease-out]',
             VARIANT[t.variant ?? 'info'],
           )}
           onClick={() => dismiss(t.id)}
         >
-          <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/70 text-[10px] font-bold">
             {t.variant === 'success'
               ? '✓'
               : t.variant === 'error'
@@ -61,9 +61,9 @@ export function ToastContainer() {
                   : 'i'}
           </span>
           <div>
-            <div className="text-slate-100">{t.title}</div>
+            <div>{t.title}</div>
             {t.description && (
-              <div className="text-[11px] text-slate-400 mt-0.5">{t.description}</div>
+              <div className="mt-0.5 text-[11px] font-normal opacity-80">{t.description}</div>
             )}
           </div>
         </div>
