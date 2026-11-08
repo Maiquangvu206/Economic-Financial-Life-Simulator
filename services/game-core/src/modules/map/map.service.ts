@@ -87,16 +87,23 @@ export class MapService {
         );
       }
 
+      // Giữ nguyên vùng/tên hiện có khi admin chỉ cập nhật giá đất (tránh ghi đè thành residential).
+      const existing = await this.repository.getMap();
+      const existingByCoord = new Map(existing.nodes.map((n) => [`${n.x}-${n.y}`, n]));
+
       const nodes = input.nodes ?? [];
       await this.repository.upsertNodes(
         client,
-        nodes.map((n) => ({
-          x: n.x,
-          y: n.y,
-          zoneType: n.zoneType ?? 'residential',
-          landPriceMinor: n.landPriceMinor ?? 0,
-          name: n.name ?? `Ô [${n.x},${n.y}]`,
-        })),
+        nodes.map((n) => {
+          const prev = existingByCoord.get(`${n.x}-${n.y}`);
+          return {
+            x: n.x,
+            y: n.y,
+            zoneType: n.zoneType ?? prev?.zoneType ?? 'residential',
+            landPriceMinor: n.landPriceMinor ?? Number(prev?.landPriceMinor ?? 0),
+            name: n.name ?? prev?.name ?? `Ô [${n.x},${n.y}]`,
+          };
+        }),
       );
 
       const nodeIdByCoord = await this.repository.nodeIdByCoord(client);

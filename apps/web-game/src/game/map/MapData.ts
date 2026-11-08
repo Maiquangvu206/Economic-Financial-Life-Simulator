@@ -22,7 +22,7 @@ export interface MapProperty {
   ownerId: string | null;
   ownerCharacterId: string | null;
   name: string;
-  type: 'apartment' | 'house' | 'office' | 'warehouse' | 'port_berth';
+  type: 'apartment' | 'house' | 'office' | 'warehouse' | 'port_berth' | 'land';
   status: 'unowned' | 'owned' | 'listed' | 'auction';
   /** Giá mua (VNĐ minor units). */
   purchasePriceMinor: number;

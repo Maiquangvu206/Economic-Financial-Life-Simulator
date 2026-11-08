@@ -1,5 +1,10 @@
 import type { Request, Response } from 'express';
-import type { BuyPropertyRequest, ListPropertyRequest, RentPropertyRequest } from '@efls/contracts';
+import type {
+  BuyLandRequest,
+  BuyPropertyRequest,
+  ListPropertyRequest,
+  RentPropertyRequest,
+} from '@efls/contracts';
 import { RealEstateService } from './real-estate.service.js';
 
 export class RealEstateController {
@@ -13,6 +18,12 @@ export class RealEstateController {
   buyProperty = async (req: Request, res: Response): Promise<void> => {
     const { propertyId } = req.body as BuyPropertyRequest;
     const property = await this.service.buyProperty(req.actorId!, propertyId);
+    res.status(200).json(property);
+  };
+
+  buyLand = async (req: Request, res: Response): Promise<void> => {
+    const { x, y } = req.body as BuyLandRequest;
+    const property = await this.service.buyLand(req.actorId!, x, y);
     res.status(200).json(property);
   };
 

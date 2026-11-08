@@ -31,6 +31,7 @@ function propertyTypeLabel(type: PropertyDto['propertyType']) {
     office: 'Văn phòng',
     warehouse: 'Kho hàng',
     port_berth: 'Bến cảng',
+    land: 'Đất nền',
   };
   return map[type];
 }

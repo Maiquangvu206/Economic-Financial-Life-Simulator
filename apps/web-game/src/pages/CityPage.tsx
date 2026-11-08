@@ -1,11 +1,13 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CityCanvas } from '../game/three/CityCanvas';
+import { MapCanvas2D } from '../game/map/MapCanvas2D';
 import { StatCard } from '../shared/ui/StatCard';
 import { Panel } from '../shared/ui/Panel';
+import { Modal } from '../shared/ui/Modal';
 import { formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
 import {
+  type AuctionOverviewDto,
   type CharacterDto,
   type MapDto,
   type ProvinceDto,
@@ -17,6 +19,8 @@ interface SelectedPlot {
   col: number;
   row: number;
   property?: MapProperty;
+  /** Giá đất nền do admin đặt (VNĐ minor). 0 = chưa rao bán. */
+  landPriceMinor: number;
 }
 
 export function CityPage() {
@@ -59,11 +63,28 @@ export function CityPage() {
     queryFn: () => apiRequest<RealEstateOverviewDto>('/api/v1/real-estate/overview'),
   });
 
+  // Phiên đấu giá đang mở (AI Game Master) — highlight ô đất trên bản đồ.
+  const { data: auctionOverview, refetch: refetchAuctions } = useQuery<AuctionOverviewDto>({
+    queryKey: ['auctions', 'overview'],
+    queryFn: () => apiRequest<AuctionOverviewDto>('/api/v1/auctions/overview'),
+    refetchInterval: 10_000,
+  });
+
   const [selected, setSelected] = useState<SelectedPlot | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [purchaseOk, setPurchaseOk] = useState<string | null>(null);
   const [movingProvince, setMovingProvince] = useState<string | null>(null);
+  const [buyLandOpen, setBuyLandOpen] = useState(false);
+
+  // Tên chủ sở hữu hiển thị từ mã nhân vật (server không trả tên trong bản đồ tỉnh).
+  const ownerName = selected?.property?.ownerCharacterId
+    ? character?.id === selected.property.ownerCharacterId
+      ? `${character.fullName} (bạn)`
+      : `Mã ${selected.property.ownerCharacterId.slice(0, 8)}…`
+    : null;
+  // Thuế BĐS hàng tháng = giá trị × 5%/năm ÷ 12.
+  const monthlyTax = (priceMinor: number) => Math.round((priceMinor * 5) / 100 / 12);
 
   async function handleMoveProvince(province: ProvinceDto, index: number) {
     setSelectedProvince(province.code);
@@ -111,8 +132,18 @@ export function CityPage() {
     if (!mapData) return;
     const node = mapData.nodes.find((n) => n.x === col && n.y === row);
     const property = node ? mapData.properties.find((p) => p.nodeId === node.id) : undefined;
-    setSelected({ col, row, property });
+    setSelected({ col, row, property, landPriceMinor: node?.landPriceMinor ?? 0 });
   };
+
+  /** Ô đất đang đấu giá: đối chiếu propertyId với BĐS trên bản đồ để lấy tọa độ. */
+  const auctioningTile = useMemo(() => {
+    if (!auctionOverview || !realEstate) return null;
+    for (const auction of auctionOverview.auctions) {
+      const property = realEstate.properties.find((p) => p.id === auction.propertyId);
+      if (property) return { x: property.location.x, y: property.location.y };
+    }
+    return null;
+  }, [auctionOverview, realEstate]);
 
   async function handleBuy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -128,10 +159,33 @@ export function CityPage() {
       setPurchasing(false);
       await refetchMap();
       await refetchRealEstate();
+      await refetchAuctions();
       setSelected(null);
     } catch (caught) {
       setPurchasing(false);
       setPurchaseError(caught instanceof Error ? caught.message : 'Không thể mua bất động sản.');
+    }
+  }
+
+  /** Mua đất nền trên ô đất trống (giá = land_price_minor do admin đặt). */
+  async function handleBuyLand() {
+    if (!selected || selected.property || selected.landPriceMinor <= 0) return;
+    setPurchasing(true);
+    setPurchaseError(null);
+    try {
+      await apiRequest<unknown>('/api/v1/real-estate/buy-land', {
+        method: 'POST',
+        body: JSON.stringify({ x: selected.col, y: selected.row }),
+      });
+      setPurchaseOk(`Đã mua đất nền ô [${selected.col}, ${selected.row}] thành công!`);
+      setBuyLandOpen(false);
+      await refetchMap();
+      await refetchRealEstate();
+      await refetchAuctions();
+    } catch (caught) {
+      setPurchaseError(caught instanceof Error ? caught.message : 'Không thể mua đất nền.');
+    } finally {
+      setPurchasing(false);
     }
   }
 
@@ -153,19 +207,7 @@ export function CityPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-heading font-bold tracking-tight">Thành phố trung tâm</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Bản đồ 2D từ server. Mọi thay đổi vị trí và giao dịch đất đều do server xác thực.
-          </p>
-        </div>
-        <div className="rounded-full border border-slate-200 px-3 py-1 text-[11px] text-slate-600">
-          Tick kế tiếp: 23:59:59
-        </div>
-      </div>
-
+    <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Tiền mặt"
@@ -190,88 +232,27 @@ export function CityPage() {
         />
       </div>
 
-      <Panel title="34 tỉnh & thành phố Việt Nam" borderColor="emerald">
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-6">
-          {(provinces ?? []).map((p, index) => {
-            const isHome = character?.birthplace === p.code;
-            // Vị trí hiện tại: anchor theo thứ tự tỉnh trong danh sách (giống server provinceAnchor).
-            const anchorX = (index % 16) * 2;
-            const anchorY = Math.floor(index / 16) * 6 + 2;
-            const isHere =
-              character != null &&
-              character.location?.x === anchorX &&
-              character.location?.y === anchorY;
-            const isBrowsing = activeProvince === p.code;
-            return (
-              <button
-                key={p.code}
-                type="button"
-                disabled={movingProvince === p.code}
-                onClick={() => void handleMoveProvince(p, index)}
-                className={`rounded-xl border px-2 py-1.5 text-center transition hover:brightness-105 disabled:opacity-60 ${
-                  isBrowsing
-                    ? 'border-sky-400 bg-sky-100 ring-2 ring-sky-300'
-                    : isHere
-                      ? 'border-emerald-400 bg-emerald-100 ring-2 ring-emerald-300'
-                      : isHome
-                        ? 'border-emerald-300 bg-emerald-50 ring-1 ring-emerald-200'
-                        : p.isCity
-                          ? 'border-amber-200 bg-amber-50/70'
-                          : 'border-slate-200 bg-white/60'
-                }`}
-                title={isHere ? 'Nơi ở hiện tại' : 'Nhấn để di chuyển'}
-              >
-                <div className="font-mono text-[10px] text-slate-400">{p.code}</div>
-                <div className="truncate text-xs font-semibold text-slate-800">{p.name}</div>
-                <div className="text-[10px] text-slate-500">
-                  {p.isCity ? '🏙 ' : ''}Miền {p.region}
-                </div>
-                {isHome && (
-                  <div className="text-[10px] font-bold text-emerald-700">Quê hương của bạn</div>
-                )}
-                {isHere && !isBrowsing && (
-                  <div className="text-[10px] font-bold text-emerald-700">Bạn đang ở đây</div>
-                )}
-                {isBrowsing && (
-                  <div className="text-[10px] font-bold text-sky-700">Bản đồ đang xem</div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-2 text-[11px] text-slate-500">
-          Nhấn vào một tỉnh/thành để di chuyển nơi ở hiện tại (nơi sinh trên CCCD vẫn cố định). Bản
-          đồ 2D bên dưới là thủ đô Hà Nội (mã 001) — trung tâm giao dịch.
-        </p>
-      </Panel>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="space-y-3">
-          {mapError && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-              Lỗi tải bản đồ tỉnh {activeProvince}: {String(mapError)}
-            </div>
-          )}
-          {/* Remount Canvas theo tỉnh để scene vẽ lại toàn bộ với địa giới mới. */}
-          <CityCanvas
-            key={activeProvince}
-            mapData={mapData ?? undefined}
-            onSelectPlot={handleSelectPlot}
-          />
-        </div>
-        <aside className="space-y-3">
-          <Panel title="Thông tin ô đất" borderColor="amber">
+      {/* 2 cột: trái = thanh ngang thông tin ô + bản đồ 2D, phải = menu tỉnh dọc */}
+      <div className="flex flex-1 min-h-0 gap-4">
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
+          {/* Thanh ngang: Thông tin ô đất (100% cột trái, trên bản đồ) */}
+          <div className="flex w-full flex-row items-center justify-between gap-3 rounded-lg border border-slate-100 bg-white px-4 py-3 shadow-sm">
             {selected ? (
-              <div className="space-y-3">
-                <div className="rounded-xl bg-slate-50 px-3 py-2">
-                  <div className="font-mono text-xs text-slate-500">Tọa độ ô</div>
-                  <div className="font-mono text-base font-bold text-slate-900">
+              <>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <span className="text-xs font-bold uppercase tracking-wide text-amber-600">
+                    Thông tin ô đất
+                  </span>
+                  <span className="font-mono font-bold text-slate-900">
                     [{selected.col}, {selected.row}]
-                  </div>
-                </div>
-                {selected.property ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
+                  </span>
+                  <span className="text-slate-600">
+                    {mapDto?.provinceName ??
+                      provinces?.find((p) => p.code === activeProvince)?.name ??
+                      activeProvince}
+                  </span>
+                  {selected.property && (
+                    <>
                       <span className="truncate font-semibold text-slate-900">
                         {selected.property.name}
                       </span>
@@ -287,70 +268,221 @@ export function CityPage() {
                         }`}
                       >
                         {selected.property.status === 'unowned'
-                          ? 'Chưa có chủ'
+                          ? 'Đất trống'
                           : selected.property.status === 'listed'
                             ? 'Đang bán'
                             : selected.property.isMine
                               ? 'Của bạn'
-                              : 'Đã sở hữu'}
+                              : 'Đã có công trình'}
                       </span>
-                    </div>
-                    <div className="flex justify-between rounded-lg bg-white/70 px-3 py-2">
-                      <span className="text-slate-600">Loại</span>
-                      <span className="font-semibold">{selected.property.type}</span>
-                    </div>
-                    <div className="flex justify-between rounded-lg bg-white/70 px-3 py-2">
-                      <span className="text-slate-600">Giá mua</span>
-                      <span className="font-mono font-bold text-emerald-700">
-                        {formatMoney(selected.property.purchasePriceMinor)}
+                      <span className="text-slate-600">
+                        Loại: <span className="font-semibold">{selected.property.type}</span>
                       </span>
-                    </div>
-                    {selected.property.askingPriceMinor != null && (
-                      <div className="flex justify-between rounded-lg bg-white/70 px-3 py-2">
-                        <span className="text-slate-600">Giá bán</span>
-                        <span className="font-mono font-bold text-amber-700">
-                          {formatMoney(selected.property.askingPriceMinor)}
+                      {selected.property.ownerCharacterId ? (
+                        <span className="text-slate-600">
+                          Chủ sở hữu: <span className="font-semibold">{ownerName}</span>
                         </span>
-                      </div>
-                    )}
-                    {(selected.property.status === 'unowned' ||
-                      selected.property.status === 'listed') &&
-                      !selected.property.isMine && (
-                        <div className="pt-1">
-                          <form onSubmit={handleBuy} className="flex gap-2">
-                            <button
-                              type="submit"
-                              disabled={purchasing}
-                              className="flex-1 rounded-xl bg-emerald-500 px-3 py-2.5 text-sm font-semibold text-white transition disabled:opacity-60 hover:brightness-105"
-                            >
-                              {purchasing ? 'Đang xử lý…' : 'Mua ngay'}
-                            </button>
-                          </form>
-                        </div>
+                      ) : (
+                        <>
+                          <span className="text-slate-600">
+                            Giá:{' '}
+                            <span className="font-mono font-bold text-emerald-700">
+                              {formatMoney(selected.property.purchasePriceMinor)}
+                            </span>
+                          </span>
+                          <span className="text-slate-600">
+                            Thuế/tháng:{' '}
+                            <span className="font-mono font-bold text-rose-600">
+                              {formatMoney(monthlyTax(selected.property.purchasePriceMinor))}
+                            </span>
+                          </span>
+                        </>
                       )}
-                    {purchaseError && <p className="text-[11px] text-rose-600">{purchaseError}</p>}
-                    {purchaseOk && (
-                      <p className="text-[11px] font-semibold text-emerald-600">{purchaseOk}</p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="rounded-xl bg-white/70 px-3 py-3 text-center text-[11px] text-slate-500">
-                    Không có bất động sản trên ô này.
-                    <br />
-                    Nhấn ô khác để xem chi tiết.
-                  </div>
+                      {selected.property.askingPriceMinor != null && (
+                        <span className="text-slate-600">
+                          Giá bán:{' '}
+                          <span className="font-mono font-bold text-amber-700">
+                            {formatMoney(selected.property.askingPriceMinor)}
+                          </span>
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {!selected.property &&
+                    (selected.landPriceMinor > 0 ? (
+                      <span className="text-slate-600">
+                        Giá:{' '}
+                        <span className="font-mono font-bold text-emerald-700">
+                          {formatMoney(selected.landPriceMinor)} đ
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">Ô đất hoang — chưa rao bán</span>
+                    ))}
+                  {purchaseError && (
+                    <span className="text-[11px] text-rose-600">{purchaseError}</span>
+                  )}
+                  {purchaseOk && (
+                    <span className="text-[11px] font-semibold text-emerald-600">{purchaseOk}</span>
+                  )}
+                </div>
+                {selected.property &&
+                  !selected.property.ownerCharacterId &&
+                  (selected.property.status === 'unowned' ||
+                    selected.property.status === 'listed') &&
+                  !selected.property.isMine && (
+                    <form onSubmit={handleBuy} className="shrink-0">
+                      <button
+                        type="submit"
+                        disabled={purchasing}
+                        className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-white shadow-md shadow-emerald-500/20 transition disabled:opacity-60 hover:brightness-105"
+                      >
+                        {purchasing ? 'Đang xử lý…' : 'Mua BĐS'}
+                      </button>
+                    </form>
+                  )}
+                {!selected.property && selected.landPriceMinor > 0 && (
+                  <button
+                    type="button"
+                    disabled={purchasing}
+                    onClick={() => setBuyLandOpen(true)}
+                    className="shrink-0 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-white shadow-md shadow-emerald-500/20 transition disabled:opacity-60 hover:brightness-105"
+                  >
+                    Mua Đất
+                  </button>
                 )}
-              </div>
+              </>
             ) : (
-              <div className="rounded-xl bg-white/70 px-3 py-8 text-center text-xs text-slate-500">
-                Nhấn vào một ô đất trên bản đồ
-                <br />
-                để xem thông tin chi tiết tại đây.
-              </div>
+              <p className="text-sm text-slate-500">
+                Nhấp vào một ô đất trên bản đồ 2D để xem thông tin và mua BĐS.
+              </p>
             )}
+          </div>
+
+          {mapError && (
+            <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              Lỗi tải bản đồ tỉnh {activeProvince}: {String(mapError)}
+            </div>
+          )}
+          {/* Bản đồ 2D Canvas 1000×1000 (zoom/pan) theo tỉnh */}
+          <MapCanvas2D
+            key={activeProvince}
+            mapData={mapData ?? undefined}
+            selected={selected ? { col: selected.col, row: selected.row } : null}
+            auctioningTile={auctioningTile}
+            onSelectPlot={handleSelectPlot}
+          />
+        </div>
+
+        <aside className="w-[340px] flex-shrink-0 h-full flex flex-col">
+          <Panel title="Chọn tỉnh / thành phố" borderColor="emerald">
+            <div className="max-h-[400px] space-y-0.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
+              {(provinces ?? []).map((p, index) => {
+                const isHome = character?.birthplace === p.code;
+                const anchorX = (index % 16) * 2;
+                const anchorY = Math.floor(index / 16) * 6 + 2;
+                const isHere =
+                  character != null &&
+                  character.location?.x === anchorX &&
+                  character.location?.y === anchorY;
+                const isBrowsing = activeProvince === p.code;
+                return (
+                  <button
+                    key={p.code}
+                    type="button"
+                    disabled={movingProvince === p.code}
+                    onClick={() => void handleMoveProvince(p, index)}
+                    className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-left transition hover:brightness-105 disabled:opacity-60 ${
+                      isBrowsing
+                        ? 'border-sky-400 bg-sky-100 ring-2 ring-sky-300'
+                        : isHere
+                          ? 'border-emerald-400 bg-emerald-100 ring-2 ring-emerald-300'
+                          : isHome
+                            ? 'border-emerald-300 bg-emerald-50 ring-1 ring-emerald-200'
+                            : p.isCity
+                              ? 'border-amber-200 bg-amber-50/70'
+                              : 'border-slate-200 bg-white/60'
+                    }`}
+                    title={isHere ? 'Nơi ở hiện tại' : 'Nhấn để di chuyển'}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] text-slate-400">{p.code}</span>
+                      <span className="truncate text-xs font-semibold text-slate-800">
+                        {p.name}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-0.5">
+                      <span className="text-[10px] text-slate-500">
+                        {p.isCity ? '🏙 ' : ''}Miền {p.region}
+                      </span>
+                      {isHome && (
+                        <span className="text-[9px] font-bold text-emerald-700">
+                          Quê hương của bạn
+                        </span>
+                      )}
+                      {isHere && !isBrowsing && (
+                        <span className="text-[9px] font-bold text-emerald-700">
+                          Bạn đang ở đây
+                        </span>
+                      )}
+                      {isBrowsing && (
+                        <span className="text-[9px] font-bold text-sky-700">Bản đồ đang xem</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-500">
+              Nhấn vào một tỉnh/thành để di chuyển nơi ở hiện tại (nơi sinh trên CCCD vẫn cố định).
+            </p>
           </Panel>
         </aside>
       </div>
+
+      <Modal open={buyLandOpen} onClose={() => setBuyLandOpen(false)} title="Xác nhận mua đất nền">
+        {selected && (
+          <>
+            <p className="text-sm text-slate-600">
+              Bạn sắp mua đất nền tại ô{' '}
+              <span className="font-mono font-bold text-slate-900">
+                [{selected.col}, {selected.row}]
+              </span>{' '}
+              —{' '}
+              {mapDto?.provinceName ??
+                provinces?.find((p) => p.code === activeProvince)?.name ??
+                activeProvince}
+              .
+            </p>
+            <div className="flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm">
+              <span className="text-slate-600">Đơn giá đất</span>
+              <span className="font-mono font-bold text-emerald-700">
+                {formatMoney(selected.landPriceMinor)} đ
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Số tiền sẽ trừ trực tiếp từ ví VNĐ của nhân vật. Hành động này không thể hoàn tác.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setBuyLandOpen(false)}
+                className="flex-1 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={purchasing}
+                onClick={() => void handleBuyLand()}
+                className="flex-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-emerald-500/20 transition disabled:opacity-60 hover:brightness-105"
+              >
+                {purchasing ? 'Đang xử lý…' : 'Xác nhận Mua Đất'}
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

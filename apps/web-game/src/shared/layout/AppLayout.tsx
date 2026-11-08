@@ -116,7 +116,7 @@ export function AppLayout() {
   }
 
   return (
-    <div className="relative flex min-h-screen bg-surface-50 text-slate-900 font-sans">
+    <div className="flex h-screen w-screen overflow-hidden bg-surface-50 text-slate-900 font-sans">
       <ChatWidget />
       {/* Overlay ánh sáng theo giờ/mùa */}
       <div
@@ -126,8 +126,8 @@ export function AppLayout() {
         )}
       />
 
-      {/* Sidebar */}
-      <aside className="relative z-30 hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white/80 px-4 py-6 backdrop-blur-xl lg:flex">
+      {/* Sidebar cố định bên trái */}
+      <aside className="w-64 h-full flex-shrink-0 flex flex-col bg-white border-r border-slate-200 px-4 py-6">
         <div className="px-2">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -144,7 +144,7 @@ export function AppLayout() {
           </div>
         </div>
 
-        <nav className="mt-6 flex flex-1 flex-col gap-1">
+        <nav className="mt-6 flex flex-1 min-h-0 flex-col gap-1 overflow-y-auto [scrollbar-width:thin]">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
@@ -195,10 +195,10 @@ export function AppLayout() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="relative z-30 flex min-w-0 flex-1 flex-col">
-        {/* Top HUD: ngày/tháng/năm, giờ, mùa, thời tiết, tiền bạc */}
-        <header className="flex min-h-16 flex-wrap items-center justify-between gap-y-2 border-b border-slate-200 bg-white/80 px-6 py-2 backdrop-blur-md">
+      {/* Phía phải: Topbar trên + Main Content dưới, chỉ Main tự cuộn */}
+      <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden">
+        {/* Topbar cố định */}
+        <header className="h-16 w-full flex-shrink-0 flex items-center justify-between gap-y-2 border-b border-slate-200 bg-white px-6">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-white px-3 py-1.5 border border-slate-200 shadow-sm">
               <span className="text-sm font-mono font-bold text-amber-600">
@@ -272,7 +272,8 @@ export function AppLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6">
+        {/* Main Content: chỉ vùng này tự cuộn khi trang dài */}
+        <main className="flex-1 w-full overflow-y-auto p-6">
           <Outlet />
         </main>
 

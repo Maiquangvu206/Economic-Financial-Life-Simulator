@@ -1,110 +1,10 @@
 import { PageHeader } from '@efls/ui';
-import { useState, useRef, useEffect, type WheelEvent } from 'react';
-import { formatCompact } from '../shared/lib/format';
+import { useEffect, useMemo, useState } from 'react';
+import { formatMoney } from '../shared/lib/format';
 import { adminRequest } from '../shared/api/httpClient';
-import type { MapDto, PutMapResponse, PutMapRequest } from '@efls/contracts';
-
-export type LayerMode = 'zones' | 'roads' | 'facilities';
-
-export const VIETNAM_ZONES = [
-  {
-    id: 'residential',
-    label: 'Đất ở (Khu dân cư)',
-    color: 'bg-emerald-600',
-    border: 'border-emerald-500',
-    basePrice: 45_000_000,
-  },
-  {
-    id: 'commercial',
-    label: 'Thương mại - Dịch vụ',
-    color: 'bg-blue-600',
-    border: 'border-blue-500',
-    basePrice: 120_000_000,
-  },
-  {
-    id: 'industrial',
-    label: 'Khu công nghiệp (KCN)',
-    color: 'bg-amber-600',
-    border: 'border-amber-500',
-    basePrice: 25_000_000,
-  },
-  {
-    id: 'civic',
-    label: 'Hành chính - Công cộng',
-    color: 'bg-purple-600',
-    border: 'border-purple-500',
-    basePrice: 80_000_000,
-  },
-  {
-    id: 'port',
-    label: 'Cảng biển & Logistics',
-    color: 'bg-cyan-600',
-    border: 'border-cyan-500',
-    basePrice: 60_000_000,
-  },
-  {
-    id: 'slum',
-    label: 'Khu tự phát / Xóm liều',
-    color: 'bg-rose-700',
-    border: 'border-rose-600',
-    basePrice: 12_000_000,
-  },
-  {
-    id: 'water',
-    label: 'Mặt nước (Sông/Hồ)',
-    color: 'bg-sky-500',
-    border: 'border-sky-400',
-    basePrice: 0,
-  },
-  {
-    id: 'park',
-    label: 'Công viên - Cây xanh',
-    color: 'bg-teal-500',
-    border: 'border-teal-400',
-    basePrice: 0,
-  },
-] as const;
-
-export const VIETNAM_ROADS = [
-  {
-    id: 'highway',
-    label: 'Đại lộ / Cao tốc (4-6 làn)',
-    color: 'bg-amber-400',
-    icon: '🛣️',
-    desc: 'Lưu lượng cực lớn, kết nối liên vùng',
-  },
-  {
-    id: 'arterial',
-    label: 'Đường trục chính đô thị',
-    color: 'bg-slate-300',
-    icon: '🚗',
-    desc: 'Đường phố lớn, 2-4 làn xe, thương mại sầm uất',
-  },
-  {
-    id: 'local',
-    label: 'Đường nội bộ / Ngõ phố',
-    color: 'bg-slate-500',
-    icon: '🛵',
-    desc: 'Ngõ ngách dân cư, tốc độ chậm',
-  },
-  {
-    id: 'bridge',
-    label: 'Cầu vượt / Cầu qua sông',
-    color: 'bg-orange-500',
-    icon: '🌉',
-    desc: 'Bắc qua sông hoặc nút giao khác mức',
-  },
-  {
-    id: 'none',
-    label: 'Xóa đường giao thông',
-    color: 'bg-rose-300',
-    icon: '❌',
-    desc: 'Không có đường đi qua ô này',
-  },
-] as const;
-
-export type ZoneId = (typeof VIETNAM_ZONES)[number]['id'];
-export type RoadId = (typeof VIETNAM_ROADS)[number]['id'];
+import { MapCanvas2D } from '../game/map/MapCanvas2D';
+import type { MapDto, ProvinceDto, PutMapResponse } from '@efls/contracts';
+import type { MapData } from '../game/map/MapData';
 
 interface ApiProblem {
   status?: number;
@@ -123,231 +23,190 @@ function errorMessage(caught: unknown): { status?: number; message: string } {
   return { message: String(caught ?? 'lỗi không xác định') };
 }
 
-interface CellData {
-  zone: ZoneId;
-  road?: RoadId;
-  pricePerM2: number;
-}
+type PriceMode = 'single' | 'radius';
 
+/** Các loại đất (zone) trong ma trận giá gốc: mốc giá khởi điểm cho đấu giá AI GM. */
+const ZONE_PRICE_ROWS: Array<{ id: string; label: string }> = [
+  { id: 'commercial', label: 'Trung tâm CBD / Thương mại' },
+  { id: 'residential', label: 'Đất dân cư' },
+  { id: 'industrial', label: 'Công nghiệp' },
+  { id: 'civic', label: 'Hành chính / Ngoại ô' },
+  { id: 'port', label: 'Cảng & ven biển' },
+  { id: 'slum', label: 'Ngoại ô / Tự phát' },
+  { id: 'park', label: 'Công viên / Đồi núi' },
+];
+
+/**
+ * Bảng quản trị giá đất nền (Land Price Setting).
+ * Admin chọn tỉnh + ô/tọa độ (hoặc bán kính) + nhập đơn giá đất gốc (base_land_price),
+ * rồi lưu trực tiếp vào map_nodes.land_price_minor qua PUT /api/v1/map.
+ * Người chơi click ô đất trên client sẽ thấy đúng mức giá này khi mua đất.
+ */
 export function MapEditorPage() {
-  const [editorMode, setEditorMode] = useState<LayerMode>('zones');
-  const [activeZone, setActiveZone] = useState<ZoneId>('residential');
-  const [activeRoad, setActiveRoad] = useState<RoadId>('arterial');
+  const [provinces, setProvinces] = useState<ProvinceDto[]>([]);
+  const [provinceCode, setProvinceCode] = useState('001');
+  const [map, setMap] = useState<MapDto | null>(null);
+  const [prices, setPrices] = useState<Record<string, number>>({});
 
-  const [gridCols, setGridCols] = useState(40);
-  const [gridRows, setGridRows] = useState(25);
-  const [inputCols, setInputCols] = useState('40');
-  const [inputRows, setInputRows] = useState('25');
+  const [mode, setMode] = useState<PriceMode>('single');
+  const [xInput, setXInput] = useState('0');
+  const [yInput, setYInput] = useState('0');
+  const [radiusInput, setRadiusInput] = useState('2');
+  const [basePriceInput, setBasePriceInput] = useState('50000000');
 
-  const [zoomLevel, setZoomLevel] = useState<number>(1);
-  const [cells, setCells] = useState<Record<string, CellData>>({});
-  const [customPrice, setCustomPrice] = useState<number>(45_000_000);
-  const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
-
-  // Phiên bản bản đồ từ server (dùng xử lý xung đột khi lưu đồng thời).
-  const [mapVersion, setMapVersion] = useState<number>(1);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [savedNotice, setSavedNotice] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Danh sách 34 tỉnh/thành cho dropdown.
+  useEffect(() => {
+    adminRequest<ProvinceDto[]>('/api/v1/characters/provinces')
+      .then(setProvinces)
+      .catch(() => setProvinces([]));
+  }, []);
 
-  const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY < 0 ? 0.15 : -0.15;
-      setZoomLevel((prev) => Math.min(2.5, Math.max(0.4, Number((prev + delta).toFixed(2)))));
-    }
-  };
-
-  const handleZoomIn = () => setZoomLevel((prev) => Math.min(2.5, Number((prev + 0.2).toFixed(1))));
-  const handleZoomOut = () =>
-    setZoomLevel((prev) => Math.max(0.4, Number((prev - 0.2).toFixed(1))));
-  const handleZoomReset = () => setZoomLevel(1);
-
-  /** Tải bản đồ từ server về trình chỉnh sửa. */
-  async function loadMap() {
+  async function loadMap(code: string = provinceCode) {
     setLoading(true);
-    setSaveError(null);
+    setError(null);
     try {
-      const map = await adminRequest<MapDto>('/api/v1/map');
-      setMapVersion(map.meta.version);
-      setGridCols(map.meta.cols);
-      setGridRows(map.meta.rows);
-      setInputCols(map.meta.cols.toString());
-      setInputRows(map.meta.rows.toString());
-
-      const nextCells: Record<string, CellData> = {};
-      const nodeIdToCoord = new Map<string, string>();
-      for (const node of map.nodes) {
-        const key = `${node.x}-${node.y}`;
-        nodeIdToCoord.set(node.id, key);
-        nextCells[key] = {
-          zone: node.zoneType,
-          pricePerM2: node.landPriceMinor,
-        };
+      const data = await adminRequest<MapDto>(
+        code === '001' ? '/api/v1/map' : `/api/v1/map?province=${code}`,
+      );
+      setMap(data);
+      const next: Record<string, number> = {};
+      for (const node of data.nodes) {
+        next[`${node.x}-${node.y}`] = node.landPriceMinor;
       }
-      for (const road of map.roads) {
-        const coord = nodeIdToCoord.get(road.nodeId);
-        if (coord && nextCells[coord]) {
-          nextCells[coord].road = road.roadType === 'none' ? undefined : road.roadType;
-        }
-      }
-      setCells(nextCells);
-      setSavedNotice(
-        `Đã tải bản đồ từ server (${map.nodes.length} ô, phiên bản ${map.meta.version}).`,
+      setPrices(next);
+      setNotice(
+        code === '001'
+          ? `Đã tải bảng giá đất (${data.nodes.length} ô, phiên bản ${data.meta.version}).`
+          : `Đã tải bản đồ ${data.provinceName ?? code} (sinh động, ${data.nodes.length} ô) — chỉ xem, chưa lưu được giá.`,
       );
     } catch (caught) {
-      const { message } = errorMessage(caught);
-      setSaveError(`Không tải được bản đồ: ${message}`);
+      setError(`Không tải được bản đồ: ${errorMessage(caught).message}`);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    void loadMap();
-  }, []);
+    void loadMap(provinceCode);
+  }, [provinceCode]);
 
-  const handleApplyGridSize = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cols = Math.min(100, Math.max(10, parseInt(inputCols, 10) || 40));
-    const rows = Math.min(60, Math.max(10, parseInt(inputRows, 10) || 25));
-    setGridCols(cols);
-    setGridRows(rows);
-    setInputCols(cols.toString());
-    setInputRows(rows.toString());
-  };
+  const x = Math.max(0, Number(xInput) || 0);
+  const y = Math.max(0, Number(yInput) || 0);
+  const radius = Math.max(0, Math.min(20, Number(radiusInput) || 0));
+  const basePrice = Math.max(0, Math.floor(Number(basePriceInput) || 0));
 
-  const [showZones, setShowZones] = useState(true);
-  const [showRoads, setShowRoads] = useState(true);
-
-  const handleCellClick = (key: string) => {
-    if (selectedCellKey === key) {
-      applyCurrentTool(key);
-    } else {
-      setSelectedCellKey(key);
+  /** Các ô bị ảnh hưởng bởi chế độ hiện tại (ô đơn hoặc bán kính). */
+  const affectedKeys = useMemo(() => {
+    if (!map) return [];
+    const keys: string[] = [];
+    for (const node of map.nodes) {
+      const dist = Math.sqrt((node.x - x) ** 2 + (node.y - y) ** 2);
+      if (mode === 'single' ? dist === 0 : dist <= radius) {
+        keys.push(`${node.x}-${node.y}`);
+      }
     }
-  };
+    return keys;
+  }, [map, mode, x, y, radius]);
 
-  const handleCellDoubleClick = (key: string) => {
-    applyCurrentTool(key);
-  };
+  function handleCellClick(cx: number, cy: number) {
+    setXInput(String(cx));
+    setYInput(String(cy));
+    setNotice(null);
+  }
 
-  const applyCurrentTool = (key: string) => {
-    setCells((prev) => {
-      const current = prev[key] || { zone: 'residential', pricePerM2: customPrice };
-      if (editorMode === 'zones') {
-        const defaultZone = VIETNAM_ZONES.find((z) => z.id === activeZone);
-        return {
-          ...prev,
-          [key]: {
-            ...current,
-            zone: activeZone,
-            pricePerM2: customPrice || defaultZone?.basePrice || 30_000_000,
-          },
-        };
+  /** Bản đồ 3D giống hệt client: đảo tròn R=100 + lưới ô 100×100 cắt tròn, riêng từng tỉnh. */
+  const mapData: MapData | undefined = useMemo(() => {
+    if (!map) return undefined;
+    return {
+      nodes: map.nodes,
+      roads: map.roads,
+      meta: map.meta,
+      provinceCode: map.provinceCode ?? provinceCode,
+      provinceName: map.provinceName ?? provinces.find((p) => p.code === provinceCode)?.name,
+      properties: [],
+    };
+  }, [map, provinceCode, provinces]);
+
+  const [zonePrices, setZonePrices] = useState<Record<string, string>>({
+    commercial: '120000000',
+    residential: '45000000',
+    industrial: '25000000',
+    civic: '80000000',
+    port: '60000000',
+    slum: '12000000',
+    park: '0',
+  });
+
+  /** Áp giá đất gốc theo loại đất: gán cho mọi ô thuộc zone đó (rồi Lưu CSDL). */
+  function handleApplyZonePrices() {
+    if (!map) return;
+    setPrices((prev) => {
+      const next = { ...prev };
+      for (const node of map.nodes) {
+        const zonePrice = Math.max(0, Math.floor(Number(zonePrices[node.zoneType] ?? '0') || 0));
+        next[`${node.x}-${node.y}`] = zonePrice;
       }
-      if (editorMode === 'roads') {
-        return {
-          ...prev,
-          [key]: {
-            ...current,
-            road: activeRoad === 'none' ? undefined : activeRoad,
-          },
-        };
-      }
-      return prev;
+      return next;
     });
-    setSelectedCellKey(key);
-  };
+    setNotice(
+      `Đã áp ma trận giá đất theo loại đất cho ${map.nodes.length} ô. Nhấn "Lưu CSDL" để AI GM dùng làm giá khởi điểm đấu giá.`,
+    );
+  }
 
-  /** Lưu bản đồ lên server, xử lý xung đột phiên bản (optimistic concurrency). */
-  async function handleSaveMap() {
-    if (saving) return;
+  /** Áp dụng giá vào các ô ảnh hưởng (chưa lưu DB). */
+  function handleApplyPreview() {
+    setPrices((prev) => {
+      const next = { ...prev };
+      for (const key of affectedKeys) next[key] = basePrice;
+      return next;
+    });
+    setNotice(
+      `Đã đặt giá ${formatMoney(basePrice)}/ô cho ${affectedKeys.length} ô (chưa lưu). Nhấn "Lưu CSDL" để ghi vào database.`,
+    );
+  }
+
+  /** Lưu toàn bộ bảng giá lên server (PUT /map, kiểm soát phiên bản). */
+  async function handleSave() {
+    if (!map || saving) return;
     setSaving(true);
-    setSaveError(null);
-
-    const nodes: PutMapRequest['nodes'] = [];
-    const roads: PutMapRequest['roads'] = [];
-    for (const [key, cell] of Object.entries(cells)) {
-      const [sx, sy] = key.split('-');
-      const x = Number(sx);
-      const y = Number(sy);
-      nodes.push({
-        x,
-        y,
-        zoneType: cell.zone,
-        landPriceMinor: cell.pricePerM2,
-        name: `Ô [${x},${y}]`,
-      });
-      if (cell.road) roads.push({ x, y, roadType: cell.road });
-    }
-
+    setError(null);
     try {
+      const nodes = Object.entries(prices).map(([key, landPriceMinor]) => {
+        const [nx, ny] = key.split('-').map(Number);
+        return { x: nx, y: ny, landPriceMinor };
+      });
       const result = await adminRequest<PutMapResponse>('/api/v1/map', {
         method: 'PUT',
-        body: JSON.stringify({ version: mapVersion, nodes, roads }),
+        body: JSON.stringify({ version: map.meta.version, nodes }),
       });
-      setMapVersion(result.version);
-      setSavedNotice(
-        `Đã lưu bản đồ lên server! Phiên bản mới: ${result.version} (${nodes.length} ô, ${roads.length} đường).`,
-      );
+      setMap({ ...map, meta: { ...map.meta, version: result.version } });
+      setNotice(`Đã lưu bảng giá đất vào CSDL! Phiên bản mới: ${result.version}.`);
     } catch (caught) {
       const { status, message } = errorMessage(caught);
-      if (status === 409) {
-        setSaveError(
-          'Bản đồ đã được người khác chỉnh sửa. Nhấn "Tải lại" để lấy bản mới rồi lưu lại.',
-        );
-      } else {
-        setSaveError(`Không lưu được bản đồ: ${message}`);
-      }
+      setError(
+        status === 409
+          ? 'Bản đồ đã được người khác cập nhật. Nhấn "Tải lại" rồi lưu lại.'
+          : `Không lưu được: ${message}`,
+      );
     } finally {
       setSaving(false);
     }
   }
 
-  const selectedCell = selectedCellKey ? cells[selectedCellKey] : null;
-  const currentRoadInfo = selectedCell?.road
-    ? VIETNAM_ROADS.find((r) => r.id === selectedCell.road)
-    : null;
-  const baseTilePx = Math.round(36 * zoomLevel);
+  const editable = provinceCode === '001';
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Map Editor & Bản đồ Quản trị"
-        description="Chỉnh sửa quy hoạch vùng đất, đường giao thông và đơn giá đất (VNĐ/m²). Thay đổi được lưu trực tiếp lên server với kiểm soát phiên bản."
+        title="Bảng giá đất nền — Land Price Setting"
+        description="Đặt đơn giá đất gốc (base_land_price) cho từng ô đất. Giá này được lưu trực tiếp vào database và dùng để hiển thị/tính giao dịch khi người chơi mua đất trên bản đồ."
         actions={
           <div className="flex items-center gap-3">
-            <div className="flex items-center bg-slate-100 border border-slate-300 rounded-xl p-1 text-xs">
-              <button
-                type="button"
-                onClick={handleZoomOut}
-                className="w-7 h-7 flex items-center justify-center font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-                title="Thu nhỏ (-)"
-              >
-                −
-              </button>
-              <button
-                type="button"
-                onClick={handleZoomReset}
-                className="px-2 font-mono font-bold text-amber-700 hover:bg-slate-100 rounded-lg text-xs"
-                title="Khôi phục 100%"
-              >
-                {Math.round(zoomLevel * 100)}%
-              </button>
-              <button
-                type="button"
-                onClick={handleZoomIn}
-                className="w-7 h-7 flex items-center justify-center font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-                title="Phóng to (+)"
-              >
-                +
-              </button>
-            </div>
-
             <button
               type="button"
               disabled={loading}
@@ -356,293 +215,209 @@ export function MapEditorPage() {
             >
               {loading ? 'Đang tải…' : 'Tải lại từ server'}
             </button>
-
             <button
               type="button"
-              disabled={saving}
-              onClick={handleSaveMap}
+              disabled={saving || !editable}
+              onClick={() => void handleSave()}
               className={`rounded-xl px-4 py-2 text-xs font-bold transition disabled:opacity-60 ${
                 saving
                   ? 'bg-amber-200 text-amber-900'
-                  : 'bg-amber-500 text-slate-900 hover:bg-amber-400 shadow-md shadow-amber-500/20'
+                  : 'bg-emerald-500 text-white hover:brightness-105 shadow-md shadow-emerald-500/20'
               }`}
             >
-              {saving ? 'Đang lưu…' : 'Lưu bản đồ lên server'}
+              {saving ? 'Đang lưu…' : 'Lưu CSDL'}
             </button>
-
-            <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
-              Phiên bản: {mapVersion}
-            </span>
+            {map && (
+              <span className="hidden font-mono text-[10px] text-slate-500 sm:inline">
+                Phiên bản: {map.meta.version}
+              </span>
+            )}
           </div>
         }
       />
 
-      {saveError && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-xs font-semibold text-rose-700 flex items-center gap-2">
-          ⚠️ {saveError}
+      {error && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-xs font-semibold text-rose-700">
+          ⚠️ {error}
         </div>
       )}
-
-      {savedNotice && (
+      {notice && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs font-semibold text-emerald-700">
-          ✓ {savedNotice}
+          ✓ {notice}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/80 p-3.5">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-700">Chế độ:</span>
-          <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-200 text-xs">
-            <button
-              type="button"
-              onClick={() => setEditorMode('zones')}
-              className={`rounded-lg px-3 py-1.5 font-bold transition flex items-center gap-1.5 ${
-                editorMode === 'zones'
-                  ? 'bg-amber-500 text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span>🏙️</span>
-              <span>1. Quy hoạch Vùng</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditorMode('roads')}
-              className={`rounded-lg px-3 py-1.5 font-bold transition flex items-center gap-1.5 ${
-                editorMode === 'roads'
-                  ? 'bg-amber-500 text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span>🛣️</span>
-              <span>2. Mạng lưới Giao thông</span>
-            </button>
-          </div>
+      {/* Ma trận giá đất gốc theo loại đất (base land price matrix) */}
+      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-slate-800">
+            Ma trận giá đất gốc theo loại đất (base_land_price)
+          </h2>
+          <span className="text-[11px] text-slate-500">
+            AI GM căn cứ mốc này tính Giá Khởi Điểm các phiên đấu giá.
+          </span>
         </div>
-
-        <form
-          onSubmit={handleApplyGridSize}
-          className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs"
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {ZONE_PRICE_ROWS.map((row) => (
+            <label key={row.id} className="flex flex-col gap-1 text-xs">
+              <span className="font-semibold text-slate-700">{row.label}</span>
+              <input
+                type="number"
+                min="0"
+                step="1000000"
+                value={zonePrices[row.id] ?? '0'}
+                disabled={!editable}
+                onChange={(e) =>
+                  setZonePrices((prev) => ({ ...prev, [row.id]: e.target.value }))
+                }
+                className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-mono font-bold text-emerald-700 focus:border-emerald-500 focus:outline-none disabled:opacity-60"
+              />
+              <span className="font-mono text-[10px] text-slate-500">
+                VNĐ / ô ({formatMoney(Number(zonePrices[row.id] ?? '0') || 0)})
+              </span>
+            </label>
+          ))}
+        </div>
+        <button
+          type="button"
+          disabled={!editable}
+          onClick={handleApplyZonePrices}
+          className="mt-3 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-emerald-500/20 transition disabled:opacity-60 hover:brightness-105"
         >
-          <span className="font-semibold text-amber-700">Kích thước Map:</span>
-          <div className="flex items-center gap-1 font-mono">
-            <input
-              type="number"
-              min="10"
-              max="100"
-              value={inputCols}
-              onChange={(e) => setInputCols(e.target.value)}
-              className="w-12 rounded-lg border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-center text-slate-900 focus:border-amber-500 focus:outline-none"
-            />
-            <span className="text-slate-500">x</span>
-            <input
-              type="number"
-              min="10"
-              max="60"
-              value={inputRows}
-              onChange={(e) => setInputRows(e.target.value)}
-              className="w-12 rounded-lg border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-center text-slate-900 focus:border-amber-500 focus:outline-none"
-            />
-          </div>
-          <button
-            type="submit"
-            className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-amber-700 hover:bg-slate-200 transition"
-          >
-            Áp dụng
-          </button>
-        </form>
-
-        <div className="flex items-center gap-2 text-xs">
-          <span className="font-semibold text-slate-600">Lớp:</span>
-          <button
-            type="button"
-            onClick={() => setShowZones(!showZones)}
-            className={`rounded-lg px-2.5 py-1 font-medium transition ${
-              showZones
-                ? 'bg-emerald-100 text-emerald-700 border border-emerald-500/50'
-                : 'bg-slate-100 text-slate-500 border border-slate-300 line-through'
-            }`}
-          >
-            Vùng đất
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowRoads(!showRoads)}
-            className={`rounded-lg px-2.5 py-1 font-medium transition ${
-              showRoads
-                ? 'bg-amber-100 text-amber-700 border border-amber-500/50'
-                : 'bg-slate-100 text-slate-500 border border-slate-300 line-through'
-            }`}
-          >
-            Giao thông
-          </button>
-        </div>
-
-        {editorMode === 'zones' && (
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-600">Đơn giá đất:</span>
-            <input
-              type="number"
-              step="1000000"
-              value={customPrice}
-              onChange={(e) => setCustomPrice(Number(e.target.value))}
-              className="w-32 rounded-xl border border-slate-300 bg-slate-50 px-3 py-1 font-mono text-emerald-700 text-right font-bold focus:border-amber-500 focus:outline-none"
-            />
-            <span className="text-slate-600 text-[11px] font-mono">
-              ({formatCompact(customPrice)}/m²)
-            </span>
-          </div>
-        )}
-
-        <div className="text-[11px] text-slate-500 font-mono">
-          Kích thước:{' '}
-          <b>
-            {gridCols} x {gridRows}
-          </b>{' '}
-          ({gridCols * gridRows} ô) · Giữ Ctrl + Cuộn chuột để Zoom
-        </div>
+          Áp ma trận giá theo loại đất
+        </button>
       </div>
 
-      {editorMode === 'zones' ? (
-        <div className="flex flex-wrap items-center gap-2 p-1">
-          {VIETNAM_ZONES.map((zone) => (
+      {/* Form: chọn tỉnh + vùng + giá đất */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleApplyPreview();
+        }}
+        className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white/80 p-4"
+      >
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-slate-700">Thành phố / Tỉnh thành</span>
+          <select
+            value={provinceCode}
+            onChange={(e) => setProvinceCode(e.target.value)}
+            className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-semibold text-slate-900 focus:border-emerald-500 focus:outline-none"
+          >
+            {(provinces.length > 0
+              ? provinces
+              : [{ code: '001', name: 'Thành phố Hà Nội', region: 'Bắc', isCity: true }]
+            ).map((p) => (
+              <option key={p.code} value={p.code}>
+                {p.code} — {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-slate-700">Phạm vi áp giá</span>
+          <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1">
             <button
-              key={zone.id}
               type="button"
-              onClick={() => {
-                setActiveZone(zone.id);
-                setCustomPrice(zone.basePrice);
-              }}
-              className={`flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold transition border ${
-                activeZone === zone.id
-                  ? 'border-amber-300 bg-amber-50 text-amber-700 shadow-md ring-1 ring-amber-400'
-                  : 'border-slate-200 bg-white/70 text-slate-600 hover:text-slate-800 hover:border-slate-300'
+              onClick={() => setMode('single')}
+              className={`rounded-lg px-3 py-1.5 font-bold transition ${
+                mode === 'single'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span className={`w-3.5 h-3.5 rounded-full ${zone.color} border border-white/20`} />
-              <span>{zone.label}</span>
+              🎯 Ô đơn [X, Y]
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setMode('radius')}
+              className={`rounded-lg px-3 py-1.5 font-bold transition ${
+                mode === 'radius'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              ⭕ Bán kính (Radius)
+            </button>
+          </div>
         </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2 p-1">
-          {VIETNAM_ROADS.map((road) => (
-            <button
-              key={road.id}
-              type="button"
-              onClick={() => setActiveRoad(road.id as RoadId)}
-              className={`flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold transition border ${
-                activeRoad === road.id
-                  ? 'border-amber-400 bg-amber-50 text-amber-700 shadow-md ring-1 ring-amber-400'
-                  : 'border-slate-200 bg-white/70 text-slate-600 hover:text-slate-800 hover:border-slate-300'
-              }`}
-            >
-              <span className="text-sm">{road.icon}</span>
-              <span>{road.label}</span>
-            </button>
-          ))}
+
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-slate-700">Tọa độ X</span>
+          <input
+            type="number"
+            min="0"
+            value={xInput}
+            onChange={(e) => setXInput(e.target.value)}
+            className="w-20 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-slate-900 focus:border-emerald-500 focus:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-slate-700">Tọa độ Y</span>
+          <input
+            type="number"
+            min="0"
+            value={yInput}
+            onChange={(e) => setYInput(e.target.value)}
+            className="w-20 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-slate-900 focus:border-emerald-500 focus:outline-none"
+          />
+        </label>
+        {mode === 'radius' && (
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-semibold text-slate-700">Bán kính</span>
+            <input
+              type="number"
+              min="0"
+              max="20"
+              value={radiusInput}
+              onChange={(e) => setRadiusInput(e.target.value)}
+              className="w-20 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-slate-900 focus:border-emerald-500 focus:outline-none"
+            />
+          </label>
+        )}
+
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-slate-700">
+            Đơn giá đất gốc (base_land_price, VNĐ)
+          </span>
+          <input
+            type="number"
+            min="0"
+            step="1000000"
+            value={basePriceInput}
+            onChange={(e) => setBasePriceInput(e.target.value)}
+            className="w-44 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-mono font-bold text-emerald-700 focus:border-emerald-500 focus:outline-none"
+          />
+        </label>
+
+        <button
+          type="submit"
+          disabled={!editable}
+          className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition disabled:opacity-60 hover:brightness-125"
+        >
+          Áp dụng vào {affectedKeys.length} ô
+        </button>
+      </form>
+
+      {!editable && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs font-semibold text-amber-800">
+          Bản đồ có thể lưu giá trong CSDL hiện chỉ gồm Thành phố Hà Nội (001). Tỉnh/thành khác đang
+          dùng bản đồ địa giới sinh động, chưa hỗ trợ lưu giá đất.
         </div>
       )}
 
-      <div className="relative rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl overflow-hidden">
-        <div
-          ref={containerRef}
-          onWheel={handleWheel}
-          className="relative overflow-auto max-h-[660px] p-5 select-none"
-          style={{ scrollbarWidth: 'thin' }}
-        >
-          <div
-            className="inline-grid gap-1 transition-all duration-100 ease-out"
-            style={{
-              gridTemplateColumns: `repeat(${gridCols}, ${baseTilePx}px)`,
-            }}
-          >
-            {Array.from({ length: gridCols * gridRows }, (_, index) => {
-              const x = index % gridCols;
-              const y = Math.floor(index / gridCols);
-              const key = `${x}-${y}`;
-              const cell = cells[key];
-              const zoneInfo = VIETNAM_ZONES.find((z) => z.id === cell?.zone);
-              const roadInfo = cell?.road ? VIETNAM_ROADS.find((r) => r.id === cell.road) : null;
-              const isSelected = selectedCellKey === key;
-
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => handleCellClick(key)}
-                  onDoubleClick={() => handleCellDoubleClick(key)}
-                  style={{ width: `${baseTilePx}px`, height: `${baseTilePx}px` }}
-                  className={`relative rounded-[3px] transition-all border text-[9px] flex items-center justify-center font-mono overflow-hidden ${
-                    cell && showZones
-                      ? `${zoneInfo?.color || 'bg-slate-100'} ${zoneInfo?.border || 'border-slate-300'} text-white`
-                      : 'bg-slate-100 border-slate-200/80 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-                  } ${isSelected ? 'ring-2 ring-amber-400 z-20 scale-105 shadow-lg shadow-amber-400/30' : ''}`}
-                  title={`[${x}, ${y}] | ${zoneInfo?.label || 'Đất trống'} | ${roadInfo ? `Đường: ${roadInfo.label}` : 'Chưa có đường'} | ${cell ? formatCompact(cell.pricePerM2) : '0'}/m²`}
-                >
-                  {cell?.road && showRoads && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                      {cell.road === 'highway' && (
-                        <div className="w-full h-2.5 bg-amber-400 border-y border-amber-600 flex items-center justify-center shadow-md">
-                          <div className="w-full border-t border-dashed border-slate-200 h-0" />
-                        </div>
-                      )}
-                      {cell.road === 'arterial' && (
-                        <div className="w-full h-2 bg-slate-300 border-y border-slate-500 shadow-sm" />
-                      )}
-                      {cell.road === 'local' && (
-                        <div className="w-full h-1 bg-slate-500/90 rounded-sm" />
-                      )}
-                      {cell.road === 'bridge' && (
-                        <div className="w-full h-2.5 bg-orange-600 border-y-2 border-orange-300 flex items-center justify-center">
-                          <span className="text-[6px] text-white font-black leading-none">CẦU</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {zoomLevel >= 0.8 && (
-                    <span className="opacity-40 text-[7px] pointer-events-none relative z-10 leading-none">
-                      {x},{y}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 text-xs text-slate-700 flex flex-wrap items-center justify-between gap-4">
-        {selectedCellKey ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="font-bold text-amber-700 font-mono">Tọa độ: [{selectedCellKey}]</span>
-            <span className="text-slate-600">|</span>
-            <span>
-              Quy hoạch:{' '}
-              <b className="text-slate-900">
-                {selectedCell
-                  ? VIETNAM_ZONES.find((z) => z.id === selectedCell.zone)?.label
-                  : 'Đất trống'}
-              </b>
-            </span>
-            <span className="text-slate-600">|</span>
-            <span>
-              Giao thông:{' '}
-              <b className={currentRoadInfo ? 'text-amber-700' : 'text-slate-500'}>
-                {currentRoadInfo ? `${currentRoadInfo.icon} ${currentRoadInfo.label}` : 'Không'}
-              </b>
-            </span>
-            <span className="text-slate-600">|</span>
-            <span>
-              Đơn vị giá:{' '}
-              <b className="text-emerald-600 font-mono">
-                {selectedCell ? formatCompact(selectedCell.pricePerM2) : '0 ₫'}/m²
-              </b>
-            </span>
-          </div>
-        ) : (
-          <div className="text-slate-500">Chưa chọn ô đất nào.</div>
-        )}
+      {/* Bản đồ 2D theo tỉnh (chấm đỏ = ô có BĐS, viền vàng = tâm đang chọn) */}
+      <div className="space-y-2">
+        <MapCanvas2D
+          key={provinceCode}
+          mapData={mapData}
+          selected={{ col: x, row: y }}
+          onSelectPlot={(col, row) => handleCellClick(col, row)}
+        />
+        <p className="text-[11px] text-slate-500">
+          Nhấn vào một ô đất trên bản đồ 2D để chọn tọa độ [X, Y] tâm. Nhấn "Áp dụng" để đặt giá cho{' '}
+          {affectedKeys.length} ô theo phạm vi, sau đó nhấn "Lưu CSDL" để ghi bảng giá vào database.
+        </p>
       </div>
     </div>
   );

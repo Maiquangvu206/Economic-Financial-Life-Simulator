@@ -4,6 +4,7 @@ import { requireCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_MARKET_ID } from '../../shared/ledger/ledger.service.js';
 import { type PropertyDto, type RealEstateOverviewDto, MoneySchema } from '@efls/contracts';
 import { realEstateRepository } from './real-estate.repository.js';
+import { mapRepository } from '../map/map.repository.js';
 
 function money(amount: number) {
   return MoneySchema.parse({ amount, currency: 'VND' });
@@ -92,6 +93,57 @@ export class RealEstateService {
       const updated = await this.repository.findById(propertyId, client);
       if (!updated) throw new Error('Bất động sản biến mất trong khi mua');
       return toPropertyDto(updated, character.id);
+    });
+  }
+
+  /**
+   * Mua đất nền trên ô đất trống theo tọa độ (bản đồ Hà Nội 001).
+   * Giá = land_price_minor do admin đặt; ô chưa có giá (0) hoặc vùng nước/công viên → không bán.
+   */
+  async buyLand(userId: string, x: number, y: number): Promise<PropertyDto> {
+    return withTransaction(async (client) => {
+      const character = await requireCharacterByUserId(client, userId);
+      const node = await mapRepository.findNodeByCoord(client, x, y);
+      if (!node) throw AppError.notFound('Ô đất');
+      if (node.zoneType === 'water' || node.zoneType === 'park') {
+        throw AppError.badRequest('Ô đất này thuộc vùng công cộng, không được mua.');
+      }
+      const price = Number(node.landPriceMinor);
+      if (price <= 0) {
+        throw AppError.badRequest('Ô đất này chưa được rao bán.');
+      }
+      const existing = await this.repository.findPropertyByNodeId(client, node.id);
+      if (existing) {
+        throw AppError.conflict(
+          'property_exists',
+          'Ô đất này đã có bất động sản. Hãy mua thông qua danh sách bất động sản.',
+        );
+      }
+
+      const cash = toMinor(character.cash_minor);
+      if (cash < price) {
+        throw AppError.conflict('insufficient_funds', 'Không đủ tiền mặt để mua ô đất này.');
+      }
+
+      await ledger.transfer(client, {
+        from: { ownerType: 'character', ownerId: character.id },
+        to: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
+        amountMinor: price,
+        kind: 'property_purchase',
+        description: `Mua đất nền ô [${x},${y}]`,
+        referenceType: 'property',
+        referenceId: node.id,
+      });
+
+      const propertyId = await this.repository.createLandProperty(client, {
+        nodeId: node.id,
+        ownerCharacterId: character.id,
+        priceMinor: price,
+        name: node.name,
+      });
+      const created = await this.repository.findById(propertyId, client);
+      if (!created) throw new Error('Bất động sản biến mất trong khi mua đất');
+      return toPropertyDto(created, character.id);
     });
   }
 

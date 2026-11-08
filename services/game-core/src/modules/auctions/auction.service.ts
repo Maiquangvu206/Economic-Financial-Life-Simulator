@@ -123,17 +123,43 @@ export class AuctionService {
     });
   }
   async endAuction(userId: string, auctionId: string): Promise<AuctionDto> {
-    return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
-      const auction = await this.repository.getAuction(auctionId);
-      if (!auction) throw AppError.notFound('Auction');
-      if (auction.status !== 'open') {
+    await withTransaction(async (client) => {
+      await requireCharacterByUserId(client, userId);
+      const row = await this.repository.getAuction(auctionId);
+      if (!row) throw AppError.notFound('Auction');
+      if (row.status !== 'open') {
         throw AppError.badRequest('Phiên đấu giá không ở trạng thái mở.');
       }
+      await this.settleAuction(client, row);
+    });
+    const dto = await this.repository.getAuction(auctionId);
+    if (!dto) throw new Error('Auction disappeared after end');
+    return toAuctionDto(dto, '');
+  }
 
-      const winner = await this.repository.endAuction(client, auctionId);
+  /**
+   * Tự kết thúc mọi phiên đã hết hạn (Countdown = 0) — chạy định kỳ bởi hệ thống.
+   * Người thắng: trừ ví (escrow → người bán) + chuyển owner_id + vào BĐS của họ.
+   */
+  async autoEndExpiredAuctions(now: Date = new Date()): Promise<number> {
+    const expired = await this.repository.listExpiredOpenAuctions(now);
+    for (const auction of expired) {
+      await withTransaction(async (client) => {
+        await this.settleAuction(client, auction);
+      });
+    }
+    return expired.length;
+  }
 
-      if (winner.winnerId && Number(auction.currentBidMinor) > 0) {
+  /** Quyết toán một phiên: escrow → người bán, chuyển chủ sở hữu, thông báo. */
+  private async settleAuction(
+    client: Parameters<Parameters<typeof withTransaction>[0]>[0],
+    auction: NonNullable<Awaited<ReturnType<typeof auctionRepository.getAuction>>>,
+  ): Promise<void> {
+    const auctionId = auction.id;
+    const winner = await this.repository.endAuction(client, auctionId);
+
+    if (winner.winnerId && Number(auction.currentBidMinor) > 0) {
         // Chuyển tiền từ escrow đến người bán.
         await ledger.transfer(client, {
           from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
@@ -186,11 +212,6 @@ export class AuctionService {
           payload: { auctionId, propertyId: auction.propertyId },
         });
       }
-
-      const dto = await this.repository.getAuction(auctionId);
-      if (!dto) throw new Error('Auction disappeared after end');
-      return toAuctionDto(dto, character.id);
-    });
   }
 
   /** Hủy phiên đấu giá và hoàn trả toàn bộ tiền escrow (chỉ admin). */

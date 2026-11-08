@@ -9,6 +9,8 @@ export const PropertyTypeSchema = z.enum([
   'office',
   'warehouse',
   'port_berth',
+  /** Đất nền mua trực tiếp trên ô đất trống (giá do admin đặt). */
+  'land',
 ]);
 export type PropertyType = z.infer<typeof PropertyTypeSchema>;
 
@@ -44,6 +46,13 @@ export type RealEstateOverviewDto = z.infer<typeof RealEstateOverviewDtoSchema>;
 
 export const BuyPropertyRequestSchema = z.object({ propertyId: IdSchema });
 export type BuyPropertyRequest = z.infer<typeof BuyPropertyRequestSchema>;
+
+/** POST /api/v1/real-estate/buy-land — mua đất nền trên ô đất trống (theo tọa độ bản đồ Hà Nội). */
+export const BuyLandRequestSchema = z.object({
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+});
+export type BuyLandRequest = z.infer<typeof BuyLandRequestSchema>;
 
 export const ListPropertyRequestSchema = z.object({
   propertyId: IdSchema,

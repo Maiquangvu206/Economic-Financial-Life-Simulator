@@ -120,6 +120,17 @@ export class MapRepository {
     for (const row of result.rows) map.set(`${row.x}-${row.y}`, row.id);
     return map;
   }
+
+  /** Tìm ô bản đồ theo tọa độ (kèm giá đất đang đặt). */
+  async findNodeByCoord(db: Db, x: number, y: number): Promise<MapNodeRow | null> {
+    const result = await db.query<MapNodeRow>(
+      `SELECT id, x, y, zone_type AS "zoneType", name,
+              land_price_minor AS "landPriceMinor"
+       FROM map_nodes WHERE x = $1 AND y = $2`,
+      [x, y],
+    );
+    return result.rows[0] ?? null;
+  }
 }
 
 export const mapRepository = new MapRepository();

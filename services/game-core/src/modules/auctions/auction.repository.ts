@@ -145,6 +145,30 @@ export class AuctionRepository {
   }
 
   /** Kết thúc phiên đấu giá: chuyển chủ sở hữu proprietà nếu có Bid. */
+  /** Các phiên đấu giá đã hết hạn (ends_at ≤ mốc) vẫn đang mở — để tự kết thúc. */
+  async listExpiredOpenAuctions(now: Date): Promise<AuctionRow[]> {
+    const result = await this.db.query<AuctionRow>(
+      `SELECT a.id, a.property_id AS "propertyId", m.name AS "propertyName",
+              a.seller_character_id AS "sellerCharacterId",
+              c.full_name AS "sellerName",
+              a.starting_price_minor AS "startingPriceMinor",
+              a.current_bid_minor AS "currentBidMinor",
+              a.highest_bidder_id AS "highestBidderId",
+              cb.full_name AS "highestBidderName",
+              a.ends_at AS "endsAt", a.status, a.created_at AS "createdAt",
+              a.updated_at AS "updatedAt"
+       FROM auctions a
+       JOIN properties p ON p.id = a.property_id
+       JOIN map_nodes m ON m.id = p.node_id
+       JOIN characters c ON c.id = a.seller_character_id
+       LEFT JOIN characters cb ON cb.id = a.highest_bidder_id
+       WHERE a.status = 'open' AND a.ends_at <= $1
+       ORDER BY a.ends_at ASC`,
+      [now],
+    );
+    return result.rows;
+  }
+
   async endAuction(db: Db, auctionId: string): Promise<{ winnerId: string | null }> {
     const result = await db.query<{ highest_bidder_id: string | null }>(
       `UPDATE auctions SET status = 'ended', updated_at = now()

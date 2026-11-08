@@ -4,6 +4,7 @@ import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import { RealEstateController } from './real-estate.controller.js';
 import {
+  BuyLandRequestSchema,
   BuyPropertyRequestSchema,
   ListPropertyRequestSchema,
   RentPropertyRequestSchema,
@@ -21,6 +22,12 @@ realEstateRouter.post(
   '/buy',
   validateBody(BuyPropertyRequestSchema),
   asyncHandler(controller.buyProperty),
+);
+
+realEstateRouter.post(
+  '/buy-land',
+  validateBody(BuyLandRequestSchema),
+  asyncHandler(controller.buyLand),
 );
 
 realEstateRouter.post(

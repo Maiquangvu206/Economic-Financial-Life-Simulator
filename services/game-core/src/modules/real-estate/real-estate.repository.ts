@@ -92,6 +92,45 @@ export class RealEstateRepository {
     return Number(result.rows[0]?.count ?? 0) > 0;
   }
 
+  /** Có bất động sản nào trên ô bản đồ này không (để tránh tạo trùng khi mua đất). */
+  async findPropertyByNodeId(db: Db, nodeId: string): Promise<PropertyRow | null> {
+    const result = await db.query<PropertyRow>(
+      `SELECT p.id, p.node_id AS "nodeId", m.name AS "nodeName", m.x AS "nodeX", m.y AS "nodeY",
+              m.zone_type AS "nodeZoneType",
+              p.owner_character_id AS "ownerCharacterId", p.owner_company_id AS "ownerCompanyId",
+              p.property_type AS "propertyType", p.purchase_price_minor AS "purchasePriceMinor",
+              p.current_value_minor AS "currentValueMinor",
+              p.monthly_rent_minor AS "monthlyRentMinor",
+              p.asking_price_minor AS "askingPriceMinor",
+              p.status, p.created_at AS "createdAt", p.updated_at AS "updatedAt"
+       FROM properties p
+       JOIN map_nodes m ON p.node_id = m.id
+       WHERE p.node_id = $1`,
+      [nodeId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /** Tạo bất động sản đất nền đã thuộc về người mua ngay trong cùng giao dịch. */
+  async createLandProperty(
+    client: Db,
+    input: {
+      nodeId: string;
+      ownerCharacterId: string;
+      priceMinor: number;
+      name: string;
+    },
+  ): Promise<string> {
+    const result = await client.query<{ id: string }>(
+      `INSERT INTO properties (id, node_id, owner_character_id, property_type,
+              purchase_price_minor, current_value_minor, monthly_rent_minor, status)
+       VALUES (gen_random_uuid(), $1, $2, 'land', $3, $3, 0, 'owned')
+       RETURNING id`,
+      [input.nodeId, input.ownerCharacterId, input.priceMinor],
+    );
+    return result.rows[0]!.id;
+  }
+
   async buy(client: Db, propertyId: string, buyerCharacterId: string): Promise<void> {
     await client.query(
       `UPDATE properties
