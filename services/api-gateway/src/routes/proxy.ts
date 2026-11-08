@@ -34,6 +34,14 @@ export function coreProxy(mountPath = '') {
           proxyReq.setHeader('x-request-id', String(original.id));
         }
 
+        // express.json trên gateway đã parse body thành object. fixRequestBody
+        // ghi lại body dưới dạng JSON nhưng không thiết lập Content-Type, khiến
+        // core nhận dạng sai (text/plain) và không parse req.body. Thiết lập
+        // Content-Type trước khi fixRequestBody ghi body.
+        if (original.body && typeof original.body === 'object') {
+          proxyReq.setHeader('content-type', 'application/json');
+        }
+
         fixRequestBody(proxyReq, original);
       },
       error: (_error, _req, res) => {

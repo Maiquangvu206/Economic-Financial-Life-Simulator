@@ -4,14 +4,15 @@ import type { MapRoad } from '../map/MapData';
 
 const TILE = 48;
 
-const ROAD_STYLE: Record<string, { color: number; alpha: number; lineWidth: number }> = {
-  arterial: { color: 0x34d399, alpha: 0.9, lineWidth: 6 },
-  collector: { color: 0x94a3b8, alpha: 0.9, lineWidth: 4 },
-  local: { color: 0xcbd5e1, alpha: 1, lineWidth: 3 },
+const ROAD_STYLE: Record<string, { color: number; alpha: number }> = {
+  highway: { color: 0xfbbf24, alpha: 0.95 },
+  arterial: { color: 0x34d399, alpha: 0.9 },
+  local: { color: 0xcbd5e1, alpha: 0.85 },
+  bridge: { color: 0xfdba74, alpha: 0.9 },
 };
 
 export class RoadLayer extends LayerBase {
-  private roads: Phaser.GameObjects.Line[] = [];
+  private roads: Phaser.GameObjects.Rectangle[] = [];
 
   constructor(scene: Phaser.Scene) {
     super(scene, 'RoadLayer');
@@ -26,29 +27,26 @@ export class RoadLayer extends LayerBase {
     const { roads, nodePos } = data;
 
     for (const road of roads) {
-      const from = nodePos(road.fromNodeId);
-      const to = nodePos(road.toNodeId);
-      if (!from || !to) continue;
+      if (road.roadType === 'none') continue;
+      const pos = nodePos(road.nodeId);
+      if (!pos) continue;
 
-      const style = ROAD_STYLE[road.type] ?? ROAD_STYLE.local;
+      const style = ROAD_STYLE[road.roadType];
       if (!style) continue;
 
-      const line = this.scene.add
-        .line(
-          from.x * TILE + TILE / 2,
-          from.y * TILE + TILE / 2,
-          to.x * TILE + TILE / 2,
-          to.y * TILE + TILE / 2,
-          0,
-          0,
+      const roadTile = this.scene.add
+        .rectangle(
+          pos.x * TILE + TILE / 2,
+          pos.y * TILE + TILE / 2,
+          TILE - 4,
+          TILE - 4,
           style.color,
         )
         .setOrigin(0.5, 0.5)
-        .setLineWidth(style.lineWidth)
         .setAlpha(style.alpha);
 
-      this.container.add(line);
-      this.roads.push(line);
+      this.container.add(roadTile);
+      this.roads.push(roadTile);
     }
   }
 

@@ -45,8 +45,14 @@ export type RealEstateOverviewDto = z.infer<typeof RealEstateOverviewDtoSchema>;
 export const BuyPropertyRequestSchema = z.object({ propertyId: IdSchema });
 export type BuyPropertyRequest = z.infer<typeof BuyPropertyRequestSchema>;
 
-export const ListPropertyRequestSchema = z.object({ askingPrice: MoneySchema });
+export const ListPropertyRequestSchema = z.object({
+  propertyId: IdSchema,
+  askingPrice: MoneySchema,
+});
 export type ListPropertyRequest = z.infer<typeof ListPropertyRequestSchema>;
 
-export const RentPropertyRequestSchema = z.object({ propertyId: IdSchema });
+export const RentPropertyRequestSchema = z.object({
+  propertyId: IdSchema,
+  monthlyRentMinor: z.number().int().positive(),
+});
 export type RentPropertyRequest = z.infer<typeof RentPropertyRequestSchema>;

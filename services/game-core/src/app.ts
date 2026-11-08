@@ -10,6 +10,8 @@ import { adminRouter } from './modules/admin/admin.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { bankingRouter } from './modules/banking/banking.routes.js';
 import { charactersRouter } from './modules/characters/characters.routes.js';
+import { mapRouter } from './modules/map/map.routes.js';
+import { realEstateRouter } from './modules/real-estate/real-estate.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -41,6 +43,8 @@ export function createApp(): Express {
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/banking', attachActor, bankingRouter);
   app.use('/api/v1/characters', attachActor, charactersRouter);
+  app.use('/api/v1/map', mapRouter);
+  app.use('/api/v1/real-estate', realEstateRouter);
   app.use('/api/v1/admin', attachActor, adminRouter);
 
   app.use((_req, res) => {

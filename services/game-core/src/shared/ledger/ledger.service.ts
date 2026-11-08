@@ -50,7 +50,7 @@ export class LedgerService {
   ): Promise<string> {
     const existing = await db.query<{ id: string }>(
       `SELECT id FROM ledger_accounts
-       WHERE owner_type = $1 AND owner_id = $2 AND kind = $3 AND currency = 'USD'
+       WHERE owner_type = $1 AND owner_id = $2 AND kind = $3 AND currency = 'VND'
        LIMIT 1`,
       [ownerType, ownerId, kind],
     );
@@ -79,7 +79,7 @@ export class LedgerService {
 
     const raced = await db.query<{ id: string }>(
       `SELECT id FROM ledger_accounts
-       WHERE owner_type = $1 AND owner_id = $2 AND kind = $3 AND currency = 'USD'
+       WHERE owner_type = $1 AND owner_id = $2 AND kind = $3 AND currency = 'VND'
        LIMIT 1`,
       [ownerType, ownerId, kind],
     );

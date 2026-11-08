@@ -10,6 +10,8 @@ export const ZoneTypeSchema = z.enum([
   'civic',
   'port',
   'slum',
+  'water',
+  'park',
 ]);
 export type ZoneType = z.infer<typeof ZoneTypeSchema>;
 

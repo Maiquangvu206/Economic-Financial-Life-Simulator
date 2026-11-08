@@ -15,7 +15,7 @@ function toDto(row: CharacterRow): CharacterDto {
     spouseId: row.spouse_id,
     location: { x: row.location_x, y: row.location_y },
     // TODO: replace with the real asset/liability balance from the finance module.
-    netWorth: { amount: Number(row.cash_minor), currency: 'USD' },
+    netWorth: { amount: Number(row.cash_minor), currency: 'VND' },
     createdAt: row.created_at.toISOString(),
   };
 }

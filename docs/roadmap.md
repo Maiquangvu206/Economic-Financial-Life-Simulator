@@ -39,16 +39,26 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 
 ## Phase 2 — Bất động sản & bản đồ
 
-- [ ] Schema map_nodes/roads/properties/buildings/leases.
-- [ ] API mua/bán/thuê, xây dựng, thế chấp.
+- [x] Schema map_nodes/roads/properties/buildings/leases.
+  - `map_nodes`: thêm loại vùng `water`, `park`; thêm `land_price_minor` (VNĐ minor units).
+  - `map_roads`: đường giao thông mỗi ô (`highway`, `arterial`, `local`, `bridge`, `none`).
+  - `map_meta`: phiên bản bản đồ (`version`, `cols`, `rows`).
+  - Migration `0005_map_phase2.sql` + down; `0006_map_timestamps.sql` bổ sung `created_at`/`updated_at` cho `map_nodes`.
+- [x] API mua/bán/thuê, xây dựng, thế chấp.
+  - `GET /api/v1/map` — toàn bộ bản đồ (nút, đường, phiên bản) cho render người chơi.
+  - `PUT /api/v1/map` — quản trị viên lưu bản đồ, xử lý xung đột theo phiên bản (409 Conflict nếu phiên cũ).
+  - `GET /api/v1/real-estate/overview` — danh sách BĐS, tài sản sở hữu, giá trị danh mục, thu thuê tháng.
+  - `POST /api/v1/real-estate/buy` — mua bất động sản (chưa có chủ / đang bán), đồng bộ ledger.
+  - `POST /api/v1/real-estate/list` — chủ sở hữu đặt bán.
+  - `POST /api/v1/real-estate/rent` — cho thuê, tạo hợp đồng thuê active.
 - [x] **Map Editor phân lớp & mở rộng (Admin Panel)**:
   - Cấu hình kích thước bản đồ linh hoạt (số Cột x Dòng), tự động bảo toàn 100% dữ liệu các ô đất cũ khi mở rộng quy mô.
   - Tích hợp cụm nút Zoom điều hướng nhanh (`[−]`, `[%]`, `[+]`) cạnh nút lưu.
   - Phân lớp đồ họa chân thực: Lớp Phân khu quy hoạch (Zones: Đất ở, Thương mại, KCN, Hành chính, Cảng biển, Xóm liều, Công viên, Mặt nước) và Lớp Mạng lưới Giao thông (Roads: Cao tốc, Đường trục chính, Ngõ nội bộ, Cầu vượt).
   - Định giá đất theo m² chuẩn VNĐ.
   - Cơ chế tương tác chuẩn: Click 1 lần hiển thị thông số hiện tại ở thanh dưới; click lần 2 (hoặc double click) gán phân khu/đường mới.
-- [ ] Map editor ghi server có version.
-- [ ] Phaser render dữ liệu thật, click ô đất.
+- [x] **Map editor ghi server có version**: tải bản đồ từ server, lưu lên server với kiểm soát phiên bản (optimistic concurrency), thông báo xung đột 409.
+- [x] **Phaser render dữ liệu thật, click ô đất**: MapScene render terrain/đường/công trình từ server; CityPage click ô đất hiển thị chi tiết + nút mua, phản hồi sở hữu ngay sau khi giao dịch.
 - [ ] Đấu giá tài sản phát mại.
 
 ## Quản trị Vận hành & Lao động (Admin Control Panel)

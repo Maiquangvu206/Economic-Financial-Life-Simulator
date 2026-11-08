@@ -8,8 +8,6 @@ import { FireworksLayer } from '../layers/FireworksLayer';
 import type { MapData, MapProperty, MapRoad, ZoneType } from '../map/MapData';
 
 const TILE = 48;
-const COLS = 40;
-const ROWS = 24;
 
 export class MapScene extends Phaser.Scene {
   private terrain!: TerrainLayer;
@@ -22,6 +20,11 @@ export class MapScene extends Phaser.Scene {
   private nodePosMap: Map<string, { x: number; y: number }> = new Map();
   private zoneMap: Map<string, ZoneType> = new Map();
 
+  private cols = 40;
+  private rows = 24;
+
+  private mapData: MapData | null = null;
+
   constructor() {
     super('MapScene');
   }
@@ -29,17 +32,19 @@ export class MapScene extends Phaser.Scene {
   init(data: { mapData?: MapData }): void {
     this.nodePosMap.clear();
     this.zoneMap.clear();
+    this.mapData = data?.mapData ?? null;
 
-    if (data?.mapData) {
-      for (const node of data.mapData.nodes) {
+    if (this.mapData) {
+      this.cols = this.mapData.meta.cols || this.cols;
+      this.rows = this.mapData.meta.rows || this.rows;
+      for (const node of this.mapData.nodes) {
         this.nodePosMap.set(node.id, { x: node.x, y: node.y });
         this.zoneMap.set(`${node.x}-${node.y}`, node.zoneType);
       }
     } else {
-      for (let row = 0; row < ROWS; row += 1) {
-        for (let col = 0; col < COLS; col += 1) {
-          const zone = this.protoZone(col, row);
-          this.zoneMap.set(`${col}-${row}`, zone);
+      for (let row = 0; row < this.rows; row += 1) {
+        for (let col = 0; col < this.cols; col += 1) {
+          this.zoneMap.set(`${col}-${row}`, this.protoZone(col, row));
         }
       }
     }
@@ -47,7 +52,7 @@ export class MapScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#f8fafc');
-    this.cameras.main.setBounds(0, 0, COLS * TILE, ROWS * TILE);
+    this.cameras.main.setBounds(0, 0, this.cols * TILE, this.rows * TILE);
     this.cameras.main.setZoom(1);
 
     // Zoom bằng chuột
@@ -98,8 +103,9 @@ export class MapScene extends Phaser.Scene {
       const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       const col = Math.floor(world.x / TILE);
       const row = Math.floor(world.y / TILE);
-      if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return;
+      if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) return;
       this.selection.select(col, row);
+      this.game.events.emit('tile:selected', { col, row });
     });
 
     // Hover highlight
@@ -107,7 +113,7 @@ export class MapScene extends Phaser.Scene {
       const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       const col = Math.floor(world.x / TILE);
       const row = Math.floor(world.y / TILE);
-      if (col < 0 || row < 0 || col >= COLS || row >= ROWS) {
+      if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) {
         this.selection.hide();
         return;
       }
@@ -116,12 +122,9 @@ export class MapScene extends Phaser.Scene {
   }
 
   private renderMap(): void {
-    const cols = COLS;
-    const rows = ROWS;
-
     this.terrain.render({
-      cols,
-      rows,
+      cols: this.cols,
+      rows: this.rows,
       zoneAt: (col: number, row: number) => this.zoneMap.get(`${col}-${row}`) ?? 'residential',
     });
 
@@ -141,14 +144,14 @@ export class MapScene extends Phaser.Scene {
     });
   }
 
-  // ---------- Prototype helpers (thay bằng server data khi có) ----------
+  // ---------- Dữ liệu bản đồ từ server (hoặc prototype khi chưa có) ----------
   private protoZone(col: number, row: number): ZoneType {
-    const centerBias = Math.abs(col - COLS / 2) + Math.abs(row - ROWS / 2);
-    if (col > COLS - 3 && row > ROWS - 5) return 'water';
+    const centerBias = Math.abs(col - this.cols / 2) + Math.abs(row - this.rows / 2);
+    if (col > this.cols - 3 && row > this.rows - 5) return 'water';
     if (centerBias < 5) return 'commercial';
     if (centerBias < 11) return 'residential';
     if (row < 3) return 'civic';
-    if (col > COLS - 5) return 'slum';
+    if (col > this.cols - 5) return 'slum';
     return 'industrial';
   }
 
@@ -156,8 +159,8 @@ export class MapScene extends Phaser.Scene {
     const trees: { x: number; y: number }[] = [];
     for (let i = 0; i < 40; i += 1) {
       trees.push({
-        x: Phaser.Math.Between(0, COLS - 1),
-        y: Phaser.Math.Between(0, ROWS - 1),
+        x: Phaser.Math.Between(0, this.cols - 1),
+        y: Phaser.Math.Between(0, this.rows - 1),
       });
     }
     return trees;
@@ -165,36 +168,41 @@ export class MapScene extends Phaser.Scene {
 
   private protoLights(): { x: number; y: number }[] {
     const lights: { x: number; y: number }[] = [];
-    for (let col = 0; col < COLS; col += 5) {
+    for (let col = 0; col < this.cols; col += 5) {
       lights.push({ x: col, y: 0 });
-      lights.push({ x: col, y: ROWS - 1 });
+      lights.push({ x: col, y: this.rows - 1 });
     }
-    for (let row = 0; row < ROWS; row += 4) {
+    for (let row = 0; row < this.rows; row += 4) {
       lights.push({ x: 0, y: row });
-      lights.push({ x: COLS - 1, y: row });
+      lights.push({ x: this.cols - 1, y: row });
     }
     return lights;
   }
 
   private getRoads(): MapRoad[] {
-    return [];
+    return this.mapData?.roads ?? [];
   }
 
   private getProperties(): MapProperty[] {
-    return [];
+    return this.mapData?.properties ?? [];
   }
 
   override update(): void {
     this.fireworks?.update();
   }
 
+  /** Cập nhật bản đồ từ server và vẽ lại (dùng khi sau khi mua/bán đất). */
   setMapData(mapData: MapData): void {
     this.nodePosMap.clear();
     this.zoneMap.clear();
+    this.mapData = mapData;
+    this.cols = mapData.meta.cols || this.cols;
+    this.rows = mapData.meta.rows || this.rows;
     for (const node of mapData.nodes) {
       this.nodePosMap.set(node.id, { x: node.x, y: node.y });
       this.zoneMap.set(`${node.x}-${node.y}`, node.zoneType);
     }
+    this.cameras.main.setBounds(0, 0, this.cols * TILE, this.rows * TILE);
     this.renderMap();
   }
 }

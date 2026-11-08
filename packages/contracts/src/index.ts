@@ -24,6 +24,7 @@ export * from './http/real-estate.js';
 export * from './http/law.js';
 export * from './http/underworld.js';
 export * from './http/logistics.js';
+export * from './http/map.js';
 export * from './http/tax.js';
 export * from './http/notifications.js';
 export * from './http/game.js';

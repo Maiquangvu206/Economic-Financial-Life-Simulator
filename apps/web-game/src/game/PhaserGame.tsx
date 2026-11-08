@@ -1,13 +1,15 @@
 import Phaser from 'phaser';
 import { useEffect, useRef, useState } from 'react';
 import { MapScene } from './scenes/MapScene';
+import type { MapData } from './map/MapData';
 import { useGameStore } from '../store/game';
 
 export interface PhaserGameProps {
-  onSelectPlot?: (plotId: string) => void;
+  mapData?: MapData;
+  onSelectPlot?: (col: number, row: number) => void;
 }
 
-export function PhaserGame({ onSelectPlot }: PhaserGameProps) {
+export function PhaserGame({ mapData, onSelectPlot }: PhaserGameProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const [selectedPlot, setSelectedPlot] = useState<string | null>(null);
@@ -33,10 +35,17 @@ export function PhaserGame({ onSelectPlot }: PhaserGameProps) {
 
     gameRef.current = game;
 
+    const scene = game.scene.getScene('MapScene') as MapScene | null;
+
+    // Áp dụng dữ liệu bản đồ từ server khi có (render lại bản đồ thật).
+    if (scene && mapData) {
+      scene.setMapData(mapData);
+    }
+
     game.events.on('tile:selected', (payload: { col: number; row: number }) => {
       const plotId = `plot-${payload.col}-${payload.row}`;
       setSelectedPlot(plotId);
-      onSelectPlot?.(plotId);
+      onSelectPlot?.(payload.col, payload.row);
     });
 
     return () => {
@@ -44,6 +53,14 @@ export function PhaserGame({ onSelectPlot }: PhaserGameProps) {
       gameRef.current = null;
     };
   }, [onSelectPlot]);
+
+  // Khi bản đồ từ server thay đổi (sau khi mua/bán đất), vẽ lại scene.
+  useEffect(() => {
+    const scene = gameRef.current?.scene.getScene('MapScene') as MapScene | undefined;
+    if (scene && mapData) {
+      scene.setMapData(mapData);
+    }
+  }, [mapData]);
 
   // Kích hoạt pháo hoa khi đến ngày Tết / Nghỉ Lễ
   useEffect(() => {

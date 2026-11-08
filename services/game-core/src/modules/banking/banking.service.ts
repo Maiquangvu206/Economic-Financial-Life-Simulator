@@ -19,7 +19,7 @@ const DAY_MS = 86_400_000;
 const MAX_LOAN_MINOR = 200_000_000;
 
 function money(amount: number): Money {
-  return { amount, currency: 'USD' };
+  return { amount, currency: 'VND' };
 }
 
 function toLoanDto(row: LoanRow): LoanDto {
@@ -201,7 +201,7 @@ export class BankingService {
         userId,
         kind: 'banking',
         title: 'Khoản vay đã được giải ngân',
-        body: `Bạn vừa vay ${(input.amountMinor / 100).toLocaleString('vi-VN')} USD với lãi suất ${rate}%/năm.`,
+        body: `Bạn vừa vay ${(input.amountMinor / 100).toLocaleString('vi-VN')} VND với lãi suất ${rate}%/năm.`,
         payload: { loanId: loan.id },
       });
 

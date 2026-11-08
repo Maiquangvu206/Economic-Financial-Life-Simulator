@@ -1,6 +1,8 @@
 import { PageHeader } from '@efls/ui';
-import { useState, useRef, type WheelEvent } from 'react';
+import { useState, useRef, useEffect, type WheelEvent } from 'react';
 import { formatCompact } from '../shared/lib/format';
+import { adminRequest } from '../shared/api/httpClient';
+import type { MapDto, PutMapResponse, PutMapRequest } from '@efls/contracts';
 
 export type LayerMode = 'zones' | 'roads' | 'facilities';
 
@@ -104,6 +106,23 @@ export const VIETNAM_ROADS = [
 export type ZoneId = (typeof VIETNAM_ZONES)[number]['id'];
 export type RoadId = (typeof VIETNAM_ROADS)[number]['id'];
 
+interface ApiProblem {
+  status?: number;
+  message?: string;
+  title?: string;
+}
+
+function errorMessage(caught: unknown): { status?: number; message: string } {
+  if (caught && typeof caught === 'object') {
+    const e = caught as ApiProblem;
+    return {
+      status: e.status,
+      message: e.message ?? e.title ?? String(caught),
+    };
+  }
+  return { message: String(caught ?? 'lỗi không xác định') };
+}
+
 interface CellData {
   zone: ZoneId;
   road?: RoadId;
@@ -115,42 +134,25 @@ export function MapEditorPage() {
   const [activeZone, setActiveZone] = useState<ZoneId>('residential');
   const [activeRoad, setActiveRoad] = useState<RoadId>('arterial');
 
-  // Bản đồ đại đô thị cực lớn: Admin có thể tùy ý cấu hình số Cột và Dòng
   const [gridCols, setGridCols] = useState(40);
   const [gridRows, setGridRows] = useState(25);
-
-  // Input tạm để nhập kích thước mới
   const [inputCols, setInputCols] = useState('40');
   const [inputRows, setInputRows] = useState('25');
 
-  // Zoom và Kích thước ô (Zoom Level)
   const [zoomLevel, setZoomLevel] = useState<number>(1);
-  // Dữ liệu ô lưu theo key tọa độ cố định dạng `x-y`. Khi mở rộng lưới, toàn bộ dữ liệu ô cũ vẫn giữ nguyên vẹn 100%
   const [cells, setCells] = useState<Record<string, CellData>>({});
   const [customPrice, setCustomPrice] = useState<number>(45_000_000);
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
+
+  // Phiên bản bản đồ từ server (dùng xử lý xung đột khi lưu đồng thời).
+  const [mapVersion, setMapVersion] = useState<number>(1);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
-
-  const handleApplyGridSize = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cols = Math.min(100, Math.max(10, parseInt(inputCols, 10) || 40));
-    const rows = Math.min(60, Math.max(10, parseInt(inputRows, 10) || 25));
-    setGridCols(cols);
-    setGridRows(rows);
-    setInputCols(cols.toString());
-    setInputRows(rows.toString());
-    setSavedNotice(
-      `Đã mở rộng bản đồ thành công: ${cols} Cột x ${rows} Dòng (${cols * rows} ô). Dữ liệu quy hoạch cũ được bảo toàn!`,
-    );
-    setTimeout(() => setSavedNotice(null), 4000);
-  };
-
-  const [showZones, setShowZones] = useState(true);
-  const [showRoads, setShowRoads] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Zoom bằng lăn chuột khi hover trên bản đồ
   const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
@@ -163,6 +165,63 @@ export function MapEditorPage() {
   const handleZoomOut = () =>
     setZoomLevel((prev) => Math.max(0.4, Number((prev - 0.2).toFixed(1))));
   const handleZoomReset = () => setZoomLevel(1);
+
+  /** Tải bản đồ từ server về trình chỉnh sửa. */
+  async function loadMap() {
+    setLoading(true);
+    setSaveError(null);
+    try {
+      const map = await adminRequest<MapDto>('/api/v1/map');
+      setMapVersion(map.meta.version);
+      setGridCols(map.meta.cols);
+      setGridRows(map.meta.rows);
+      setInputCols(map.meta.cols.toString());
+      setInputRows(map.meta.rows.toString());
+
+      const nextCells: Record<string, CellData> = {};
+      const nodeIdToCoord = new Map<string, string>();
+      for (const node of map.nodes) {
+        const key = `${node.x}-${node.y}`;
+        nodeIdToCoord.set(node.id, key);
+        nextCells[key] = {
+          zone: node.zoneType,
+          pricePerM2: node.landPriceMinor,
+        };
+      }
+      for (const road of map.roads) {
+        const coord = nodeIdToCoord.get(road.nodeId);
+        if (coord && nextCells[coord]) {
+          nextCells[coord].road = road.roadType === 'none' ? undefined : road.roadType;
+        }
+      }
+      setCells(nextCells);
+      setSavedNotice(
+        `Đã tải bản đồ từ server (${map.nodes.length} ô, phiên bản ${map.meta.version}).`,
+      );
+    } catch (caught) {
+      const { message } = errorMessage(caught);
+      setSaveError(`Không tải được bản đồ: ${message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadMap();
+  }, []);
+
+  const handleApplyGridSize = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cols = Math.min(100, Math.max(10, parseInt(inputCols, 10) || 40));
+    const rows = Math.min(60, Math.max(10, parseInt(inputRows, 10) || 25));
+    setGridCols(cols);
+    setGridRows(rows);
+    setInputCols(cols.toString());
+    setInputRows(rows.toString());
+  };
+
+  const [showZones, setShowZones] = useState(true);
+  const [showRoads, setShowRoads] = useState(true);
 
   const handleCellClick = (key: string) => {
     if (selectedCellKey === key) {
@@ -178,11 +237,7 @@ export function MapEditorPage() {
 
   const applyCurrentTool = (key: string) => {
     setCells((prev) => {
-      const current = prev[key] || {
-        zone: 'residential',
-        pricePerM2: customPrice,
-      };
-
+      const current = prev[key] || { zone: 'residential', pricePerM2: customPrice };
       if (editorMode === 'zones') {
         const defaultZone = VIETNAM_ZONES.find((z) => z.id === activeZone);
         return {
@@ -194,7 +249,6 @@ export function MapEditorPage() {
           },
         };
       }
-
       if (editorMode === 'roads') {
         return {
           ...prev,
@@ -204,36 +258,69 @@ export function MapEditorPage() {
           },
         };
       }
-
       return prev;
     });
     setSelectedCellKey(key);
   };
 
-  const handleSaveMap = () => {
-    const roadCount = Object.values(cells).filter((c) => c.road && c.road !== 'none').length;
-    setSavedNotice(
-      `Đã lưu bản đồ thành công! Quy mô: ${gridCols}x${gridRows} (${gridCols * gridRows} ô), gồm ${Object.keys(cells).length} ô quy hoạch và ${roadCount} cung đường giao thông.`,
-    );
-    setTimeout(() => setSavedNotice(null), 4000);
-  };
+  /** Lưu bản đồ lên server, xử lý xung đột phiên bản (optimistic concurrency). */
+  async function handleSaveMap() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+
+    const nodes: PutMapRequest['nodes'] = [];
+    const roads: PutMapRequest['roads'] = [];
+    for (const [key, cell] of Object.entries(cells)) {
+      const [sx, sy] = key.split('-');
+      const x = Number(sx);
+      const y = Number(sy);
+      nodes.push({
+        x,
+        y,
+        zoneType: cell.zone,
+        landPriceMinor: cell.pricePerM2,
+        name: `Ô [${x},${y}]`,
+      });
+      if (cell.road) roads.push({ x, y, roadType: cell.road });
+    }
+
+    try {
+      const result = await adminRequest<PutMapResponse>('/api/v1/map', {
+        method: 'PUT',
+        body: JSON.stringify({ version: mapVersion, nodes, roads }),
+      });
+      setMapVersion(result.version);
+      setSavedNotice(
+        `Đã lưu bản đồ lên server! Phiên bản mới: ${result.version} (${nodes.length} ô, ${roads.length} đường).`,
+      );
+    } catch (caught) {
+      const { status, message } = errorMessage(caught);
+      if (status === 409) {
+        setSaveError(
+          'Bản đồ đã được người khác chỉnh sửa. Nhấn "Tải lại" để lấy bản mới rồi lưu lại.',
+        );
+      } else {
+        setSaveError(`Không lưu được bản đồ: ${message}`);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const selectedCell = selectedCellKey ? cells[selectedCellKey] : null;
   const currentRoadInfo = selectedCell?.road
     ? VIETNAM_ROADS.find((r) => r.id === selectedCell.road)
     : null;
-
-  // Tính toán kích thước pixel cơ sở của ô theo tỷ lệ zoom
   const baseTilePx = Math.round(36 * zoomLevel);
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Map Editor & Đại Đô thị Mở Rộng Việt Nam"
-        description="Bản đồ quy mô lớn (50x30 = 1.500 ô) có thể zoom phóng to/thu nhỏ mượt mà, phân lớp giao thông & đơn giá đất theo m² VNĐ."
+        title="Map Editor & Bản đồ Quản trị"
+        description="Chỉnh sửa quy hoạch vùng đất, đường giao thông và đơn giá đất (VNĐ/m²). Thay đổi được lưu trực tiếp lên server với kiểm soát phiên bản."
         actions={
           <div className="flex items-center gap-3">
-            {/* Bộ điều khiển Zoom */}
             <div className="flex items-center bg-slate-100 border border-slate-300 rounded-xl p-1 text-xs">
               <button
                 type="button"
@@ -263,14 +350,38 @@ export function MapEditorPage() {
 
             <button
               type="button"
-              onClick={handleSaveMap}
-              className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20"
+              disabled={loading}
+              onClick={() => void loadMap()}
+              className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-700 transition disabled:opacity-60 hover:bg-slate-200"
             >
-              Lưu bản đồ quy hoạch
+              {loading ? 'Đang tải…' : 'Tải lại từ server'}
             </button>
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={handleSaveMap}
+              className={`rounded-xl px-4 py-2 text-xs font-bold transition disabled:opacity-60 ${
+                saving
+                  ? 'bg-amber-200 text-amber-900'
+                  : 'bg-amber-500 text-slate-900 hover:bg-amber-400 shadow-md shadow-amber-500/20'
+              }`}
+            >
+              {saving ? 'Đang lưu…' : 'Lưu bản đồ lên server'}
+            </button>
+
+            <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
+              Phiên bản: {mapVersion}
+            </span>
           </div>
         }
       />
+
+      {saveError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-xs font-semibold text-rose-700 flex items-center gap-2">
+          ⚠️ {saveError}
+        </div>
+      )}
 
       {savedNotice && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs font-semibold text-emerald-700">
@@ -278,7 +389,6 @@ export function MapEditorPage() {
         </div>
       )}
 
-      {/* Thanh điều khiển công cụ và chế độ vẽ */}
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/80 p-3.5">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-700">Chế độ:</span>
@@ -293,7 +403,7 @@ export function MapEditorPage() {
               }`}
             >
               <span>🏙️</span>
-              <span>1. Quy hoạch Vùng (Zones)</span>
+              <span>1. Quy hoạch Vùng</span>
             </button>
             <button
               type="button"
@@ -305,12 +415,11 @@ export function MapEditorPage() {
               }`}
             >
               <span>🛣️</span>
-              <span>2. Mạng lưới Giao thông (Roads)</span>
+              <span>2. Mạng lưới Giao thông</span>
             </button>
           </div>
         </div>
 
-        {/* Form cấu hình kích thước bản đồ linh hoạt (Không làm mất dữ liệu ô cũ) */}
         <form
           onSubmit={handleApplyGridSize}
           className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs"
@@ -324,7 +433,6 @@ export function MapEditorPage() {
               value={inputCols}
               onChange={(e) => setInputCols(e.target.value)}
               className="w-12 rounded-lg border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-center text-slate-900 focus:border-amber-500 focus:outline-none"
-              title="Số cột (Chiều ngang)"
             />
             <span className="text-slate-500">x</span>
             <input
@@ -334,18 +442,16 @@ export function MapEditorPage() {
               value={inputRows}
               onChange={(e) => setInputRows(e.target.value)}
               className="w-12 rounded-lg border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-center text-slate-900 focus:border-amber-500 focus:outline-none"
-              title="Số dòng (Chiều dọc)"
             />
           </div>
           <button
             type="submit"
             className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-amber-700 hover:bg-slate-200 transition"
           >
-            Mở rộng
+            Áp dụng
           </button>
         </form>
 
-        {/* Lọc lớp hiển thị */}
         <div className="flex items-center gap-2 text-xs">
           <span className="font-semibold text-slate-600">Lớp:</span>
           <button
@@ -372,7 +478,6 @@ export function MapEditorPage() {
           </button>
         </div>
 
-        {/* Đơn vị giá đất theo m² */}
         {editorMode === 'zones' && (
           <div className="flex items-center gap-2 text-xs">
             <span className="text-slate-600">Đơn giá đất:</span>
@@ -398,7 +503,6 @@ export function MapEditorPage() {
         </div>
       </div>
 
-      {/* Palette chọn loại vùng hoặc đường */}
       {editorMode === 'zones' ? (
         <div className="flex flex-wrap items-center gap-2 p-1">
           {VIETNAM_ZONES.map((zone) => (
@@ -440,7 +544,6 @@ export function MapEditorPage() {
         </div>
       )}
 
-      {/* Khung Bản đồ Grid 2D Siêu Lớn với Viewport Cuộn */}
       <div className="relative rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl overflow-hidden">
         <div
           ref={containerRef}
@@ -477,7 +580,6 @@ export function MapEditorPage() {
                   } ${isSelected ? 'ring-2 ring-amber-400 z-20 scale-105 shadow-lg shadow-amber-400/30' : ''}`}
                   title={`[${x}, ${y}] | ${zoneInfo?.label || 'Đất trống'} | ${roadInfo ? `Đường: ${roadInfo.label}` : 'Chưa có đường'} | ${cell ? formatCompact(cell.pricePerM2) : '0'}/m²`}
                 >
-                  {/* Lớp Giao thông */}
                   {cell?.road && showRoads && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                       {cell.road === 'highway' && (
@@ -498,8 +600,6 @@ export function MapEditorPage() {
                       )}
                     </div>
                   )}
-
-                  {/* Tọa độ hiển thị nếu mức zoom đủ lớn */}
                   {zoomLevel >= 0.8 && (
                     <span className="opacity-40 text-[7px] pointer-events-none relative z-10 leading-none">
                       {x},{y}
@@ -512,7 +612,6 @@ export function MapEditorPage() {
         </div>
       </div>
 
-      {/* Thanh thông tin chi tiết ô đất & giao thông */}
       <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 text-xs text-slate-700 flex flex-wrap items-center justify-between gap-4">
         {selectedCellKey ? (
           <div className="flex flex-wrap items-center gap-3">

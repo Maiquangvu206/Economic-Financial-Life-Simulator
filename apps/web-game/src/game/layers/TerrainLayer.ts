@@ -13,6 +13,7 @@ const ZONE_COLORS: Record<ZoneType, number> = {
   port: 0xcffafe,
   slum: 0xe2e8f0,
   water: 0xbae6fd,
+  park: 0xccfbf1,
 };
 
 export class TerrainLayer extends LayerBase {
