@@ -9,7 +9,11 @@ import { Badge } from '../shared/ui/Badge';
 import { GameInput } from '../shared/ui/GameInput';
 import { formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
-import { type UnderworldOverviewExtDto, type CrimeType } from '@efls/contracts';
+import {
+  type UnderworldOverviewExtDto,
+  type CrimeType,
+  type NpcNegotiationDto,
+} from '@efls/contracts';
 
 const HEAT_LABEL = (heat: number) =>
   heat < 20 ? 'Sạch' : heat < 50 ? 'Bị để ý' : heat < 80 ? 'Truy nã' : 'Truy nã toàn quốc';
@@ -23,10 +27,14 @@ export function UnderworldPage() {
     queryKey: ['underworld', 'overview'],
     queryFn: () => apiRequest<UnderworldOverviewExtDto>('/api/v1/underworld/overview'),
   });
+  const { data: npcHistory, refetch: refetchNpc } = useQuery<NpcNegotiationDto[]>({
+    queryKey: ['npc', 'history'],
+    queryFn: () => apiRequest<NpcNegotiationDto[]>('/api/v1/npc/history'),
+  });
 
-  const [activeTab, setActiveTab] = useState<'services' | 'detective' | 'blackmail' | 'protection'>(
-    'services',
-  );
+  const [activeTab, setActiveTab] = useState<
+    'services' | 'detective' | 'blackmail' | 'protection' | 'npc'
+  >('services');
   const [busy, setBusy] = useState<string | null>(null);
 
   const [collectOpen, setCollectOpen] = useState(false);
@@ -38,6 +46,15 @@ export function UnderworldPage() {
   const [stingOpen, setStingOpen] = useState(false);
   const [stingTarget, setStingTarget] = useState('');
   const [stingAmount, setStingAmount] = useState('5000000');
+  const [npcOpen, setNpcOpen] = useState(false);
+  const [npcId, setNpcId] = useState('merchant_01');
+  const [npcPersonality, setNpcPersonality] = useState<
+    'aggressive' | 'cautious' | 'greedy' | 'honest'
+  >('greedy');
+  const [npcContext, setNpcContext] = useState('Mua cổ phiếu với giá chiết khấu');
+  const [npcOfferText, setNpcOfferText] = useState('50 triệu, chốt ngay');
+  const [npcFair, setNpcFair] = useState('100000000');
+  const [npcOfferMinor, setNpcOfferMinor] = useState('50000000');
 
   async function handleAction(key: string, fn: () => Promise<unknown>, onDone?: () => void) {
     setBusy(key);
@@ -45,6 +62,7 @@ export function UnderworldPage() {
       await fn();
       onDone?.();
       void refetch();
+      void refetchNpc();
     } catch {
       // lỗi đã xử lý bởi httpClient
     } finally {
@@ -104,6 +122,7 @@ export function UnderworldPage() {
             { key: 'detective', label: 'Thám tử & Bằng chứng' },
             { key: 'blackmail', label: 'Tống tiền & Gài bẫy' },
             { key: 'protection', label: 'Bảo vệ & Đại án' },
+            { key: 'npc', label: 'NPC Đàm phán' },
           ] as const
         ).map((tab) => (
           <button
@@ -504,6 +523,108 @@ export function UnderworldPage() {
           </Panel>
         </div>
       )}
+
+      {activeTab === 'npc' && (
+        <Panel title="NPC đàm phán theo tính cách">
+          <div className="space-y-3">
+            <GameButton variant="primary" onClick={() => setNpcOpen(true)}>
+              Đàm phán với NPC mới
+            </GameButton>
+            {(npcHistory ?? []).map((n) => (
+              <div key={n.id} className="p-3 rounded-xl border border-slate-200 bg-white/50">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-800">{n.npcId ?? 'NPC'}</span>
+                  <Badge variant="default">{n.personality ?? '—'}</Badge>
+                  <Badge variant={n.accept ? 'success' : 'warning'}>
+                    {n.accept ? 'Đã chấp nhận' : 'Đã từ chối'}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-sm text-slate-700">{n.dialogue ?? ''}</p>
+                <div className="mt-1 text-xs text-slate-500">
+                  {n.counterOffer?.amount
+                    ? `Counter: ${formatMoney(n.counterOffer.amount)}`
+                    : 'Không counter'}
+                </div>
+              </div>
+            ))}
+            {(npcHistory ?? []).length === 0 && (
+              <div className="text-center py-4 text-xs text-slate-500">
+                Chưa đàm phán với NPC nào.
+              </div>
+            )}
+          </div>
+        </Panel>
+      )}
+
+      {/* Modal: đàm phán NPC */}
+      <Modal open={npcOpen} onClose={() => setNpcOpen(false)} title="Đàm phán NPC">
+        <div className="space-y-3">
+          <GameInput
+            label="NPC ID"
+            value={npcId}
+            onChange={(e) => setNpcId(e.target.value)}
+            placeholder="merchant_01"
+          />
+          <GameInput
+            label="Tính cách (aggressive/cautious/greedy/honest)"
+            value={npcPersonality}
+            onChange={(e) =>
+              setNpcPersonality((e.target.value as typeof npcPersonality) || 'greedy')
+            }
+            placeholder="greedy"
+          />
+          <GameInput
+            label="Ngữ cảnh"
+            value={npcContext}
+            onChange={(e) => setNpcContext(e.target.value)}
+            placeholder="Mua cổ phiếu với giá chiết khấu"
+          />
+          <GameInput
+            label="Đề xuất (text)"
+            value={npcOfferText}
+            onChange={(e) => setNpcOfferText(e.target.value)}
+            placeholder="50 triệu, chốt ngay"
+          />
+          <GameInput
+            label="Giá trị công bằng (VNĐ)"
+            value={npcFair}
+            onChange={(e) => setNpcFair(e.target.value)}
+            type="number"
+            placeholder="100000000"
+          />
+          <GameInput
+            label="Offer của bạn (VNĐ)"
+            value={npcOfferMinor}
+            onChange={(e) => setNpcOfferMinor(e.target.value)}
+            type="number"
+            placeholder="50000000"
+          />
+          <GameButton
+            variant="primary"
+            disabled={busy === 'npc'}
+            onClick={() =>
+              void handleAction(
+                'npc',
+                () =>
+                  apiRequest('/api/v1/npc/negotiate', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      npcId,
+                      personality: npcPersonality,
+                      context: npcContext,
+                      playerOffer: npcOfferText,
+                      fairValue: Number(npcFair) || 0,
+                      offerMinor: Number(npcOfferMinor) || 0,
+                    }),
+                  }),
+                () => setNpcOpen(false),
+              )
+            }
+          >
+            Đàm phán
+          </GameButton>
+        </div>
+      </Modal>
 
       {/* Modal: thu thập bằng chứng */}
       <Modal open={collectOpen} onClose={() => setCollectOpen(false)} title="Thuê thám tử">

@@ -114,12 +114,12 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
 
 ## Phase 6 — AI nâng cao & vận hành
 
-- [ ] AI news theo cron + tác động giá có biên.
-- [ ] NPC đàm phán theo tính cách.
-- [ ] GM AI điều chỉnh vĩ mô.
-- [ ] Eval prompt, cost/latency dashboard.
-- [ ] Load test realtime, order book, tick.
-- [ ] Observability: metrics, tracing, alerting.
+- [x] **AI news theo cron + tác động giá có biên** — Worker `aiNews` processor viết lại (trước đây là stub): gọi AI `POST /v1/news`, clamp `stock_impact_pct` trong [−20,20] theo contracts + chỉ áp dụng tối đa ±5% mỗi mã vào `stock_tickers.current_price_minor` (không dưới 1.000 ₫), ghi `news_items`, phát tán qua `notifications` + outbox `news.published.v1`. Scheduler cron giữ nguyên `AI_NEWS_CRON` (mặc định 6h sáng).
+- [x] **NPC đàm phán theo tính cách** — Game-core module `npc`: `POST /api/v1/npc/negotiate` (AI đề xuất dialogue, core chốt bằng rule `@efls/domain` `evaluateNpcDeal`: ngưỡng chấp nhận theo tính cách aggressive 0.85 / cautious 0.95 / greedy 0.9 / honest 1.0, band counter greedy 1.35–1.6×), `GET /npc/history`, bảng `npc_negotiations`, contracts `http/observability.ts`. UI tab "NPC Đàm phán" trong `UnderworldPage`.
+- [x] **GM AI điều chỉnh vĩ mô** — Worker `gmTick` processor (cron mỗi giờ, queue `gm-tick`): chụp snapshot (lạm phát/thất nghiệp/cung tiền M2 từ `ledger_accounts`/vốn hoá thị trường), gọi AI `/v1/gm/propose`, áp biên qua rule `applyGmAdjustment` (lãi suất chốt 0.5–15%, lạm phát 0–20%), cập nhật `game_state.macro`, ghi `gm_directives` + outbox `gm.directive.v1`. Game-core module `gm`: `GET /gm/snapshot`, `POST /gm/adjust` (thủ công), `GET /gm/directives`.
+- [x] **Eval prompt, cost/latency dashboard** — Worker `aiClient` ghi mọi lần gọi AI vào `ai_metrics` (task/model/prompt version/latency/tokens/cost_usd/status, chi phí ước lượng $0.002/1k tokens); game-core `GET /observability/ai` tổng hợp theo task; Admin `AiEventConsolePage` mở rộng thêm StatCard tổng gọi/chi phí/độ trễ/tỷ lệ lỗi + bảng metrics 50 bản ghi mới nhất + panel GM snapshot/directives. Eval domain: 12 tests pass (7 cũ + 5 mới cho NPC/GM rule).
+- [x] **Load test realtime, order book, tick** — Script `scripts/loadtest.mjs` (`pnpm loadtest`): bắn đồng thời vào 6 endpoint gateway, tính p50/p95/avg/max + success rate, in báo cáo JSON (env `EFLS_TOKEN`, `EFLS_CONCURRENCY`, `EFLS_ROUNDS`).
+- [x] **Observability: metrics, tracing, alerting** — Game-core thêm `GET /metrics` (Prometheus: `efls_http_requests_total` đếm in-memory, `efls_outbox_pending` từ DB, `efls_uptime_seconds`) kèm `GET /health` đã có; pino-http ghi requestId làm tracing cơ bản; worker `/health` trên cổng 6060. Alerting: rate-limit/auth đã có; gợi ý dùng Prometheus + Alertmanager scrape `/metrics`.
 
 ## Phase 7 — Mở rộng (GDD Module 1–4)
 

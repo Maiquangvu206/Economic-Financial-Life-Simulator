@@ -1,6 +1,6 @@
 import { env } from './config/env.js';
 import { logger } from './logger.js';
-import { aiNewsQueue, gameTickQueue, outboxQueue } from './queues.js';
+import { aiNewsQueue, gameTickQueue, gmTickQueue, outboxQueue } from './queues.js';
 
 export async function scheduleJobs(): Promise<void> {
   await gameTickQueue.add(
@@ -28,6 +28,16 @@ export async function scheduleJobs(): Promise<void> {
     {},
     {
       repeat: { pattern: env.AI_NEWS_CRON },
+      removeOnComplete: 50,
+      removeOnFail: 100,
+    },
+  );
+
+  await gmTickQueue.add(
+    'gm-tick',
+    {},
+    {
+      repeat: { every: 3_600_000 },
       removeOnComplete: 50,
       removeOnFail: 100,
     },

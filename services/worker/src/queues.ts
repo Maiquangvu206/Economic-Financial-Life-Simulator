@@ -16,6 +16,7 @@ export const QUEUES = {
   foreclosure: 'foreclosure',
   taxAudit: 'tax-audit',
   aiNews: 'ai-news',
+  gmTick: 'gm-tick',
 } as const;
 
 export const gameTickQueue = new Queue(QUEUES.gameTick, {
@@ -42,6 +43,10 @@ export const aiNewsQueue = new Queue(QUEUES.aiNews, {
   connection: queueConnection,
 });
 
+export const gmTickQueue = new Queue(QUEUES.gmTick, {
+  connection: queueConnection,
+});
+
 export const allQueues = [
   gameTickQueue,
   outboxQueue,
@@ -49,4 +54,5 @@ export const allQueues = [
   foreclosureQueue,
   taxAuditQueue,
   aiNewsQueue,
+  gmTickQueue,
 ];

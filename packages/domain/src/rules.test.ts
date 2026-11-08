@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { calculateCreditScore, creditBand } from './credit.js';
 import { evaluateLoanHealth } from './banking.js';
 import { applyHeat, decayHeat, heatTier } from './crime/heat.js';
+import { evaluateNpcDeal } from './npc.js';
+import { applyGmAdjustment } from './gm.js';
 import { calculateAuditRisk } from './tax/auditRisk.js';
 import { matchOrderBook } from './stock/orderBook.js';
 
@@ -78,6 +80,49 @@ describe('heat', () => {
   });
 });
 
+describe('npc negotiation', () => {
+  it('honest npc accepts at fair value but not below', () => {
+    expect(evaluateNpcDeal({ personality: 'honest', offerMinor: 100, fairValue: 100 }).accept).toBe(
+      true,
+    );
+    const low = evaluateNpcDeal({ personality: 'honest', offerMinor: 50, fairValue: 100 });
+    expect(low.accept).toBe(false);
+    expect(low.counterOfferMinor).toBeGreaterThanOrEqual(100);
+    expect(low.counterOfferMinor).toBeLessThanOrEqual(105);
+  });
+
+  it('greedy npc counters higher than cautious', () => {
+    const greedy = evaluateNpcDeal({ personality: 'greedy', offerMinor: 50, fairValue: 100 });
+    const cautious = evaluateNpcDeal({ personality: 'cautious', offerMinor: 50, fairValue: 100 });
+    expect(greedy.counterOfferMinor).toBeGreaterThan(cautious.counterOfferMinor ?? 0);
+  });
+});
+
+describe('gm macro adjustment', () => {
+  const current = {
+    inflationPct: 3,
+    unemploymentPct: 5,
+    baseRatePct: 5,
+    gdpGrowthPct: 2,
+    cpi: 100,
+  };
+
+  it('raise_rate lifts base rate within bounds', () => {
+    const result = applyGmAdjustment({ action: 'raise_rate', magnitude: 0.5, current });
+    expect(result.next.baseRatePct).toBeCloseTo(6);
+    expect(result.next.baseRatePct).toBeLessThanOrEqual(15);
+  });
+
+  it('magnitude is clamped to 1', () => {
+    const result = applyGmAdjustment({ action: 'cut_rate', magnitude: 5, current });
+    expect(result.next.baseRatePct).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('do_nothing leaves state untouched', () => {
+    const result = applyGmAdjustment({ action: 'do_nothing', magnitude: 1, current });
+    expect(result.next).toEqual(current);
+  });
+});
 describe('audit risk', () => {
   it('is a bounded probability and rises with red flags', () => {
     const clean = calculateAuditRisk({

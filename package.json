@@ -24,6 +24,7 @@
     "infra:logs": "docker compose -f infra/docker/docker-compose.yml --env-file .env logs -f --tail=200",
     "smoke": "node scripts/smoke.mjs",
     "smoke:banking": "node scripts/smoke-banking.mjs",
+    "loadtest": "node scripts/loadtest.mjs",
     "ai:dev": "cd ai && uvicorn app.main:app --reload --port 8000",
     "ai:test": "cd ai && pytest"
   },

@@ -20,6 +20,10 @@ import { lawRouter } from './modules/law/law.routes.js';
 import { educationRouter } from './modules/education/education.routes.js';
 import { taxRouter } from './modules/tax/tax.routes.js';
 import { underworldRouter } from './modules/underworld/underworld.routes.js';
+import { npcRouter } from './modules/npc/npc.routes.js';
+import { gmRouter } from './modules/gm/gm.routes.js';
+import { observabilityRouter } from './modules/observability/observability.routes.js';
+import { observabilityService } from './modules/observability/observability.service.js';
 
 export function createApp(): Express {
   const app = express();
@@ -46,6 +50,36 @@ export function createApp(): Express {
     res.json({ status: 'ok', service: 'game-core', env: env.NODE_ENV });
   });
 
+  // Observability: số request đã xử lý (in-memory counter cho Prometheus scrape).
+  let httpRequestsTotal = 0;
+  app.use((_req, _res, next) => {
+    httpRequestsTotal += 1;
+    next();
+  });
+
+  app.get('/metrics', async (_req, res) => {
+    try {
+      const outboxPending = await observabilityService.getOutboxPending();
+      res
+        .type('text/plain')
+        .send(
+          [
+            '# HELP efls_http_requests_total Total HTTP requests served by game-core',
+            '# TYPE efls_http_requests_total counter',
+            `efls_http_requests_total ${httpRequestsTotal}`,
+            '# HELP efls_outbox_pending Outbox rows awaiting relay',
+            '# TYPE efls_outbox_pending gauge',
+            `efls_outbox_pending ${outboxPending}`,
+            '# HELP efls_uptime_seconds Game-core uptime in seconds',
+            '# TYPE efls_uptime_seconds gauge',
+            `efls_uptime_seconds ${Math.floor(process.uptime())}`,
+          ].join('\n'),
+        );
+    } catch {
+      res.status(500).send('metrics unavailable');
+    }
+  });
+
   app.use('/api', requireInternalToken);
 
   app.use('/api/v1/auth', authRouter);
@@ -61,6 +95,9 @@ export function createApp(): Express {
   app.use('/api/v1/education', educationRouter);
   app.use('/api/v1/tax', taxRouter);
   app.use('/api/v1/underworld', underworldRouter);
+  app.use('/api/v1/npc', npcRouter);
+  app.use('/api/v1/gm', gmRouter);
+  app.use('/api/v1/observability', observabilityRouter);
   app.use('/api/v1/admin', attachActor, adminRouter);
 
   app.use((_req, res) => {
