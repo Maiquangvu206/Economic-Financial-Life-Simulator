@@ -6,6 +6,7 @@ import { ChatWidget } from '../../features/chat/ChatWidget';
 import { useGameStore } from '../../store/game';
 import { formatCompact, formatMoney, formatVietnamDate, formatVietnamTime } from '../lib/format';
 import { Badge } from '../ui/Badge';
+import { ToastContainer } from '../ui/Toast';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Thành phố', symbol: '▦', end: true },
@@ -117,6 +118,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-surface-50 text-slate-900 font-sans">
+      <ToastContainer />
       <ChatWidget />
       {/* Overlay ánh sáng theo giờ/mùa */}
       <div

@@ -18,12 +18,19 @@ export interface PropertyRow {
   status: string;
   createdAt: Date;
   updatedAt: Date;
+  lotNumber: string | null;
+  province: string | null;
+  rentListingActive: boolean;
+  rentDepositMinor: string;
+  rentNotes: string | null;
+  saleNotes: string | null;
 }
 
 export interface LeaseRow {
   id: string;
   propertyId: string;
   tenantCharacterId: string;
+  tenantName: string | null;
   monthlyRentMinor: string;
   status: string;
   startedAt: Date;
@@ -31,59 +38,83 @@ export interface LeaseRow {
   nextDueAt: Date;
 }
 
+export interface PropertySaleOfferRow {
+  id: string;
+  propertyId: string;
+  buyerCharacterId: string;
+  buyerName: string | null;
+  sellerCharacterId: string;
+  amountMinor: string;
+  status: string;
+  message: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  resolvedAt: Date | null;
+}
+
+const PROPERTY_SELECT = `
+  SELECT p.id, p.node_id AS "nodeId", m.name AS "nodeName", m.x AS "nodeX", m.y AS "nodeY",
+         m.zone_type AS "nodeZoneType",
+         p.owner_character_id AS "ownerCharacterId", p.owner_company_id AS "ownerCompanyId",
+         p.property_type AS "propertyType", p.purchase_price_minor AS "purchasePriceMinor",
+         p.current_value_minor AS "currentValueMinor",
+         p.monthly_rent_minor AS "monthlyRentMinor",
+         p.asking_price_minor AS "askingPriceMinor",
+         p.status, p.created_at AS "createdAt", p.updated_at AS "updatedAt",
+         p.lot_number AS "lotNumber", p.province,
+         p.rent_listing_active AS "rentListingActive",
+         p.rent_deposit_minor AS "rentDepositMinor",
+         p.rent_notes AS "rentNotes",
+         p.sale_notes AS "saleNotes"
+  FROM properties p
+  JOIN map_nodes m ON p.node_id = m.id
+`;
+
 /** Truy cập bảng properties và leases (bất động sản), join map_nodes để lấy vị trí/vùng. */
 export class RealEstateRepository {
   constructor(readonly db: Db = pool) {}
 
   async listProperties(): Promise<PropertyRow[]> {
     const result = await this.db.query<PropertyRow>(
-      `SELECT p.id, p.node_id AS "nodeId", m.name AS "nodeName", m.x AS "nodeX", m.y AS "nodeY",
-              m.zone_type AS "nodeZoneType",
-              p.owner_character_id AS "ownerCharacterId", p.owner_company_id AS "ownerCompanyId",
-              p.property_type AS "propertyType", p.purchase_price_minor AS "purchasePriceMinor",
-              p.current_value_minor AS "currentValueMinor",
-              p.monthly_rent_minor AS "monthlyRentMinor",
-              p.asking_price_minor AS "askingPriceMinor",
-              p.status, p.created_at AS "createdAt", p.updated_at AS "updatedAt"
-       FROM properties p
-       JOIN map_nodes m ON p.node_id = m.id
-       ORDER BY p.created_at DESC`,
+      `${PROPERTY_SELECT} ORDER BY p.created_at DESC`,
     );
     return result.rows;
   }
 
   async findById(id: string, db: Db = this.db): Promise<PropertyRow | null> {
-    const result = await db.query<PropertyRow>(
-      `SELECT p.id, p.node_id AS "nodeId", m.name AS "nodeName", m.x AS "nodeX", m.y AS "nodeY",
-              m.zone_type AS "nodeZoneType",
-              p.owner_character_id AS "ownerCharacterId", p.owner_company_id AS "ownerCompanyId",
-              p.property_type AS "propertyType", p.purchase_price_minor AS "purchasePriceMinor",
-              p.current_value_minor AS "currentValueMinor",
-              p.monthly_rent_minor AS "monthlyRentMinor",
-              p.asking_price_minor AS "askingPriceMinor",
-              p.status, p.created_at AS "createdAt", p.updated_at AS "updatedAt"
-       FROM properties p
-       JOIN map_nodes m ON p.node_id = m.id
-       WHERE p.id = $1`,
-      [id],
-    );
+    const result = await db.query<PropertyRow>(`${PROPERTY_SELECT} WHERE p.id = $1`, [id]);
     return result.rows[0] ?? null;
   }
 
-  /** Danh sách hợp đồng thuê đang active của một nhân vật. */
   async listActiveLeasesByCharacter(characterId: string): Promise<LeaseRow[]> {
     const result = await this.db.query<LeaseRow>(
-      `SELECT id, property_id AS "propertyId", tenant_character_id AS "tenantCharacterId",
-              monthly_rent_minor AS "monthlyRentMinor", status, started_at AS "startedAt",
-              ends_at AS "endsAt", next_due_at AS "nextDueAt"
-       FROM leases
-       WHERE tenant_character_id = $1 AND status = 'active'`,
+      `SELECT l.id, l.property_id AS "propertyId", l.tenant_character_id AS "tenantCharacterId",
+              c.full_name AS "tenantName",
+              l.monthly_rent_minor AS "monthlyRentMinor", l.status, l.started_at AS "startedAt",
+              l.ends_at AS "endsAt", l.next_due_at AS "nextDueAt"
+       FROM leases l
+       LEFT JOIN characters c ON c.id = l.tenant_character_id
+       WHERE l.tenant_character_id = $1 AND l.status = 'active'`,
       [characterId],
     );
     return result.rows;
   }
 
-  /** Có hợp đồng thuê đang active nào trên bất động sản này không? */
+  async listActiveLeasesByPropertyIds(propertyIds: string[]): Promise<LeaseRow[]> {
+    if (propertyIds.length === 0) return [];
+    const result = await this.db.query<LeaseRow>(
+      `SELECT l.id, l.property_id AS "propertyId", l.tenant_character_id AS "tenantCharacterId",
+              c.full_name AS "tenantName",
+              l.monthly_rent_minor AS "monthlyRentMinor", l.status, l.started_at AS "startedAt",
+              l.ends_at AS "endsAt", l.next_due_at AS "nextDueAt"
+       FROM leases l
+       LEFT JOIN characters c ON c.id = l.tenant_character_id
+       WHERE l.property_id = ANY($1::uuid[]) AND l.status = 'active'`,
+      [propertyIds],
+    );
+    return result.rows;
+  }
+
   async hasActiveLease(client: Db, propertyId: string): Promise<boolean> {
     const result = await client.query<{ count: string }>(
       `SELECT count(*) AS count FROM leases WHERE property_id = $1 AND status = 'active'`,
@@ -92,26 +123,11 @@ export class RealEstateRepository {
     return Number(result.rows[0]?.count ?? 0) > 0;
   }
 
-  /** Có bất động sản nào trên ô bản đồ này không (để tránh tạo trùng khi mua đất). */
   async findPropertyByNodeId(db: Db, nodeId: string): Promise<PropertyRow | null> {
-    const result = await db.query<PropertyRow>(
-      `SELECT p.id, p.node_id AS "nodeId", m.name AS "nodeName", m.x AS "nodeX", m.y AS "nodeY",
-              m.zone_type AS "nodeZoneType",
-              p.owner_character_id AS "ownerCharacterId", p.owner_company_id AS "ownerCompanyId",
-              p.property_type AS "propertyType", p.purchase_price_minor AS "purchasePriceMinor",
-              p.current_value_minor AS "currentValueMinor",
-              p.monthly_rent_minor AS "monthlyRentMinor",
-              p.asking_price_minor AS "askingPriceMinor",
-              p.status, p.created_at AS "createdAt", p.updated_at AS "updatedAt"
-       FROM properties p
-       JOIN map_nodes m ON p.node_id = m.id
-       WHERE p.node_id = $1`,
-      [nodeId],
-    );
+    const result = await db.query<PropertyRow>(`${PROPERTY_SELECT} WHERE p.node_id = $1`, [nodeId]);
     return result.rows[0] ?? null;
   }
 
-  /** Tạo bất động sản đất nền đã thuộc về người mua ngay trong cùng giao dịch. */
   async createLandProperty(
     client: Db,
     input: {
@@ -119,14 +135,16 @@ export class RealEstateRepository {
       ownerCharacterId: string;
       priceMinor: number;
       name: string;
+      province: string | null;
+      lotNumber: string | null;
     },
   ): Promise<string> {
     const result = await client.query<{ id: string }>(
       `INSERT INTO properties (id, node_id, owner_character_id, property_type,
-              purchase_price_minor, current_value_minor, monthly_rent_minor, status)
-       VALUES (gen_random_uuid(), $1, $2, 'land', $3, $3, 0, 'owned')
+              purchase_price_minor, current_value_minor, monthly_rent_minor, status, province, lot_number)
+       VALUES (gen_random_uuid(), $1, $2, 'land', $3, $3, 0, 'owned', $4, $5)
        RETURNING id`,
-      [input.nodeId, input.ownerCharacterId, input.priceMinor],
+      [input.nodeId, input.ownerCharacterId, input.priceMinor, input.province, input.lotNumber],
     );
     return result.rows[0]!.id;
   }
@@ -135,18 +153,41 @@ export class RealEstateRepository {
     await client.query(
       `UPDATE properties
        SET owner_character_id = $2, owner_company_id = NULL,
-           status = 'owned', updated_at = now()
+           status = 'owned', asking_price_minor = NULL, sale_notes = NULL, updated_at = now()
        WHERE id = $1 AND status IN ('unowned', 'listed')`,
       [propertyId, buyerCharacterId],
     );
   }
 
-  async list(client: Db, propertyId: string, askingPriceMinor: number): Promise<void> {
+  async list(
+    client: Db,
+    propertyId: string,
+    askingPriceMinor: number,
+    saleNotes: string | null,
+  ): Promise<void> {
     await client.query(
       `UPDATE properties
-       SET asking_price_minor = $2, status = 'listed', updated_at = now()
+       SET asking_price_minor = $2, sale_notes = $3, status = 'listed', updated_at = now()
        WHERE id = $1 AND status = 'owned'`,
-      [propertyId, askingPriceMinor],
+      [propertyId, askingPriceMinor, saleNotes],
+    );
+  }
+
+  async updateRentTerms(
+    client: Db,
+    propertyId: string,
+    input: {
+      monthlyRentMinor: number;
+      rentDepositMinor: number;
+      rentListingActive: boolean;
+      rentNotes: string | null;
+    },
+  ): Promise<void> {
+    await client.query(
+      `UPDATE properties
+       SET monthly_rent_minor = $2, rent_deposit_minor = $3, rent_listing_active = $4, rent_notes = $5, updated_at = now()
+       WHERE id = $1`,
+      [propertyId, input.monthlyRentMinor, input.rentDepositMinor, input.rentListingActive, input.rentNotes],
     );
   }
 
@@ -160,6 +201,73 @@ export class RealEstateRepository {
       `INSERT INTO leases (id, property_id, tenant_character_id, monthly_rent_minor, status, next_due_at)
        VALUES (gen_random_uuid(), $1, $2, $3, 'active', now() + interval '1 month')`,
       [propertyId, tenantCharacterId, monthlyRentMinor],
+    );
+  }
+
+  async listOffersByPropertyIds(propertyIds: string[]): Promise<PropertySaleOfferRow[]> {
+    if (propertyIds.length === 0) return [];
+    const result = await this.db.query<PropertySaleOfferRow>(
+      `SELECT o.id, o.property_id AS "propertyId", o.buyer_character_id AS "buyerCharacterId",
+              c.full_name AS "buyerName", o.seller_character_id AS "sellerCharacterId",
+              o.amount_minor AS "amountMinor", o.status, o.message,
+              o.created_at AS "createdAt", o.updated_at AS "updatedAt", o.resolved_at AS "resolvedAt"
+       FROM property_sale_offers o
+       LEFT JOIN characters c ON c.id = o.buyer_character_id
+       WHERE o.property_id = ANY($1::uuid[]) AND o.status = 'pending'
+       ORDER BY o.created_at DESC`,
+      [propertyIds],
+    );
+    return result.rows;
+  }
+
+  async createOffer(
+    db: Db,
+    input: {
+      propertyId: string;
+      buyerCharacterId: string;
+      sellerCharacterId: string;
+      amountMinor: number;
+      message: string | null;
+    },
+  ): Promise<string> {
+    const result = await db.query<{ id: string }>(
+      `INSERT INTO property_sale_offers (property_id, buyer_character_id, seller_character_id, amount_minor, status, message)
+       VALUES ($1,$2,$3,$4,'pending',$5) RETURNING id`,
+      [input.propertyId, input.buyerCharacterId, input.sellerCharacterId, input.amountMinor, input.message],
+    );
+    return result.rows[0]!.id;
+  }
+
+  async findOfferById(db: Db, offerId: string): Promise<PropertySaleOfferRow | null> {
+    const result = await db.query<PropertySaleOfferRow>(
+      `SELECT o.id, o.property_id AS "propertyId", o.buyer_character_id AS "buyerCharacterId",
+              c.full_name AS "buyerName", o.seller_character_id AS "sellerCharacterId",
+              o.amount_minor AS "amountMinor", o.status, o.message,
+              o.created_at AS "createdAt", o.updated_at AS "updatedAt", o.resolved_at AS "resolvedAt"
+       FROM property_sale_offers o
+       LEFT JOIN characters c ON c.id = o.buyer_character_id
+       WHERE o.id = $1`,
+      [offerId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async resolveOffer(
+    db: Db,
+    offerId: string,
+    status: 'accepted' | 'rejected' | 'cancelled' | 'expired',
+  ): Promise<void> {
+    await db.query(
+      `UPDATE property_sale_offers SET status = $2, resolved_at = now(), updated_at = now() WHERE id = $1`,
+      [offerId, status],
+    );
+  }
+
+  async rejectOtherPendingOffers(db: Db, propertyId: string, exceptOfferId: string): Promise<void> {
+    await db.query(
+      `UPDATE property_sale_offers SET status = 'rejected', resolved_at = now(), updated_at = now()
+       WHERE property_id = $1 AND id <> $2 AND status = 'pending'`,
+      [propertyId, exceptOfferId],
     );
   }
 }

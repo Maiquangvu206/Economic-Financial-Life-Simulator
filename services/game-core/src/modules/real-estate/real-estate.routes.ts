@@ -7,7 +7,10 @@ import {
   BuyLandRequestSchema,
   BuyPropertyRequestSchema,
   ListPropertyRequestSchema,
+  MakePropertyOfferRequestSchema,
   RentPropertyRequestSchema,
+  RespondPropertyOfferRequestSchema,
+  UpdateRentTermsRequestSchema,
 } from '@efls/contracts';
 
 const controller = new RealEstateController();
@@ -37,7 +40,25 @@ realEstateRouter.post(
 );
 
 realEstateRouter.post(
+  '/rent-terms',
+  validateBody(UpdateRentTermsRequestSchema),
+  asyncHandler(controller.updateRentTerms),
+);
+
+realEstateRouter.post(
   '/rent',
   validateBody(RentPropertyRequestSchema),
   asyncHandler(controller.rentProperty),
+);
+
+realEstateRouter.post(
+  '/offers',
+  validateBody(MakePropertyOfferRequestSchema),
+  asyncHandler(controller.makeOffer),
+);
+
+realEstateRouter.post(
+  '/offers/respond',
+  validateBody(RespondPropertyOfferRequestSchema),
+  asyncHandler(controller.respondOffer),
 );

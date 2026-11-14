@@ -35,6 +35,12 @@ export class StockMarketController {
     res.status(201).json(result);
   };
 
+  tickHourly = async (req: Request, res: Response): Promise<void> => {
+    const body = (req.body ?? {}) as { gameYear?: number; gameMonth?: number; gameDay?: number; gameHour?: number };
+    const result = await this.service.tickHourlyPrices(body);
+    res.status(200).json(result);
+  };
+
   cancelOrder = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
     const { orderId } = req.params as { orderId: string };

@@ -16,11 +16,16 @@ export type UniversityDto = z.infer<typeof UniversityDtoSchema>;
 
 export const DegreeDtoSchema = z.object({
   id: IdSchema,
+  universityId: IdSchema.optional(),
+  universityName: z.string().optional(),
   degreeCode: z.string(),
   field: z.string(),
   status: z.enum(['enrolled', 'graduated', 'dropped']),
   enrolledAt: z.string().datetime(),
   graduatesAt: z.string().datetime(),
+  progressPct: z.number().min(0).max(100).optional(),
+  canEarlyGraduate: z.boolean().optional(),
+  earlyGraduateMinProgressPct: z.number().optional(),
 });
 export type DegreeDto = z.infer<typeof DegreeDtoSchema>;
 
@@ -85,6 +90,69 @@ export const GraduationDtoSchema = z.object({
   ),
 });
 export type GraduationDto = z.infer<typeof GraduationDtoSchema>;
+
+export const EarlyGraduateRequestSchema = z.object({ degreeId: IdSchema });
+export type EarlyGraduateRequest = z.infer<typeof EarlyGraduateRequestSchema>;
+
+export const EarlyGraduateResultDtoSchema = z.object({
+  passed: z.boolean(),
+  score: z.number().int().min(0).max(100),
+  requiredScore: z.number().int().min(0).max(100),
+  message: z.string(),
+  graduation: GraduationDtoSchema.nullable(),
+});
+export type EarlyGraduateResultDto = z.infer<typeof EarlyGraduateResultDtoSchema>;
+
+// Admin education config
+export const AdminUniversityDtoSchema = z.object({
+  id: IdSchema,
+  name: z.string(),
+  degreeCode: z.string(),
+  field: IndustryTypeSchema,
+  tuition: MoneySchema,
+  durationMonths: z.number().int().positive(),
+  postGradSalary: MoneySchema.nullable().optional(),
+});
+export type AdminUniversityDto = z.infer<typeof AdminUniversityDtoSchema>;
+
+export const UpsertUniversityRequestSchema = z.object({
+  name: z.string().min(1),
+  degreeCode: z.string().min(1),
+  field: IndustryTypeSchema,
+  tuitionMinor: z.number().int().nonnegative(),
+  durationMonths: z.number().int().positive(),
+  postGradSalaryMinor: z.number().int().nonnegative().optional(),
+});
+export type UpsertUniversityRequest = z.infer<typeof UpsertUniversityRequestSchema>;
+
+export const AdminJobDtoSchema = z.object({
+  id: IdSchema,
+  title: z.string(),
+  industry: IndustryTypeSchema,
+  baseSalary: MoneySchema,
+  requiredDegree: z.string().nullable(),
+  minCreditScore: z.number().int(),
+  energyCost: z.number().int(),
+  openings: z.number().int(),
+});
+export type AdminJobDto = z.infer<typeof AdminJobDtoSchema>;
+
+export const UpsertJobRequestSchema = z.object({
+  title: z.string().min(1),
+  industry: IndustryTypeSchema,
+  baseSalaryMinor: z.number().int().nonnegative(),
+  requiredDegree: z.string().nullable().optional(),
+  minCreditScore: z.number().int().optional(),
+  energyCost: z.number().int().optional(),
+  openings: z.number().int().optional(),
+});
+export type UpsertJobRequest = z.infer<typeof UpsertJobRequestSchema>;
+
+export const AdminEducationConfigDtoSchema = z.object({
+  universities: z.array(AdminUniversityDtoSchema),
+  jobs: z.array(AdminJobDtoSchema),
+});
+export type AdminEducationConfigDto = z.infer<typeof AdminEducationConfigDtoSchema>;
 
 export const CareersOverviewExtDtoSchema = CareersOverviewDtoSchema.extend({
   unlockedFeatures: z.array(UnlockedFeatureSchema),

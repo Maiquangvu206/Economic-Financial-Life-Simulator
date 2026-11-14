@@ -3,7 +3,10 @@ import type {
   BuyLandRequest,
   BuyPropertyRequest,
   ListPropertyRequest,
+  MakePropertyOfferRequest,
   RentPropertyRequest,
+  RespondPropertyOfferRequest,
+  UpdateRentTermsRequest,
 } from '@efls/contracts';
 import { RealEstateService } from './real-estate.service.js';
 
@@ -28,14 +31,37 @@ export class RealEstateController {
   };
 
   listProperty = async (req: Request, res: Response): Promise<void> => {
-    const { propertyId, askingPrice } = req.body as ListPropertyRequest;
-    const property = await this.service.listProperty(req.actorId!, propertyId, askingPrice.amount);
+    const { propertyId, askingPrice, saleNotes } = req.body as ListPropertyRequest;
+    const property = await this.service.listProperty(req.actorId!, propertyId, askingPrice.amount, saleNotes);
+    res.status(200).json(property);
+  };
+
+  updateRentTerms = async (req: Request, res: Response): Promise<void> => {
+    const body = req.body as UpdateRentTermsRequest;
+    const property = await this.service.updateRentTerms(req.actorId!, body.propertyId, {
+      monthlyRentMinor: body.monthlyRentMinor,
+      rentDepositMinor: body.rentDepositMinor ?? 0,
+      rentListingActive: body.rentListingActive,
+      rentNotes: body.rentNotes ?? null,
+    });
     res.status(200).json(property);
   };
 
   rentProperty = async (req: Request, res: Response): Promise<void> => {
-    const { propertyId, monthlyRentMinor } = req.body as RentPropertyRequest;
-    const property = await this.service.rentProperty(req.actorId!, propertyId, monthlyRentMinor);
+    const { propertyId } = req.body as RentPropertyRequest;
+    const property = await this.service.rentProperty(req.actorId!, propertyId);
+    res.status(200).json(property);
+  };
+
+  makeOffer = async (req: Request, res: Response): Promise<void> => {
+    const { propertyId, amount, message } = req.body as MakePropertyOfferRequest;
+    const offer = await this.service.makeOffer(req.actorId!, propertyId, amount.amount, message);
+    res.status(201).json(offer);
+  };
+
+  respondOffer = async (req: Request, res: Response): Promise<void> => {
+    const { offerId, action } = req.body as RespondPropertyOfferRequest;
+    const property = await this.service.respondOffer(req.actorId!, offerId, action);
     res.status(200).json(property);
   };
 }
