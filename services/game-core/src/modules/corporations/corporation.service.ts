@@ -110,6 +110,9 @@ export class CorporationService {
         initialCapitalMinor,
       });
 
+      // Cấp giấy phép kinh doanh mặc định cho công ty mới.
+      await this.repository.ensureBusinessLicense(client, companyId);
+
       // Cấp 100% cổ phiếu cho chủ sở hữu.
       await client.query(
         `INSERT INTO company_shareholders (id, company_id, holder_character_id, shares)
@@ -401,6 +404,7 @@ export class CorporationService {
       if (company.ownerCharacterId !== character.id) {
         throw AppError.forbidden('Chỉ chủ sở hữu mới ghi nhận doanh thu.');
       }
+      await this.requireActiveLicense(client, companyId);
       if (company.status === 'bankrupt') {
         throw AppError.badRequest('Công ty đã giải thể, không thể ghi nhận doanh thu.');
       }
@@ -442,6 +446,7 @@ export class CorporationService {
       if (company.ownerCharacterId !== character.id) {
         throw AppError.forbidden('Chỉ chủ sở hữu mới chi OPEX.');
       }
+      await this.requireActiveLicense(client, companyId);
       if (company.status === 'bankrupt') {
         throw AppError.badRequest('Công ty đã giải thể, không thể chi OPEX.');
       }
@@ -480,6 +485,22 @@ export class CorporationService {
       throw AppError.forbidden('Chỉ chủ sở hữu công ty mới thực hiện thao tác này.');
     }
     return { character, company };
+  }
+
+  /** Chặn hoạt động kinh doanh khi công ty không có giấy phép hoạt động. */
+  private async requireActiveLicense(client: any, companyId: string): Promise<void> {
+    const r = await client.query(
+      `SELECT EXISTS(
+         SELECT 1 FROM business_licenses
+         WHERE company_id = $1 AND status = 'active'
+       ) AS has`,
+      [companyId],
+    );
+    if (!r.rows[0]?.has) {
+      throw AppError.forbidden(
+        'Công ty chưa có giấy phép kinh doanh hoạt động. Vui lòng cấp/xin cấp giấy phép trước khi vận hành.',
+      );
+    }
   }
 
   private mapHiringPlan(raw: any): HiringPlanDto {
@@ -582,6 +603,7 @@ export class CorporationService {
   ): Promise<HiringPlanDto> {
     return withTransaction(async (client) => {
       const { character, company } = await this.assertOwner(client, userId, companyId);
+      await this.requireActiveLicense(client, companyId);
       const { data } = await callAiService<any>('/v1/recruitment/propose', {
         company_id: companyId,
         company_name: company.name,
@@ -652,6 +674,7 @@ export class CorporationService {
   async applyHiringPlan(userId: string, companyId: string, planId: string): Promise<HiringPlanDto> {
     return withTransaction(async (client) => {
       const { company } = await this.assertOwner(client, userId, companyId);
+      await this.requireActiveLicense(client, companyId);
       const plan = await this.repository.getHiringPlan(planId, client);
       if (!plan || plan.companyId !== companyId) throw AppError.notFound('Kế hoạch tuyển dụng');
       if (plan.status === 'applied') throw AppError.badRequest('Kế hoạch đã được áp dụng.');
@@ -697,6 +720,7 @@ export class CorporationService {
   ): Promise<CompanyHrAccountingDto> {
     return withTransaction(async (client) => {
       const { company } = await this.assertOwner(client, userId, companyId);
+      await this.requireActiveLicense(client, companyId);
       const amountMinor = input.amountMinor;
       const declared = input.declaredAmountMinor ?? amountMinor;
       const isEvasion = Boolean(input.isEvasion || declared !== amountMinor);
@@ -736,6 +760,7 @@ export class CorporationService {
   ): Promise<CompanyHrAccountingDto> {
     return withTransaction(async (client) => {
       await this.assertOwner(client, userId, companyId);
+      await this.requireActiveLicense(client, companyId);
       const totals = await this.repository.ledgerTotals(companyId, client);
       let declaredRevenue = input.declareFull === false ? 0 : Number(totals.revenue);
       let declaredExpense = input.declareFull === false ? 0 : Number(totals.expense);

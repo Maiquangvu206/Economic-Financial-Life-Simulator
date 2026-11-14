@@ -33,6 +33,7 @@ export const CrimeTypeSchema = z.enum([
   'heist',
   'sabotage',
   'assault',
+  'operating_without_license',
 ]);
 export type CrimeType = z.infer<typeof CrimeTypeSchema>;
 

@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Dashboard vĩ mô', icon: '📊', end: true },
   { to: '/broadcast', label: 'Thông báo hệ thống', icon: '📢' },
   { to: '/calendar-seasons', label: 'Mùa & Lịch nghỉ Công nhân', icon: '🗓️' },
+  { to: '/education-config', label: 'Giáo dục & Đại học', icon: '🎓' },
   { to: '/map-editor', label: 'Map Editor', icon: '🗺️' },
   { to: '/players', label: 'Người chơi', icon: '👥' },
   { to: '/ai-events', label: 'AI & Sự kiện', icon: '🤖' },

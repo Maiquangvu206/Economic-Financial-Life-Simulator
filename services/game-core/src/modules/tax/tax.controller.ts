@@ -1,8 +1,10 @@
-import type { Request, Response } from 'express';
+﻿import type { Request, Response } from 'express';
 import {
   type AssessRequest,
+  type IssueLicenseRequest,
   type PayTaxRequest,
   type ReportRequest,
+  type ReportUnlicensedCompanyRequest,
   type RevokeLicenseRequest,
   type StartAuditRequest,
 } from '@efls/contracts';
@@ -38,6 +40,18 @@ export class TaxController {
     const { targetCharacterId, reason } = req.body as ReportRequest;
     await this.service.report(req.actorId!, targetCharacterId, reason);
     res.status(200).json({ ok: true });
+  };
+
+  issueLicense = async (req: Request, res: Response): Promise<void> => {
+    const { companyId } = req.body as IssueLicenseRequest;
+    const overview = await this.service.issueLicense(req.actorId!, companyId);
+    res.status(200).json(overview);
+  };
+
+  reportUnlicensedCompany = async (req: Request, res: Response): Promise<void> => {
+    const { companyId, reason } = req.body as ReportUnlicensedCompanyRequest;
+    const overview = await this.service.reportUnlicensedCompany(req.actorId!, companyId, reason);
+    res.status(200).json(overview);
   };
 
   revokeLicense = async (req: Request, res: Response): Promise<void> => {

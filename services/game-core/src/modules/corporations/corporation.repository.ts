@@ -114,6 +114,19 @@ export class CorporationRepository {
     return result.rows[0]!.id;
   }
 
+  /** Đảm bảo công ty có giấy phép kinh doanh hoạt động (idempotent). */
+  async ensureBusinessLicense(db: Db, companyId: string, licenseType = 'Giấy phép kinh doanh'): Promise<void> {
+    await db.query(
+      `INSERT INTO business_licenses (company_id, license_type, status)
+       SELECT $1::uuid, $2, 'active'
+       WHERE NOT EXISTS (
+         SELECT 1 FROM business_licenses
+         WHERE company_id = $1::uuid AND status IN ('active','suspended')
+       )`,
+      [companyId, licenseType],
+    );
+  }
+
   /** Đầu tư vốn vào công ty (tăng cash và valuation). */
   async investCompany(db: Db, input: InvestCompanyInput): Promise<void> {
     await db.query(

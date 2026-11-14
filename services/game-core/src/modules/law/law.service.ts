@@ -26,6 +26,7 @@ const BASE_FINE: Record<string, number> = {
   heist: 120_000_000,
   sabotage: 60_000_000,
   assault: 20_000_000,
+  operating_without_license: 25_000_000,
 };
 
 const BASE_PRISON_DAYS: Record<string, number> = {
@@ -37,6 +38,7 @@ const BASE_PRISON_DAYS: Record<string, number> = {
   heist: 180,
   sabotage: 45,
   assault: 10,
+  operating_without_license: 20,
 };
 
 /** Ngưỡng bằng chứng để xác nhận tội (rule cứng). */

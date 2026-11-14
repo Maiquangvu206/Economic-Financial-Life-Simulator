@@ -1,5 +1,6 @@
-import { AppError } from '../../shared/http/errors.js';
-import { toMinor, withTransaction } from '../../shared/db/tx.js';
+﻿import { AppError } from '../../shared/http/errors.js';
+import type { PoolClient } from 'pg';
+import { withTransaction, type Db } from '../../shared/db/tx.js';
 import { requireCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
 import { notify } from '../notifications/notification.service.js';
@@ -10,23 +11,42 @@ function money(amount: number) {
   return MoneySchema.parse({ amount, currency: 'VND' });
 }
 
-/** Thuế suất lũy tiến tham khảo (áp dụng trần 20%). */
+/** Thuế suất cá nhân áp dụng trên thu nhập từ công việc (10%). */
 const TAX_RATE = 0.1;
 
-/** Dịch vụ thuế: đánh thuế, kiểm toán, tố giác, thu hồi giấy phép. */
+/** Phí/lệ phí cấp giấy phép kinh doanh (người chơi tự nộp). */
+const LICENSE_ISSUE_FEE = 5_000_000;
+/** Phạt khi bị tố cáo/xác minh kinh doanh không giấy phép (trừ từ quỹ công ty nếu có). */
+const UNLICENSED_FINE = 20_000_000;
+
+/**
+ * Dịch vụ thuế cá nhân & tuân thủ giấy phép doanh nghiệp.
+ * - Thuế cá nhân: tự quyết toán 1 lần/năm theo thu nhập từ công việc đang giữ (không gộp DN).
+ * - Giấy phép DN: người chơi (chủ DN) tự cấp/xin cấp; phát hiện & tố cáo công ty không có giấy phép.
+ */
 export class TaxService {
   constructor(private readonly repository = taxRepository) {}
 
-  async getOverview(
-    userId: string,
-    dbOverride?: Parameters<typeof this.repository.listAssessments>[1],
-  ): Promise<TaxOverviewExtDto> {
-    const db = dbOverride ?? this.repository.db;
+  async getOverview(userId: string, dbOverride?: Db): Promise<TaxOverviewExtDto> {
+    // Tự động quyết toán thuế cá nhân năm hiện tại (1 lần/năm) dựa trên công việc đang giữ.
+    if (!dbOverride) {
+      return withTransaction(async (client) => {
+        const character = await requireCharacterByUserId(client, userId);
+        await this.ensureAnnualPersonalTax(client, userId, character.id, new Date().getFullYear());
+        return this.buildOverview(userId, client);
+      });
+    }
+    return this.buildOverview(userId, dbOverride);
+  }
+
+  private async buildOverview(userId: string, db: Db): Promise<TaxOverviewExtDto> {
     const character = await requireCharacterByUserId(db, userId);
-    const [assessments, audits, licenses] = await Promise.all([
+    const [assessments, audits, licenses, ownedCompanyLicenses, unlicensedCompanies] = await Promise.all([
       this.repository.listAssessments(character.id, db),
       this.repository.listAudits(character.id, db),
       this.repository.listLicenses(character.id, db),
+      this.repository.listOwnedCompanyLicenseStatuses(character.id, db),
+      this.repository.listUnlicensedCompanies(db),
     ]);
 
     const totalDue = assessments
@@ -67,37 +87,113 @@ export class TaxService {
         issuedAt: l.issuedAt.toISOString(),
         revokedAt: l.revokedAt?.toISOString() ?? null,
       })),
+      ownedCompanyLicenses: ownedCompanyLicenses.map((c) => ({
+        companyId: c.companyId,
+        companyName: c.companyName,
+        ownerCharacterId: c.ownerCharacterId,
+        ownerName: c.ownerName,
+        isOwner: true,
+        hasActiveLicense: Boolean(c.hasActiveLicense),
+        licenseId: c.licenseId,
+        licenseStatus: (c.licenseStatus as 'active' | 'suspended' | 'revoked' | null) ?? null,
+        licenseType: c.licenseType,
+        issuedAt: c.issuedAt ? c.issuedAt.toISOString() : null,
+      })),
+      unlicensedCompanies: unlicensedCompanies.map((c) => ({
+        companyId: c.companyId,
+        companyName: c.companyName,
+        ownerCharacterId: c.ownerCharacterId,
+        ownerName: c.ownerName,
+      })),
     };
   }
 
-  /** Tính thuế năm từ tiền mặt hiện có (hệ số 10%). */
+  /**
+   * Thu nhập chịu thuế cá nhân = tổng thu nhập năm từ các công việc đang giữ (active employments).
+   * Không gộp thu nhập/doanh thu doanh nghiệp.
+   */
+  private async computePersonalTaxableIncomeMinor(
+    characterId: string,
+    db: Db,
+  ): Promise<{ taxable: number; jobsCount: number; annualByJob: Array<{ title: string; annualMinor: number }> }> {
+    const jobs = await this.repository.listActiveEmployments(characterId, db);
+    const annualByJob = jobs.map((j) => {
+      const annualMinor = Math.max(0, Number(j.salaryMinor)) * 12;
+      return { title: j.title, annualMinor };
+    });
+    const taxable = annualByJob.reduce((sum, j) => sum + j.annualMinor, 0);
+    return { taxable, jobsCount: jobs.length, annualByJob };
+  }
+
+  /** Tự động quyết toán thuế cá nhân 1 lần/năm. */
+  private async ensureAnnualPersonalTax(
+    client: PoolClient,
+    userId: string,
+    characterId: string,
+    taxYear: number,
+  ): Promise<string | null> {
+    const existing = await this.repository.getAssessmentForCharacterYear(characterId, taxYear, client);
+    if (existing) return existing.id;
+
+    const { taxable, jobsCount, annualByJob } = await this.computePersonalTaxableIncomeMinor(characterId, client);
+    const taxDue = Math.round(taxable * TAX_RATE);
+    const assessmentId = await this.repository.createAssessment(client, characterId, taxYear, taxable, taxDue);
+
+    if (!assessmentId) {
+      const raced = await this.repository.getAssessmentForCharacterYear(characterId, taxYear, client);
+      return raced?.id ?? null;
+    }
+
+    const detail =
+      jobsCount > 0
+        ? annualByJob.map((j) => `${j.title}: ${j.annualMinor.toLocaleString('vi-VN')} ₫/năm`).join('; ')
+        : 'Không có công việc đang giữ';
+
+    let autoPaid = false;
+    if (taxDue > 0) {
+      const balance = await ledger.getBalance(client, 'character', characterId);
+      if (balance >= taxDue) {
+        await ledger.transfer(client, {
+          from: { ownerType: 'character', ownerId: characterId },
+          to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
+          amountMinor: taxDue,
+          kind: 'tax_payment',
+          description: `Quyết toán thuế cá nhân năm ${taxYear} (tự động, từ thu nhập công việc)`,
+          referenceType: 'tax_assessment',
+          referenceId: assessmentId,
+        });
+        await this.repository.markPaid(client, assessmentId);
+        autoPaid = true;
+      }
+    } else {
+      await this.repository.markPaid(client, assessmentId);
+      autoPaid = true;
+    }
+
+    await notify(client, {
+      userId,
+      kind: 'tax',
+      title: autoPaid ? 'Quyết toán thuế cá nhân (tự động)' : 'Quyết toán thuế cá nhân: còn nợ',
+      body:
+        taxDue > 0
+          ? autoPaid
+            ? `Đã tự động quyết toán thuế năm ${taxYear}: ${taxDue.toLocaleString('vi-VN')} ₫ trên thu nhập công việc ${taxable.toLocaleString('vi-VN')} ₫/năm (${jobsCount} công việc đang giữ).`
+            : `Đã lập quyết toán thuế năm ${taxYear}: ${taxDue.toLocaleString('vi-VN')} ₫ trên thu nhập công việc ${taxable.toLocaleString('vi-VN')} ₫/năm (${jobsCount} công việc đang giữ). Số dư không đủ, vui lòng nộp thuế.`
+          : `Quyết toán thuế năm ${taxYear}: không phát sinh thuế từ công việc đang giữ.`,
+      payload: { assessmentId, taxYear, taxable, taxDue, jobsCount, detail, autoPaid },
+    });
+
+    return assessmentId;
+  }
+
   async assess(userId: string, taxYear: number): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireCharacterByUserId(client, userId);
-      const taxable = toMinor(character.cash_minor);
-      if (taxable <= 0) {
-        throw AppError.badRequest('Không có thu nhập chịu thuế (tiền mặt = 0).');
-      }
-      const taxDue = Math.round(taxable * TAX_RATE);
-      const assessmentId = await this.repository.createAssessment(
-        client,
-        character.id,
-        taxYear,
-        taxable,
-        taxDue,
-      );
-      await notify(client, {
-        userId,
-        kind: 'tax',
-        title: 'Đánh thuế',
-        body: `Khoản thuế năm ${taxYear}: ${taxDue} VND trên thu nhập ${taxable} VND.`,
-        payload: { assessmentId, taxYear, taxable, taxDue },
-      });
-      return this.getOverview(userId, client);
+      await this.ensureAnnualPersonalTax(client, userId, character.id, taxYear);
+      return this.buildOverview(userId, client);
     });
   }
 
-  /** Nộp thuế cho một khoản đã đánh giá. */
   async pay(userId: string, assessmentId: string): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireCharacterByUserId(client, userId);
@@ -125,17 +221,13 @@ export class TaxService {
         userId,
         kind: 'tax',
         title: 'Nộp thuế thành công',
-        body: `Đã nộp ${due} VND thuế năm ${assessment.taxYear}.`,
+        body: `Đã nộp ${due.toLocaleString('vi-VN')} ₫ thuế năm ${assessment.taxYear}.`,
         payload: { assessmentId, due },
       });
-      return this.getOverview(userId, client);
+      return this.buildOverview(userId, client);
     });
   }
 
-  /**
-   * Mở kiểm toán thuế: rủi ro = heat + nợ thuế quá hạn.
-   * Nếu risk >= 60: bị phạt 10% tổng nợ thuế (tối thiểu 1 triệu).
-   */
   async startAudit(userId: string, taxYear: number): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireCharacterByUserId(client, userId);
@@ -184,19 +276,15 @@ export class TaxService {
         title: status === 'penalized' ? 'Kiểm toán: bị phạt' : 'Kiểm toán: đã cleared',
         body:
           status === 'penalized'
-            ? `Rủi ro kiểm toán ${riskScore}/100, phạt ${penalty} VND.`
+            ? `Rủi ro kiểm toán ${riskScore}/100, phạt ${penalty.toLocaleString('vi-VN')} ₫.`
             : `Rủi ro kiểm toán ${riskScore}/100, không có vấn đề.`,
         payload: { auditId, taxYear, riskScore, status, penalty },
       });
-      return this.getOverview(userId, client);
+      return this.buildOverview(userId, client);
     });
   }
 
-  /**
-   * Tố giác một nhân vật: tạo vụ án hình sự cho người bị tố giác,
-   * tăng rủi ro kiểm toán của người tố giác? Thực tế: tăng heat của target,
-   * và tạo thông báo cho cả hai bên.
-   */
+  /** Tố giác một nhân vật (chung). */
   async report(userId: string, targetCharacterId: string, reason: string): Promise<void> {
     await withTransaction(async (client) => {
       const character = await requireCharacterByUserId(client, userId);
@@ -233,14 +321,139 @@ export class TaxService {
     });
   }
 
-  /** Thu hồi giấy phép kinh doanh (hủy giấy phép công ty). */
+  /** (a) Người chơi (chủ DN) tự cấp/xin cấp giấy phép kinh doanh cho công ty của mình. */
+  async issueLicense(userId: string, companyId: string): Promise<TaxOverviewExtDto> {
+    return withTransaction(async (client) => {
+      const character = await requireCharacterByUserId(client, userId);
+      const company = await this.repository.getCompanyBasic(companyId, client);
+      if (!company) throw AppError.notFound('Company');
+      if (company.ownerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ công ty mới được cấp/xin cấp giấy phép.');
+      }
+      if (company.status === 'bankrupt') {
+        throw AppError.badRequest('Công ty đã phá sản, không thể cấp giấy phép.');
+      }
+      const hasActive = await this.repository.companyHasActiveLicense(companyId, client);
+      if (hasActive) {
+        throw AppError.conflict('license_active', 'Công ty đã có giấy phép kinh doanh hoạt động.');
+      }
+
+      // Lệ phí cấp phép (trừ từ ví cá nhân chủ DN).
+      const balance = await ledger.getBalance(client, 'character', character.id);
+      if (balance < LICENSE_ISSUE_FEE) {
+        throw AppError.conflict(
+          'insufficient_funds',
+          `Không đủ tiền nộp lệ phí cấp giấy phép (${LICENSE_ISSUE_FEE.toLocaleString('vi-VN')} ₫).`,
+        );
+      }
+      await ledger.transfer(client, {
+        from: { ownerType: 'character', ownerId: character.id },
+        to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
+        amountMinor: LICENSE_ISSUE_FEE,
+        kind: 'license_fee',
+        description: `Lệ phí cấp giấy phép kinh doanh - ${company.name}`,
+        referenceType: 'company',
+        referenceId: companyId,
+      });
+
+      const licenseId = await this.repository.issueLicense(client, companyId, 'Giấy phép kinh doanh');
+
+      await notify(client, {
+        userId,
+        kind: 'tax',
+        title: 'Đã cấp giấy phép kinh doanh',
+        body: `Công ty "${company.name}" đã được cấp giấy phép kinh doanh (lệ phí ${LICENSE_ISSUE_FEE.toLocaleString('vi-VN')} ₫).`,
+        payload: { companyId, licenseId, fee: LICENSE_ISSUE_FEE },
+      });
+
+      return this.buildOverview(userId, client);
+    });
+  }
+
+  /** (b) Tố cáo công ty kinh doanh không có giấy phép: tạo vụ án và xử phạt. */
+  async reportUnlicensedCompany(userId: string, companyId: string, reason?: string): Promise<TaxOverviewExtDto> {
+    return withTransaction(async (client) => {
+      const reporter = await requireCharacterByUserId(client, userId);
+      const company = await this.repository.getCompanyBasic(companyId, client);
+      if (!company) throw AppError.notFound('Company');
+      if (company.ownerCharacterId === reporter.id) {
+        throw AppError.badRequest('Không thể tự tố cáo công ty của mình.');
+      }
+      const hasActive = await this.repository.companyHasActiveLicense(companyId, client);
+      if (hasActive) {
+        throw AppError.badRequest('Công ty đang có giấy phép kinh doanh hoạt động, không thể tố cáo thiếu giấy phép.');
+      }
+
+      const finalReason =
+        (reason && reason.trim()) ||
+        `Kinh doanh không có giấy phép hoạt động (công ty "${company.name}").`;
+
+      // Tạo vụ án đối với chủ công ty (hành vi kinh doanh không giấy phép).
+      const caseRes = await client.query<{ id: string }>(
+        `INSERT INTO court_cases (id, defendant_id, plaintiff_type, crime_type, status, evidence_strength)
+         VALUES (gen_random_uuid(), $1, 'government', 'operating_without_license', 'open', 70)
+         RETURNING id`,
+        [company.ownerCharacterId],
+      );
+      const caseId = caseRes.rows[0]!.id;
+
+      // Tăng heat chủ công ty.
+      await client.query(
+        `UPDATE characters SET heat_level = LEAST(100, heat_level + 10), updated_at = now() WHERE id = $1`,
+        [company.ownerCharacterId],
+      );
+
+      // Phạt từ quỹ công ty nếu có (chuyển về ngân sách chính phủ).
+      const companyCash = Math.max(0, Number(company.cashMinor));
+      const fine = Math.min(UNLICENSED_FINE, companyCash);
+      if (fine > 0) {
+        await client.query(
+          `UPDATE companies SET cash_minor = cash_minor - $2::bigint, updated_at = now() WHERE id = $1`,
+          [companyId, fine],
+        );
+        // ghi nhận vào ledger_accounts công ty (giảm) nếu có, và chuyển sang government
+        await client.query(
+          `UPDATE ledger_accounts
+              SET balance_minor = GREATEST(0, balance_minor - $3::bigint), updated_at = now()
+            WHERE owner_type = 'company' AND owner_id = $1 AND kind = $2 AND currency = 'VND'`,
+          [companyId, 'cash', fine],
+        );
+        await client.query(
+          `INSERT INTO ledger_accounts (id, owner_type, owner_id, kind, currency, balance_minor)
+           VALUES (gen_random_uuid(), 'government', $1, 'treasury', 'VND', $2)
+           ON CONFLICT (owner_type, owner_id, kind, currency)
+           DO UPDATE SET balance_minor = ledger_accounts.balance_minor + EXCLUDED.balance_minor, updated_at = now()`,
+          [SYSTEM_GOVERNMENT_ID, fine],
+        );
+      }
+
+      await notify(client, {
+        userId,
+        kind: 'tax',
+        title: 'Đã tố cáo công ty không có giấy phép',
+        body: `Đã ghi nhận tố cáo công ty "${company.name}" kinh doanh không giấy phép. Vụ án đã được lập và xử phạt ban đầu ${fine.toLocaleString('vi-VN')} ₫ (nếu có quỹ).`,
+        payload: { companyId, caseId, fine, reason: finalReason },
+      });
+      await notify(client, {
+        userId: company.ownerUserId,
+        kind: 'law',
+        title: 'Bị tố cáo: kinh doanh không giấy phép',
+        body: `Công ty "${company.name}" bị tố cáo kinh doanh không có giấy phép. Vụ án đã được mở (mã ${caseId}).${fine > 0 ? ` Bị phạt ${fine.toLocaleString('vi-VN')} ₫ từ quỹ công ty.` : ''}`,
+        payload: { companyId, caseId, fine, reason: finalReason },
+      });
+
+      return this.buildOverview(userId, client);
+    });
+  }
+
+  /** Thu hồi giấy phép kinh doanh (hủy giấy phép công ty) - chủ công ty. */
   async revokeLicense(userId: string, licenseId: string): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireCharacterByUserId(client, userId);
       const license = await this.repository.getLicense(licenseId, client);
       if (!license) throw AppError.notFound('Business license');
-      const company = await client.query<{ owner_character_id: string }>(
-        `SELECT owner_character_id FROM companies WHERE id = $1`,
+      const company = await client.query<{ owner_character_id: string; name: string }>(
+        `SELECT owner_character_id, name FROM companies WHERE id = $1`,
         [license.companyId],
       );
       if (!company.rows[0]) throw AppError.notFound('Company');
@@ -255,10 +468,10 @@ export class TaxService {
         userId,
         kind: 'tax',
         title: 'Hủy giấy phép',
-        body: `Giấy phép ${license.licenseType} (công ty ${license.companyId}) đã bị hủy.`,
+        body: `Giấy phép kinh doanh của công ty "${company.rows[0].name}" đã bị hủy. Công ty cần được cấp lại giấy phép để hoạt động hợp lệ.`,
         payload: { licenseId, companyId: license.companyId },
       });
-      return this.getOverview(userId, client);
+      return this.buildOverview(userId, client);
     });
   }
 

@@ -1,12 +1,14 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { attachActor } from '../../shared/http/actor.js';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import { TaxController } from './tax.controller.js';
 import {
   AssessRequestSchema,
+  IssueLicenseRequestSchema,
   PayTaxRequestSchema,
   ReportRequestSchema,
+  ReportUnlicensedCompanyRequestSchema,
   RevokeLicenseRequestSchema,
   StartAuditRequestSchema,
 } from '@efls/contracts';
@@ -30,6 +32,18 @@ taxRouter.post(
 );
 
 taxRouter.post('/report', validateBody(ReportRequestSchema), asyncHandler(controller.report));
+
+taxRouter.post(
+  '/licenses/issue',
+  validateBody(IssueLicenseRequestSchema),
+  asyncHandler(controller.issueLicense),
+);
+
+taxRouter.post(
+  '/licenses/report-unlicensed',
+  validateBody(ReportUnlicensedCompanyRequestSchema),
+  asyncHandler(controller.reportUnlicensedCompany),
+);
 
 taxRouter.post(
   '/licenses/revoke',

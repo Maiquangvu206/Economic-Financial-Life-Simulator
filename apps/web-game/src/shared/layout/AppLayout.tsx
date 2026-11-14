@@ -22,10 +22,6 @@ const NAV_ITEMS = [
   { to: '/recap', label: 'Offline Recap', symbol: '◷' },
 ];
 
-const ADMIN_NAV_ITEMS = [
-  { to: '/admin/education-config', label: 'Cấu hình giáo dục', symbol: '⚙', end: false },
-];
-
 const SEASON_LABELS: Record<string, { label: string; icon: string; badgeCls: string }> = {
   spring: {
     label: 'Mùa Xuân',
@@ -66,8 +62,6 @@ export function AppLayout() {
   const navigate = useNavigate();
   const user = useSessionStore((state) => state.user);
   const clearSession = useSessionStore((state) => state.clearSession);
-  const isStaff = user?.role === 'admin' || user?.role === 'moderator';
-  const navItems = isStaff ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
   const {
     netWorth,
     cash,
@@ -153,7 +147,7 @@ export function AppLayout() {
         </div>
 
         <nav className="mt-6 flex flex-1 min-h-0 flex-col gap-1 overflow-y-auto [scrollbar-width:thin]">
-          {navItems.map((item) => (
+          {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

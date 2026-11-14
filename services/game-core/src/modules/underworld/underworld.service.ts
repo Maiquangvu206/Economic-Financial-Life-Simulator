@@ -98,6 +98,14 @@ const CRIME_CATALOG: Record<CrimeType, CrimeConfig> = {
     maxPayout: 3_000_000,
     fine: 4_000_000,
   },
+  operating_without_license: {
+    name: 'Kinh doanh không giấy phép',
+    heat: 10,
+    risk: 45,
+    minPayout: 0,
+    maxPayout: 0,
+    fine: 25_000_000,
+  },
 };
 
 const CREDENTIAL_PRICES: Record<string, number> = {

@@ -35,6 +35,28 @@ export const AuditDtoSchema = z.object({
 });
 export type AuditDto = z.infer<typeof AuditDtoSchema>;
 
+export const LicenseCompanyStatusDtoSchema = z.object({
+  companyId: IdSchema,
+  companyName: z.string(),
+  ownerCharacterId: IdSchema,
+  ownerName: z.string(),
+  isOwner: z.boolean(),
+  hasActiveLicense: z.boolean(),
+  licenseId: IdSchema.nullable(),
+  licenseStatus: z.enum(['active', 'suspended', 'revoked']).nullable(),
+  licenseType: z.string().nullable(),
+  issuedAt: z.string().datetime().nullable(),
+});
+export type LicenseCompanyStatusDto = z.infer<typeof LicenseCompanyStatusDtoSchema>;
+
+export const UnlicensedCompanyDtoSchema = z.object({
+  companyId: IdSchema,
+  companyName: z.string(),
+  ownerCharacterId: IdSchema,
+  ownerName: z.string(),
+});
+export type UnlicensedCompanyDto = z.infer<typeof UnlicensedCompanyDtoSchema>;
+
 export const TaxOverviewExtDtoSchema = TaxOverviewDtoSchema.extend({
   audits: z.array(AuditDtoSchema),
   licenses: z.array(
@@ -47,6 +69,10 @@ export const TaxOverviewExtDtoSchema = TaxOverviewDtoSchema.extend({
       revokedAt: z.string().datetime().nullable(),
     }),
   ),
+  /** Công ty do người chơi sở hữu và trạng thái giấy phép (để xin/cấp phía người chơi). */
+  ownedCompanyLicenses: z.array(LicenseCompanyStatusDtoSchema).default([]),
+  /** Công ty chưa có giấy phép hoạt động (để phát hiện/tố cáo). */
+  unlicensedCompanies: z.array(UnlicensedCompanyDtoSchema).default([]),
 });
 export type TaxOverviewExtDto = z.infer<typeof TaxOverviewExtDtoSchema>;
 
@@ -64,3 +90,12 @@ export type AssessRequest = z.infer<typeof AssessRequestSchema>;
 
 export const RevokeLicenseRequestSchema = z.object({ licenseId: IdSchema });
 export type RevokeLicenseRequest = z.infer<typeof RevokeLicenseRequestSchema>;
+
+export const IssueLicenseRequestSchema = z.object({ companyId: IdSchema });
+export type IssueLicenseRequest = z.infer<typeof IssueLicenseRequestSchema>;
+
+export const ReportUnlicensedCompanyRequestSchema = z.object({
+  companyId: IdSchema,
+  reason: z.string().min(1).max(500).optional(),
+});
+export type ReportUnlicensedCompanyRequest = z.infer<typeof ReportUnlicensedCompanyRequestSchema>;

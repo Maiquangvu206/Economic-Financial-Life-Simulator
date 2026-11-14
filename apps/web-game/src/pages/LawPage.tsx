@@ -46,6 +46,7 @@ const CRIME_LABEL: Record<CrimeType, string> = {
   heist: 'Cướp tài sản',
   sabotage: 'Phá hoại',
   assault: 'Hành hung',
+  operating_without_license: 'Kinh doanh không giấy phép',
 };
 
 export function LawPage() {
@@ -379,10 +380,13 @@ export function LawPage() {
 
       {activeTab === 'tax' && (
         <div className="grid gap-4">
-          <Panel title="Đánh giá thuế & Kiểm toán" borderColor="emerald">
+          <Panel title="Thuế cá nhân & Kiểm toán" borderColor="emerald">
             <div className="space-y-3">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-xs text-slate-700">
+                Thuế cá nhân được <b>tự động quyết toán 1 lần/năm</b> dựa trên <b>tổng thu nhập năm từ các công việc đang giữ</b> (lương các việc làm hiện tại, quy ước 12 tháng/năm, thuế suất 10%). <b>Không gộp</b> thuế/kê khai doanh nghiệp. Nếu đủ số dư hệ thống sẽ tự trừ; nếu không đủ sẽ ghi nợ để nộp.
+              </div>
               <div className="grid gap-2 sm:grid-cols-3">
-                <StatCard label="Năm hiện tại" value={tax?.currentYear ?? 0} hint="Thuế năm" />
+                <StatCard label="Năm hiện tại" value={tax?.currentYear ?? 0} hint="Quyết toán theo năm" />
                 <StatCard label="Rủi ro audit" value={tax?.auditRisk ?? 0} hint="Trên 60 bị phạt" />
                 <StatCard
                   label="Tổng nợ thuế"
@@ -405,7 +409,7 @@ export function LawPage() {
                     )
                   }
                 >
-                  Đánh thuế năm nay
+                  Quyết toán thuế năm nay
                 </GameButton>
                 <GameButton
                   variant="outline"
@@ -467,43 +471,90 @@ export function LawPage() {
             </div>
           </Panel>
 
-          <Panel title="Giấy phép kinh doanh">
-            <div className="space-y-2">
-              {(tax?.licenses ?? []).length > 0 ? (
-                (tax?.licenses ?? []).map((l) => (
-                  <div
-                    key={l.id}
-                    className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
-                  >
-                    <div>
-                      <div className="font-semibold text-slate-800">
-                        {l.licenseType ?? 'Giấy phép'}
+          <Panel title="Giấy phép kinh doanh (của tôi)" borderColor="emerald">
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600">Chủ doanh nghiệp tự cấp/xin cấp giấy phép cho công ty mình (lệ phí {formatMoney(5000000)} trừ từ ví cá nhân). Công ty cần có giấy phép hoạt động để vận hành hợp lệ.</p>
+              {(tax?.ownedCompanyLicenses ?? []).length > 0 ? (
+                (tax?.ownedCompanyLicenses ?? []).map((c) => (
+                  <div key={c.companyId} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-800">{c.companyName}</div>
+                      <div className="text-xs text-slate-500">
+                        {c.hasActiveLicense ? `Đang hoạt động · ${c.licenseType ?? 'Giấy phép'}${c.issuedAt ? ` · cấp ${new Date(c.issuedAt).toLocaleDateString('vi-VN')}` : ''}` : 'Chưa có giấy phép hoạt động'}
                       </div>
-                      <div className="text-xs text-slate-500">{l.status ?? '—'}</div>
                     </div>
-                    {l.status === 'active' && (
-                      <GameButton
-                        variant="danger"
-                        size="sm"
-                        disabled={actionBusy === `revoke-${l.id}`}
-                        onClick={() =>
-                          void handleAction(`revoke-${l.id}`, () =>
-                            apiRequest('/api/v1/tax/licenses/revoke', {
-                              method: 'POST',
-                              body: JSON.stringify({ licenseId: l.id }),
-                            }),
-                          )
-                        }
-                      >
-                        Hủy giấy phép
-                      </GameButton>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {c.hasActiveLicense && c.licenseId ? (
+                        <GameButton
+                          variant="danger"
+                          size="sm"
+                          disabled={actionBusy === `revoke-${c.licenseId}`}
+                          onClick={() =>
+                            void handleAction(`revoke-${c.licenseId}`, () =>
+                              apiRequest('/api/v1/tax/licenses/revoke', {
+                                method: 'POST',
+                                body: JSON.stringify({ licenseId: c.licenseId }),
+                              }),
+                            )
+                          }
+                        >
+                          Hủy giấy phép
+                        </GameButton>
+                      ) : (
+                        <GameButton
+                          variant="primary"
+                          size="sm"
+                          disabled={actionBusy === `issue-${c.companyId}`}
+                          onClick={() =>
+                            void handleAction(`issue-${c.companyId}`, () =>
+                              apiRequest('/api/v1/tax/licenses/issue', {
+                                method: 'POST',
+                                body: JSON.stringify({ companyId: c.companyId }),
+                              }),
+                            )
+                          }
+                        >
+                          Cấp giấy phép
+                        </GameButton>
+                      )}
+                    </div>
                   </div>
                 ))
               ) : (
-                <div className="text-center py-4 text-xs text-slate-500">
-                  Chưa có giấy phép nào.
-                </div>
+                <div className="text-center py-4 text-xs text-slate-500">Bạn chưa sở hữu công ty nào.</div>
+              )}
+            </div>
+          </Panel>
+
+          <Panel title="Công ty chưa có giấy phép (phát hiện & tố cáo)" borderColor="amber">
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600">Danh sách công ty đang hoạt động nhưng chưa có giấy phép. Người chơi có thể tố cáo: hệ thống sẽ mở vụ án "Kinh doanh không giấy phép" đối với chủ công ty, tăng heat và xử phạt từ quỹ công ty (nếu có).</p>
+              {(tax?.unlicensedCompanies ?? []).length > 0 ? (
+                (tax?.unlicensedCompanies ?? []).map((c) => (
+                  <div key={c.companyId} className="flex items-center justify-between p-3 rounded-xl border border-amber-200 bg-amber-50/50">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-800">{c.companyName}</div>
+                      <div className="text-xs text-slate-500">Chủ: {c.ownerName} · Chưa có giấy phép hoạt động</div>
+                    </div>
+                    <GameButton
+                      variant="outline"
+                      size="sm"
+                      disabled={actionBusy === `report-co-${c.companyId}`}
+                      onClick={() =>
+                        void handleAction(`report-co-${c.companyId}`, () =>
+                          apiRequest('/api/v1/tax/licenses/report-unlicensed', {
+                            method: 'POST',
+                            body: JSON.stringify({ companyId: c.companyId, reason: `Kinh doanh không có giấy phép (${c.companyName})` }),
+                          }),
+                        )
+                      }
+                    >
+                      Tố cáo
+                    </GameButton>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-xs text-slate-500">Không phát hiện công ty thiếu giấy phép.</div>
               )}
             </div>
           </Panel>

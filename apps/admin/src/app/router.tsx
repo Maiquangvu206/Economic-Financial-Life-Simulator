@@ -4,6 +4,7 @@ import { AdminLayout } from '../shared/layout/AdminLayout';
 import { AdminLoginPage } from '../pages/AdminLoginPage';
 import { AiEventConsolePage } from '../pages/AiEventConsolePage';
 import { AuditLogsPage } from '../pages/AuditLogsPage';
+import { EducationConfigPage } from '../pages/EducationConfigPage';
 import { MacroDashboardPage } from '../pages/MacroDashboardPage';
 import { MapEditorPage } from '../pages/MapEditorPage';
 import { PlayersPage } from '../pages/PlayersPage';
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
           { index: true, element: <MacroDashboardPage /> },
           { path: 'broadcast', element: <SystemBroadcastPage /> },
           { path: 'calendar-seasons', element: <SeasonCalendarPage /> },
+          { path: 'education-config', element: <EducationConfigPage /> },
           { path: 'audit-logs', element: <AuditLogsPage /> },
           { path: 'players', element: <PlayersPage /> },
           { path: 'map-editor', element: <MapEditorPage /> },
