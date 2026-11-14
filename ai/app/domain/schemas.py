@@ -113,3 +113,25 @@ class RecruitmentProposal(BaseModel):
     meta: ProposalMeta
     rationale: str = Field(min_length=1, max_length=2000)
     candidates: list[RecruitmentCandidate] = Field(min_length=1, max_length=20)
+
+
+class EducationQuizQuestion(BaseModel):
+    id: int = Field(ge=1, le=5)
+    question: str = Field(min_length=1, max_length=500)
+    options: list[str] = Field(min_length=2, max_length=6)
+    correct_index: int = Field(ge=0, le=5)
+    explanation: str = Field(default="", max_length=500)
+
+
+class EducationQuizRequest(BaseModel):
+    degree_id: UUID | None = None
+    degree_code: str = Field(min_length=1, max_length=80)
+    university_name: str = Field(default="", max_length=200)
+    field: str = Field(default="", max_length=120)
+    language: Literal["vi"] = "vi"
+
+
+class EducationQuizProposal(BaseModel):
+    meta: ProposalMeta
+    title: str = Field(min_length=1, max_length=200)
+    questions: list[EducationQuizQuestion] = Field(min_length=5, max_length=5)

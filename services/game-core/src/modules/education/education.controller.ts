@@ -1,5 +1,10 @@
 import type { Request, Response } from 'express';
-import { type EnrollUniversityRequest, type GraduateRequest } from '@efls/contracts';
+import {
+  type EnrollUniversityRequest,
+  type GraduateRequest,
+  type EarlyGraduateRequest,
+  type EarlyGraduateSubmitRequest,
+} from '@efls/contracts';
 import { EducationService } from './education.service.js';
 
 export class EducationController {
@@ -19,6 +24,18 @@ export class EducationController {
   graduate = async (req: Request, res: Response): Promise<void> => {
     const { degreeId } = req.body as GraduateRequest;
     const result = await this.service.graduate(req.actorId!, degreeId);
+    res.status(200).json(result);
+  };
+
+  earlyGraduateStart = async (req: Request, res: Response): Promise<void> => {
+    const { degreeId } = req.body as EarlyGraduateRequest;
+    const result = await this.service.startEarlyGraduateTest(req.actorId!, degreeId);
+    res.status(200).json(result);
+  };
+
+  earlyGraduateSubmit = async (req: Request, res: Response): Promise<void> => {
+    const body = req.body as EarlyGraduateSubmitRequest;
+    const result = await this.service.submitEarlyGraduateTest(req.actorId!, body);
     res.status(200).json(result);
   };
 }

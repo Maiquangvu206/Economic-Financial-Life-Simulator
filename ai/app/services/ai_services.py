@@ -6,6 +6,8 @@ from pydantic import ValidationError
 from app.domain.enums import AiTask, GmAction
 from app.domain.policies import guard_gm, guard_judge, guard_news, guard_npc, guard_recruitment
 from app.domain.schemas import (
+    EducationQuizProposal,
+    EducationQuizRequest,
     GmProposal,
     GmRequest,
     JudgeProposal,
@@ -26,6 +28,7 @@ NEWS_PROMPT_VERSION = "news@v1"
 NPC_PROMPT_VERSION = "npc_merchant@v1"
 GM_PROMPT_VERSION = "gm_economy@v1"
 RECRUITMENT_PROMPT_VERSION = "recruitment@v1"
+EDUCATION_QUIZ_PROMPT_VERSION = "education_quiz@v1"
 
 
 def make_meta(task: AiTask, model: str, version: str) -> ProposalMeta:
@@ -146,3 +149,34 @@ class RecruitmentService:
         except (ValidationError, TypeError) as error:
             raise _invalid_output(error) from error
         return guard_recruitment(proposal)
+
+
+class EducationQuizService:
+    def __init__(self, provider: LLMProvider) -> None:
+        self._provider = provider
+
+    async def generate(self, request: EducationQuizRequest) -> EducationQuizProposal:
+        raw = await self._provider.complete_json(
+            task=AiTask.EDUCATION_QUIZ.value,
+            system_prompt=load_prompt("education_quiz"),
+            user_prompt=dump_request(request),
+        )
+        try:
+            proposal = EducationQuizProposal(
+                meta=make_meta(AiTask.EDUCATION_QUIZ, self._provider.name, EDUCATION_QUIZ_PROMPT_VERSION),
+                **raw,
+            )
+        except (ValidationError, TypeError) as error:
+            raise _invalid_output(error) from error
+        # normalize: ensure ids 1..5 and valid correct_index
+        fixed = []
+        for i, q in enumerate(proposal.questions[:5], start=1):
+            qi = q.model_copy()
+            qi.id = i
+            if qi.correct_index < 0 or qi.correct_index >= len(qi.options):
+                qi.correct_index = 0
+            fixed.append(qi)
+        if len(fixed) != 5:
+            raise _invalid_output(ValueError("expected 5 questions"))
+        proposal.questions = fixed
+        return proposal

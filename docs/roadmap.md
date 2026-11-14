@@ -81,8 +81,12 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
   - `admin` / `moderator` → portal xin mã bàn giao dùng một lần (`POST /auth/sso/handoff`), chuyển sang `admin /sso?code=…`, admin đổi mã lấy phiên (`POST /auth/sso/exchange`) rồi mở bảng điều khiển.
   - Mã bàn giao sống 60 giây, chỉ dùng được một lần, không lộ token trên URL.
 - [x] Cổng duy nhất hỗ trợ cả **đăng nhập** và **đăng ký** tài khoản công dân mới.
+- [x] **Trang đăng nhập Admin độc lập & Seed tài khoản Quản trị viên mặc định**:
+  - Migration `0025_seed_admin_accounts.sql` bổ sung sẵn tài khoản test `admin@efls.local` (Admin) và `moderator@efls.local` (Moderator) với mật khẩu `Admin1234!`.
+  - Bổ sung trang `AdminLoginPage` (`/login` trên Admin app) với giao diện pastel sáng, kiểm tra role hợp lệ và hỗ trợ nút điền nhanh thông tin tài khoản test.
 - [x] **Route guard**:
   - `web-game`: `RequireAuth` chặn mọi route riêng tư khi chưa đăng nhập, `RedirectIfAuthenticated` đẩy người đã đăng nhập khỏi trang login.
+  - `admin`: `RequireAdmin` chặn người chơi thường (role `player`) vào bảng điều khiển quản trị, tự động chuyển về trang đăng nhập admin hoặc cổng SSO.
   - `admin`: không còn trang login riêng — `RequireAdmin` tự chuyển về cổng chung khi chưa có phiên; sai vai trò hiện màn hình 403.
 - [x] **Token & refresh**: JWT access token gắn vào mọi request; tự động refresh một lần khi gặp 401 rồi gửi lại; hết hạn hoàn toàn thì xóa phiên và quay về cổng đăng nhập.
 - [x] **Server-side enforcement**: gateway xác thực JWT và `requireRole('admin','moderator')` cho `/api/v1/admin`; người chơi gọi API admin nhận HTTP 403 `Insufficient role`; thiếu token nhận 401.

@@ -94,10 +94,37 @@ export type GraduationDto = z.infer<typeof GraduationDtoSchema>;
 export const EarlyGraduateRequestSchema = z.object({ degreeId: IdSchema });
 export type EarlyGraduateRequest = z.infer<typeof EarlyGraduateRequestSchema>;
 
+export const EarlyGradQuestionDtoSchema = z.object({
+  id: z.number().int(),
+  question: z.string(),
+  options: z.array(z.string()),
+});
+export type EarlyGradQuestionDto = z.infer<typeof EarlyGradQuestionDtoSchema>;
+
+export const EarlyGraduateStartResponseSchema = z.object({
+  testId: IdSchema,
+  degreeId: IdSchema,
+  title: z.string(),
+  questions: z.array(EarlyGradQuestionDtoSchema),
+  expiresAt: z.string().datetime(),
+  requiredScore: z.number().int(),
+  totalQuestions: z.number().int(),
+});
+export type EarlyGraduateStartResponse = z.infer<typeof EarlyGraduateStartResponseSchema>;
+
+export const EarlyGraduateSubmitRequestSchema = z.object({
+  degreeId: IdSchema,
+  testId: IdSchema,
+  answers: z.array(z.object({ questionId: z.number().int(), selectedIndex: z.number().int() })),
+});
+export type EarlyGraduateSubmitRequest = z.infer<typeof EarlyGraduateSubmitRequestSchema>;
+
 export const EarlyGraduateResultDtoSchema = z.object({
   passed: z.boolean(),
   score: z.number().int().min(0).max(100),
   requiredScore: z.number().int().min(0).max(100),
+  correctCount: z.number().int().min(0).max(5).optional(),
+  totalQuestions: z.number().int().min(1).max(5).optional(),
   message: z.string(),
   graduation: GraduationDtoSchema.nullable(),
 });

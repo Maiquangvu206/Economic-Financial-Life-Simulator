@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { RequireAdmin } from '../features/auth/guards';
 import { AdminLayout } from '../shared/layout/AdminLayout';
+import { AdminLoginPage } from '../pages/AdminLoginPage';
 import { AiEventConsolePage } from '../pages/AiEventConsolePage';
 import { AuditLogsPage } from '../pages/AuditLogsPage';
 import { MacroDashboardPage } from '../pages/MacroDashboardPage';
@@ -12,7 +13,11 @@ import { SystemBroadcastPage } from '../pages/SystemBroadcastPage';
 
 const router = createBrowserRouter([
   {
-    // Nhận phiên quản trị từ cổng đăng nhập duy nhất.
+    path: '/login',
+    element: <AdminLoginPage />,
+  },
+  {
+    // Nhận phiên quản trị từ cổng đăng nhập duy nhất SSO.
     path: '/sso',
     element: <SsoPage />,
   },

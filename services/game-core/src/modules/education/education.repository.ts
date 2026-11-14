@@ -39,6 +39,26 @@ export interface JobRow {
   openings: number;
 }
 
+export interface EarlyGradTestQuestion {
+  id: number;
+  question: string;
+  options: string[];
+  correct_index: number;
+  explanation?: string;
+}
+
+export interface EarlyGradTestRow {
+  id: string;
+  degreeId: string;
+  characterId: string;
+  title: string;
+  questions: EarlyGradTestQuestion[];
+  status: 'pending' | 'passed' | 'failed' | 'expired';
+  score: number | null;
+  requiredScore: number;
+  expiresAt: Date;
+}
+
 /** Truy cập trường đại học, bằng cấp, học phí, kỹ năng, và cấu hình giáo dục (admin). */
 export class EducationRepository {
   constructor(readonly db: Db = pool) {}
@@ -253,6 +273,72 @@ export class EducationRepository {
 
   async deleteJob(db: Db, id: string): Promise<void> {
     await db.query(`DELETE FROM jobs WHERE id = $1`, [id]);
+  }
+
+  // --- Early graduation tests (AI quiz) ---
+  async createEarlyGradTest(
+    db: Db,
+    input: { id: string; degreeId: string; characterId: string; title: string; questions: EarlyGradTestQuestion[]; requiredScore: number },
+  ): Promise<void> {
+    await db.query(
+      `INSERT INTO education_early_grad_tests (id, degree_id, character_id, title, questions, status, required_score)
+       VALUES ($1,$2,$3,$4,$5::jsonb,'pending',$6)`,
+      [input.id, input.degreeId, input.characterId, input.title, JSON.stringify(input.questions), input.requiredScore],
+    );
+  }
+
+  async getPendingEarlyGradTest(db: Db, testId: string, degreeId: string, characterId: string): Promise<EarlyGradTestRow | null> {
+    const res = await db.query<any>(
+      `SELECT id, degree_id AS "degreeId", character_id AS "characterId", title, questions, status, score,
+              required_score AS "requiredScore", expires_at AS "expiresAt"
+       FROM education_early_grad_tests
+       WHERE id = $1 AND degree_id = $2 AND character_id = $3`,
+      [testId, degreeId, characterId],
+    );
+    const row = res.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      degreeId: row.degreeId,
+      characterId: row.characterId,
+      title: row.title,
+      questions: typeof row.questions === 'string' ? JSON.parse(row.questions) : row.questions,
+      status: row.status,
+      score: row.score == null ? null : Number(row.score),
+      requiredScore: Number(row.requiredScore),
+      expiresAt: row.expiresAt,
+    };
+  }
+
+  async getLatestPendingEarlyGradTest(db: Db, degreeId: string, characterId: string): Promise<EarlyGradTestRow | null> {
+    const res = await db.query<any>(
+      `SELECT id, degree_id AS "degreeId", character_id AS "characterId", title, questions, status, score,
+              required_score AS "requiredScore", expires_at AS "expiresAt"
+       FROM education_early_grad_tests
+       WHERE degree_id = $1 AND character_id = $2 AND status = 'pending' AND expires_at > now()
+       ORDER BY created_at DESC LIMIT 1`,
+      [degreeId, characterId],
+    );
+    const row = res.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      degreeId: row.degreeId,
+      characterId: row.characterId,
+      title: row.title,
+      questions: typeof row.questions === 'string' ? JSON.parse(row.questions) : row.questions,
+      status: row.status,
+      score: row.score == null ? null : Number(row.score),
+      requiredScore: Number(row.requiredScore),
+      expiresAt: row.expiresAt,
+    };
+  }
+
+  async submitEarlyGradTest(db: Db, testId: string, status: 'passed' | 'failed' | 'expired', score: number): Promise<void> {
+    await db.query(
+      `UPDATE education_early_grad_tests SET status = $2, score = $3, submitted_at = now() WHERE id = $1`,
+      [testId, status, score],
+    );
   }
 }
 

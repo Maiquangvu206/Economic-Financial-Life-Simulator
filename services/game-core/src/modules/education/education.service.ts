@@ -1,12 +1,15 @@
+import crypto from 'node:crypto';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_MARKET_ID } from '../../shared/ledger/ledger.service.js';
 import { notify } from '../notifications/notification.service.js';
+import { callAiService } from '../../shared/ai/aiClient.js';
 import {
   type CareersOverviewExtDto,
   type GraduationDto,
   type EarlyGraduateResultDto,
+  type EarlyGraduateStartResponse,
   type UnlockedFeature,
   MoneySchema,
 } from '@efls/contracts';
@@ -17,7 +20,7 @@ function money(amount: number) {
 }
 
 const EARLY_GRAD_MIN_PROGRESS = 2 / 3; // 66.67% thời gian khóa học
-const EARLY_GRAD_PASS_SCORE = 60;
+const EARLY_GRAD_PASS_SCORE = 60; // % (>= 3/5 câu)
 
 /** Tính năng mở khóa theo từng bằng cấp (degree_code). */
 const UNLOCK_MAP: Record<string, UnlockedFeature[]> = {
@@ -100,7 +103,7 @@ export class EducationService {
         name: u.name,
         degreeCode: u.degreeCode,
         field: u.field as CareersOverviewExtDto['universities'][number]['field'],
-        tuition: money(Number(u.tuitionMinor)),
+        tuition: money(Number(u.tuitionMinor)), // học phí theo tháng
         durationMonths: u.durationMonths,
         enrolled: enrolledIds.has(u.id),
       })),
@@ -122,31 +125,32 @@ export class EducationService {
         throw AppError.conflict('already_enrolled', 'Bạn đã ghi danh trường này.');
       }
 
-      const tuition = Number(university.tuitionMinor);
+      const monthlyTuition = Number(university.tuitionMinor);
+      const totalTuition = monthlyTuition * Number(university.durationMonths);
       const balance = await ledger.getBalance(client, 'character', character.id);
-      if (balance < tuition) {
-        throw AppError.conflict('insufficient_funds', 'Không đủ tiền đóng học phí.');
+      if (balance < totalTuition) {
+        throw AppError.conflict('insufficient_funds', `Không đủ tiền đóng học phí. Cần ${totalTuition.toLocaleString('vi-VN')} ₫ (học phí ${monthlyTuition.toLocaleString('vi-VN')} ₫/tháng × ${university.durationMonths} tháng), hiện có ${balance.toLocaleString('vi-VN')} ₫.`);
       }
 
       await ledger.transfer(client, {
         from: { ownerType: 'character', ownerId: character.id },
         to: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
-        amountMinor: tuition,
+        amountMinor: totalTuition,
         kind: 'tuition_payment',
-        description: `Học phí ${university.name}`,
+        description: `Học phí ${university.name} (${monthlyTuition.toLocaleString('vi-VN')} ₫/tháng × ${university.durationMonths} tháng)`,
         referenceType: 'university',
         referenceId: universityId,
       });
 
       const degreeId = await this.repository.createDegree(client, character.id, university);
-      await this.repository.recordTuition(client, character.id, universityId, degreeId, tuition);
+      await this.repository.recordTuition(client, character.id, universityId, degreeId, totalTuition);
 
       await notify(client, {
         userId,
         kind: 'education',
         title: 'Ghi danh thành công',
-        body: `Bạn đã ghi danh ${university.name}. Tốt nghiệp sau ${university.durationMonths} tháng (có thể thi tốt nghiệp sớm khi đạt ${Math.round(EARLY_GRAD_MIN_PROGRESS * 100)}% thời gian).`,
-        payload: { universityId, degreeId, tuition },
+        body: `Bạn đã ghi danh ${university.name}. Học phí ${monthlyTuition.toLocaleString('vi-VN')} ₫/tháng × ${university.durationMonths} tháng = ${totalTuition.toLocaleString('vi-VN')} ₫. Tốt nghiệp sau ${university.durationMonths} tháng (có thể thi tốt nghiệp sớm khi đạt ${Math.round(EARLY_GRAD_MIN_PROGRESS * 100)}% thời gian).`,
+        payload: { universityId, degreeId, monthlyTuition, totalTuition },
       });
       return this.getOverview(userId, client);
     });
@@ -167,8 +171,8 @@ export class EducationService {
     });
   }
 
-  /** Tốt nghiệp sớm: đạt >= 2/3 thời gian khóa học thì được làm bài test; đạt yêu cầu sẽ ra trường sớm. */
-  async earlyGraduate(userId: string, degreeId: string): Promise<EarlyGraduateResultDto> {
+  /** Bắt đầu bài kiểm tra tốt nghiệp sớm: tạo 5 câu trắc nghiệm cơ bản do AI sinh theo ngành/lĩnh vực. */
+  async startEarlyGraduateTest(userId: string, degreeId: string): Promise<EarlyGraduateStartResponse> {
     return withTransaction(async (client) => {
       const character = await requireCharacterByUserId(client, userId);
       const degree = await this.repository.getDegreeForCharacter(degreeId, character.id, client);
@@ -178,42 +182,151 @@ export class EducationService {
       }
       const now = new Date();
       if (now >= degree.graduatesAt) {
-        // đã đủ thời gian -> coi như tốt nghiệp thường
-        const grad = await this.finalizeGraduation(client, userId, character.id, degree, 'Tốt nghiệp!');
-        return { passed: true, score: 100, requiredScore: EARLY_GRAD_PASS_SCORE, message: 'Bạn đã đủ thời gian khóa học và được tốt nghiệp.', graduation: grad };
+        throw AppError.badRequest('Bạn đã đủ thời gian khóa học, vui lòng bấm "Tốt nghiệp" thay vì thi sớm.');
       }
       const progress = degreeProgress(degree.enrolledAt, degree.graduatesAt, now);
       if (!canEarlyGraduate(progress, degree.graduatesAt, now)) {
         const pct = Math.round(progress * 1000) / 10;
-        throw AppError.badRequest(`Chưa đủ điều kiện tốt nghiệp sớm. Tiến độ hiện tại ${pct}% (cần >= ${Math.round(EARLY_GRAD_MIN_PROGRESS * 100)}% thời gian khóa học).`);
+        throw AppError.badRequest(`Chưa đủ điều kiện thi tốt nghiệp sớm. Tiến độ hiện tại ${pct}% (cần >= ${Math.round(EARLY_GRAD_MIN_PROGRESS * 100)}% thời gian khóa học).`);
       }
-      // Bài test tốt nghiệp sớm (mô phỏng): điểm dựa trên tiến độ + yếu tố ngẫu nhiên ổn định
-      const base = 45 + Math.round(progress * 40); // 45..85 theo tiến độ
-      const jitter = Math.floor((Math.abs(Math.sin(now.getTime() / 60000 + degree.id.length)) * 100) % 21) - 10; // -10..10
-      const score = Math.max(0, Math.min(100, base + jitter));
-      const passed = score >= EARLY_GRAD_PASS_SCORE;
+
+      // Tái sử dụng bài test đang chờ (chưa hết hạn) nếu có
+      const existing = await this.repository.getLatestPendingEarlyGradTest(client, degreeId, character.id);
+      if (existing) {
+        return {
+          testId: existing.id,
+          degreeId,
+          title: existing.title || 'Bài kiểm tra tốt nghiệp sớm',
+          questions: existing.questions.map((q: { id: number; question: string; options: string[] }) => ({ id: q.id, question: q.question, options: q.options })),
+          expiresAt: existing.expiresAt.toISOString(),
+          requiredScore: existing.requiredScore,
+          totalQuestions: existing.questions.length,
+        };
+      }
+
+      // Gọi AI sinh 5 câu hỏi cơ bản theo ngành/lĩnh vực
+      const aiRes = await callAiService<any>('/v1/education/quiz', {
+        degree_id: degree.id,
+        degree_code: degree.degreeCode,
+        university_name: degree.universityName,
+        field: degree.field,
+        language: 'vi',
+      });
+
+      const fallbackQuestions = [
+        { id: 1, question: `Kiến thức nền tảng nào là quan trọng trong ngành ${degree.degreeCode}?`, options: ['Nắm vững nguyên lý cơ bản', 'Bỏ qua lý thuyết', 'Không cần thực hành', 'Làm ngẫu nhiên'], correct_index: 0, explanation: 'Nền tảng giúp áp dụng đúng chuyên môn.' },
+        { id: 2, question: 'Bước đầu tiên khi giải quyết vấn đề chuyên môn cơ bản là gì?', options: ['Xác định vấn đề và yêu cầu', 'Kết luận ngay', 'Bỏ qua dữ liệu', 'Đoán mò'], correct_index: 0, explanation: 'Xác định vấn đề giúp định hướng giải pháp.' },
+        { id: 3, question: 'Thái độ nghề nghiệp cơ bản nào sau đây là đúng?', options: ['Trung thực và tuân thủ quy định', 'Gian lận', 'Phớt lờ trách nhiệm', 'Che giấu sai sót'], correct_index: 0, explanation: 'Trung thực và tuân thủ là chuẩn mực cơ bản.' },
+        { id: 4, question: 'Để vận dụng kiến thức vào thực tế hiệu quả cần làm gì?', options: ['Thực hành và đánh giá', 'Chỉ học thuộc', 'Tránh phản hồi', 'Không cải tiến'], correct_index: 0, explanation: 'Thực hành và đánh giá giúp cải thiện năng lực.' },
+        { id: 5, question: `Khi gặp tình huống chưa rõ trong lĩnh vực ${degree.field || degree.degreeCode}, bạn nên làm gì?`, options: ['Tra cứu và kiểm chứng', 'Đoán mò', 'Bỏ qua', 'Tự ý làm sai quy trình'], correct_index: 0, explanation: 'Tra cứu và kiểm chứng giúp quyết định chính xác.' },
+      ];
+
+      const rawQs = Array.isArray(aiRes.data?.questions) ? aiRes.data.questions : fallbackQuestions;
+      const questions = rawQs.slice(0, 5).map((q: any, idx: number) => {
+        const options = Array.isArray(q?.options) && q.options.length >= 2 ? q.options.map(String).slice(0, 4) : fallbackQuestions[idx]!.options;
+        let correct = Number.isInteger(q?.correct_index) ? Number(q.correct_index) : 0;
+        if (correct < 0 || correct >= options.length) correct = 0;
+        return {
+          id: idx + 1,
+          question: String(q?.question || fallbackQuestions[idx]!.question),
+          options,
+          correct_index: correct,
+          explanation: String(q?.explanation || ''),
+        };
+      });
+      while (questions.length < 5) questions.push(fallbackQuestions[questions.length]!);
+
+      const testId = crypto.randomUUID();
+      const title = String(aiRes.data?.title || `Bài kiểm tra tốt nghiệp sớm - ${degree.degreeCode}`);
+      await this.repository.createEarlyGradTest(client, {
+        id: testId,
+        degreeId,
+        characterId: character.id,
+        title,
+        questions,
+        requiredScore: EARLY_GRAD_PASS_SCORE,
+      });
+
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+      await client.query(`UPDATE education_early_grad_tests SET expires_at = $2 WHERE id = $1`, [testId, expiresAt]);
+
+      return {
+        testId,
+        degreeId,
+        title,
+        questions: questions.map((q: { id: number; question: string; options: string[] }) => ({ id: q.id, question: q.question, options: q.options })),
+        expiresAt: expiresAt.toISOString(),
+        requiredScore: EARLY_GRAD_PASS_SCORE,
+        totalQuestions: 5,
+      };
+    });
+  }
+
+  /** Nộp bài kiểm tra tốt nghiệp sớm (5 câu trắc nghiệm do AI sinh). Đạt yêu cầu sẽ ra trường sớm. */
+  async submitEarlyGraduateTest(
+    userId: string,
+    input: { degreeId: string; testId: string; answers: Array<{ questionId: number; selectedIndex: number }> },
+  ): Promise<EarlyGraduateResultDto> {
+    return withTransaction(async (client) => {
+      const character = await requireCharacterByUserId(client, userId);
+      const degree = await this.repository.getDegreeForCharacter(input.degreeId, character.id, client);
+      if (!degree) throw AppError.notFound('Degree');
+      if (degree.status !== 'enrolled') {
+        throw AppError.badRequest('Bằng cấp này đã tốt nghiệp hoặc bị hủy.');
+      }
+
+      const test = await this.repository.getPendingEarlyGradTest(client, input.testId, input.degreeId, character.id);
+      if (!test) throw AppError.notFound('Bài kiểm tra (không tìm thấy hoặc không thuộc về bạn).');
+      if (test.status !== 'pending') {
+        throw AppError.badRequest('Bài kiểm tra này đã được nộp hoặc không còn hiệu lực.');
+      }
+      if (new Date() > test.expiresAt) {
+        await this.repository.submitEarlyGradTest(client, test.id, 'expired', 0);
+        throw AppError.badRequest('Bài kiểm tra đã hết hạn. Vui lòng bắt đầu bài kiểm tra mới.');
+      }
+
+      const answerMap = new Map<number, number>();
+      for (const a of input.answers || []) answerMap.set(Number(a.questionId), Number(a.selectedIndex));
+
+      let correctCount = 0;
+      for (const q of test.questions) {
+        const sel = answerMap.get(q.id);
+        if (typeof sel === 'number' && sel === q.correct_index) correctCount++;
+      }
+      const total = test.questions.length || 5;
+      const score = Math.round((correctCount / total) * 100);
+      const passed = score >= (test.requiredScore ?? EARLY_GRAD_PASS_SCORE);
+
       if (!passed) {
+        await this.repository.submitEarlyGradTest(client, test.id, 'failed', score);
         await notify(client, {
           userId,
           kind: 'education',
           title: 'Thi tốt nghiệp sớm chưa đạt',
-          body: `Bạn đạt ${score}/100 (cần >= ${EARLY_GRAD_PASS_SCORE}). Hãy ôn tập và thử lại sau khi tích lũy thêm thời gian học.`,
-          payload: { degreeId, score, requiredScore: EARLY_GRAD_PASS_SCORE },
+          body: `Bạn trả lời đúng ${correctCount}/${total} câu (${score}/100, cần >= ${test.requiredScore}). Bạn có thể làm bài kiểm tra mới sau khi ôn tập.`,
+          payload: { degreeId: input.degreeId, testId: test.id, score, correctCount, total },
         });
         return {
           passed: false,
           score,
-          requiredScore: EARLY_GRAD_PASS_SCORE,
-          message: `Bài test tốt nghiệp sớm: ${score}/100 (cần >= ${EARLY_GRAD_PASS_SCORE}). Chưa đạt, bạn có thể thử lại sau.`,
+          requiredScore: test.requiredScore,
+          correctCount,
+          totalQuestions: total,
+          message: `Bài kiểm tra tốt nghiệp sớm: đúng ${correctCount}/${total} câu (${score}/100, cần >= ${test.requiredScore}). Chưa đạt, bạn có thể bắt đầu bài kiểm tra mới.`,
           graduation: null,
         };
       }
+
+      await this.repository.submitEarlyGradTest(client, test.id, 'passed', score);
+      // ensure still eligible at submit time (>=2/3) or allow if was eligible when started; be lenient: allow if pending and within time window
       const grad = await this.finalizeGraduation(client, userId, character.id, degree, 'Tốt nghiệp sớm!');
       return {
         passed: true,
         score,
-        requiredScore: EARLY_GRAD_PASS_SCORE,
-        message: `Chúc mừng! Bạn đạt ${score}/100 và được tốt nghiệp sớm (${Math.round(progress * 100)}% thời gian khóa học).`,
+        requiredScore: test.requiredScore,
+        correctCount,
+        totalQuestions: total,
+        message: `Chúc mừng! Bạn trả lời đúng ${correctCount}/${total} câu (${score}/100) và được tốt nghiệp sớm.`,
         graduation: grad,
       };
     });

@@ -1,7 +1,19 @@
 import { Router } from 'express';
 import type { MacroSnapshotDto } from '@efls/contracts';
+import { UpsertUniversityRequestSchema, UpsertJobRequestSchema } from '@efls/contracts';
 import type { Request, Response } from 'express';
 import { AppError } from '../../shared/http/errors.js';
+import { asyncHandler } from '../../shared/http/asyncHandler.js';
+import { validateBody } from '../../shared/http/validate.js';
+import {
+  getEducationConfig,
+  createUniversity,
+  updateUniversity,
+  deleteUniversity,
+  createJob,
+  updateJob,
+  deleteJob,
+} from './admin.education.js';
 
 export const adminRouter: Router = Router();
 
@@ -36,3 +48,12 @@ adminRouter.post('/players/:id/actions', (req, res: Response) => {
     detail: 'Wire this action to the audit log and the player-management module first.',
   });
 });
+
+// Education config (ngành/trường, học phí, thời gian học, mức lương sau tốt nghiệp)
+adminRouter.get('/education/config', asyncHandler(getEducationConfig));
+adminRouter.post('/education/universities', validateBody(UpsertUniversityRequestSchema), asyncHandler(createUniversity));
+adminRouter.put('/education/universities/:id', validateBody(UpsertUniversityRequestSchema), asyncHandler(updateUniversity));
+adminRouter.delete('/education/universities/:id', asyncHandler(deleteUniversity));
+adminRouter.post('/education/jobs', validateBody(UpsertJobRequestSchema), asyncHandler(createJob));
+adminRouter.put('/education/jobs/:id', validateBody(UpsertJobRequestSchema), asyncHandler(updateJob));
+adminRouter.delete('/education/jobs/:id', asyncHandler(deleteJob));

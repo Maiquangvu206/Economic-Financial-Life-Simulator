@@ -13,6 +13,7 @@ import { PoliticsPage } from '../pages/PoliticsPage';
 import { RealEstatePage } from '../pages/RealEstatePage';
 import { StockMarketPage } from '../pages/StockMarketPage';
 import { UnderworldPage } from '../pages/UnderworldPage';
+import { AdminEducationConfigPage } from '../pages/AdminEducationConfigPage';
 
 const router = createBrowserRouter([
   {
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
           { path: 'business', element: <BusinessPage /> },
           { path: 'stocks', element: <StockMarketPage /> },
           { path: 'education', element: <EducationPage /> },
+          { path: 'admin/education-config', element: <AdminEducationConfigPage /> },
           { path: 'law', element: <LawPage /> },
           { path: 'politics', element: <PoliticsPage /> },
           { path: 'underworld', element: <UnderworldPage /> },

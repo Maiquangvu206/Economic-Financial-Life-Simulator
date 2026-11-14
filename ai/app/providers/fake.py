@@ -81,6 +81,46 @@ class FakeProvider(LLMProvider):
                     },
                 ],
             },
+            "education_quiz": {
+                "title": "Bài kiểm tra tốt nghiệp sớm (cơ bản)",
+                "questions": [
+                    {
+                        "id": 1,
+                        "question": "Trong lĩnh vực/ngành học này, mục tiêu cơ bản quan trọng nhất là gì?",
+                        "options": ["Nắm vững kiến thức nền tảng", "Bỏ qua quy trình", "Chỉ dựa vào may mắn", "Không cần thực hành"],
+                        "correct_index": 0,
+                        "explanation": "Kiến thức nền tảng là cơ sở để áp dụng và phát triển chuyên môn.",
+                    },
+                    {
+                        "id": 2,
+                        "question": "Khi giải quyết một vấn đề chuyên môn cơ bản, bước đầu tiên nên làm là gì?",
+                        "options": ["Xác định vấn đề và yêu cầu", "Kết luận ngay", "Bỏ qua dữ liệu", "Làm ngẫu nhiên"],
+                        "correct_index": 0,
+                        "explanation": "Xác định đúng vấn đề giúp chọn hướng giải quyết phù hợp.",
+                    },
+                    {
+                        "id": 3,
+                        "question": "Thái độ làm việc nào sau đây phù hợp với chuẩn mực nghề nghiệp cơ bản?",
+                        "options": ["Trung thực và tuân thủ quy định", "Gian lận để đạt kết quả", "Phớt lờ trách nhiệm", "Che giấu sai sót"],
+                        "correct_index": 0,
+                        "explanation": "Trung thực và tuân thủ quy định là yêu cầu cơ bản trong mọi lĩnh vực.",
+                    },
+                    {
+                        "id": 4,
+                        "question": "Để áp dụng kiến thức vào thực tế, điều nào sau đây là cần thiết?",
+                        "options": ["Thực hành và đánh giá kết quả", "Chỉ học lý thuyết", "Không cần phản hồi", "Tránh cải tiến"],
+                        "correct_index": 0,
+                        "explanation": "Thực hành và đánh giá giúp củng cố và cải thiện năng lực.",
+                    },
+                    {
+                        "id": 5,
+                        "question": "Khi gặp tình huống chưa rõ trong chuyên môn, cách xử lý phù hợp là gì?",
+                        "options": ["Tra cứu, hỏi ý kiến và kiểm chứng", "Đoán mò", "Bỏ qua", "Tự ý làm sai quy trình"],
+                        "correct_index": 0,
+                        "explanation": "Tra cứu và kiểm chứng giúp đưa ra quyết định chính xác, an toàn.",
+                    },
+                ],
+            },
         }
         if task not in responses:
             raise ValueError(f"Fake provider does not support task {task}")

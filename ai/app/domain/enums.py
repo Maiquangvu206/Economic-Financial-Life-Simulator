@@ -7,6 +7,7 @@ class AiTask(StrEnum):
     NPC_NEGOTIATION = "npc_negotiation"
     GM_ECONOMY = "gm_economy"
     RECRUITMENT = "recruitment"
+    EDUCATION_QUIZ = "education_quiz"
 
 
 class Verdict(StrEnum):
