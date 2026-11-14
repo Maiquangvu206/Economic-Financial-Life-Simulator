@@ -14,6 +14,10 @@ export interface LoanRow {
   grace_period_end: Date;
   status: 'active' | 'grace' | 'defaulted' | 'foreclosed' | 'repaid';
   collateral_property_id: string | null;
+  collateral_property_type: string | null;
+  collateral_current_value_minor: string | null;
+  collateral_node_name: string | null;
+  collateral_status: string | null;
   created_at: Date;
 }
 
@@ -23,6 +27,26 @@ export interface SavingsRow {
   balance_minor: string;
   annual_rate_pct: string;
   opened_at: Date;
+}
+
+export interface SavingsDepositRow {
+  id: string;
+  character_id: string;
+  principal_minor: string;
+  balance_minor: string;
+  term_months: number;
+  annual_rate_pct: string;
+  status: 'active' | 'closed';
+  opened_at: Date;
+  matures_at: Date | null;
+  closed_at: Date | null;
+}
+
+export interface SavingsTermRow {
+  term_months: number;
+  annual_rate_pct: string;
+  early_withdraw_penalty_pct: string;
+  label: string;
 }
 
 export interface CreateLoanInput {
@@ -39,14 +63,32 @@ export interface CreateLoanInput {
 export class BankingRepository {
   constructor(readonly db: Db = pool) {}
 
+  private loanSelect(alias = 'l') {
+    return `
+      ${alias}.id, ${alias}.borrower_id, ${alias}.lender_type, ${alias}.principal_minor, ${alias}.outstanding_minor,
+      ${alias}.interest_rate_pct, ${alias}.term_months, ${alias}.monthly_payment_minor, ${alias}.next_due_at,
+      ${alias}.grace_period_end, ${alias}.status, ${alias}.collateral_property_id, ${alias}.created_at,
+      p.property_type AS collateral_property_type,
+      p.current_value_minor AS collateral_current_value_minor,
+      n.name AS collateral_node_name,
+      p.status AS collateral_status
+    `;
+  }
+
+  private loanJoins(alias = 'l') {
+    return `
+      LEFT JOIN properties p ON p.id = ${alias}.collateral_property_id
+      LEFT JOIN map_nodes n ON n.id = p.node_id
+    `;
+  }
+
   async listLoans(characterId: string): Promise<LoanRow[]> {
     const result = await this.db.query<LoanRow>(
-      `SELECT id, borrower_id, lender_type, principal_minor, outstanding_minor,
-              interest_rate_pct, term_months, monthly_payment_minor, next_due_at,
-              grace_period_end, status, collateral_property_id, created_at
-       FROM loans
-       WHERE borrower_id = $1
-       ORDER BY created_at DESC`,
+      `SELECT ${this.loanSelect('l')}
+       FROM loans l
+       ${this.loanJoins('l')}
+       WHERE l.borrower_id = $1
+       ORDER BY CASE WHEN l.status = 'repaid' THEN 1 ELSE 0 END, l.created_at DESC`,
       [characterId],
     );
     return result.rows;
@@ -54,11 +96,10 @@ export class BankingRepository {
 
   async findLoan(loanId: string, characterId: string, db: Db = this.db): Promise<LoanRow | null> {
     const result = await db.query<LoanRow>(
-      `SELECT id, borrower_id, lender_type, principal_minor, outstanding_minor,
-              interest_rate_pct, term_months, monthly_payment_minor, next_due_at,
-              grace_period_end, status, collateral_property_id, created_at
-       FROM loans
-       WHERE id = $1 AND borrower_id = $2
+      `SELECT ${this.loanSelect('l')}
+       FROM loans l
+       ${this.loanJoins('l')}
+       WHERE l.id = $1 AND l.borrower_id = $2
        LIMIT 1`,
       [loanId, characterId],
     );
@@ -66,15 +107,13 @@ export class BankingRepository {
   }
 
   async createLoan(db: Db, input: CreateLoanInput): Promise<LoanRow> {
-    const result = await db.query<LoanRow>(
+    const inserted = await db.query<{ id: string }>(
       `INSERT INTO loans
          (id, borrower_id, lender_type, principal_minor, outstanding_minor,
           interest_rate_pct, term_months, monthly_payment_minor, next_due_at,
           grace_period_end, status, collateral_property_id)
        VALUES (gen_random_uuid(), $1, 'bank', $2, $2, $3, $4, $5, $6, $7, 'active', $8)
-       RETURNING id, borrower_id, lender_type, principal_minor, outstanding_minor,
-                 interest_rate_pct, term_months, monthly_payment_minor, next_due_at,
-                 grace_period_end, status, collateral_property_id, created_at`,
+       RETURNING id`,
       [
         input.borrowerId,
         input.principalMinor,
@@ -86,8 +125,10 @@ export class BankingRepository {
         input.collateralPropertyId,
       ],
     );
-    const row = result.rows[0];
-    if (!row) throw new Error('Loan insert returned no row');
+    const id = inserted.rows[0]?.id;
+    if (!id) throw new Error('Loan insert returned no row');
+    const row = await this.findLoan(id, input.borrowerId, db);
+    if (!row) throw new Error('Loan disappeared after insert');
     return row;
   }
 
@@ -216,6 +257,124 @@ export class BankingRepository {
     );
   }
 
+  async syncSavingsAggregate(db: Db, characterId: string): Promise<number> {
+    const total = await db.query<{ total: string }>(
+      `SELECT COALESCE(SUM(balance_minor),0)::bigint AS total
+       FROM savings_deposits WHERE character_id = $1 AND status = 'active'`,
+      [characterId],
+    );
+    const sum = Number(total.rows[0]?.total ?? 0);
+    await this.ensureSavingsAccount(db, characterId);
+    await this.setSavingsBalance(db, characterId, sum);
+    return sum;
+  }
+
+  async listSavingsTerms(db: Db = this.db): Promise<SavingsTermRow[]> {
+    const r = await db.query<SavingsTermRow>(
+      `SELECT term_months, annual_rate_pct, early_withdraw_penalty_pct, label
+       FROM savings_rate_config ORDER BY term_months ASC`,
+    );
+    return r.rows;
+  }
+
+  async getSavingsTerm(db: Db, termMonths: number): Promise<SavingsTermRow | null> {
+    const r = await db.query<SavingsTermRow>(
+      `SELECT term_months, annual_rate_pct, early_withdraw_penalty_pct, label
+       FROM savings_rate_config WHERE term_months = $1`,
+      [termMonths],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async listSavingsDeposits(characterId: string, db: Db = this.db): Promise<SavingsDepositRow[]> {
+    const r = await db.query<SavingsDepositRow>(
+      `SELECT id, character_id, principal_minor, balance_minor, term_months,
+              annual_rate_pct, status, opened_at, matures_at, closed_at
+       FROM savings_deposits
+       WHERE character_id = $1
+       ORDER BY opened_at DESC`,
+      [characterId],
+    );
+    return r.rows;
+  }
+
+  async findSavingsDeposit(
+    db: Db,
+    characterId: string,
+    depositId: string,
+  ): Promise<SavingsDepositRow | null> {
+    const r = await db.query<SavingsDepositRow>(
+      `SELECT id, character_id, principal_minor, balance_minor, term_months,
+              annual_rate_pct, status, opened_at, matures_at, closed_at
+       FROM savings_deposits
+       WHERE id = $1 AND character_id = $2`,
+      [depositId, characterId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async createSavingsDeposit(
+    db: Db,
+    input: {
+      characterId: string;
+      amountMinor: number;
+      termMonths: number;
+      annualRatePct: number;
+    },
+  ): Promise<SavingsDepositRow> {
+    const maturesAt =
+      input.termMonths > 0
+        ? new Date(Date.now() + input.termMonths * 30 * 24 * 60 * 60 * 1000)
+        : null;
+    const r = await db.query<SavingsDepositRow>(
+      `INSERT INTO savings_deposits
+         (id, character_id, principal_minor, balance_minor, term_months, annual_rate_pct, status, matures_at)
+       VALUES (gen_random_uuid(), $1, $2, $2, $3, $4, 'active', $5)
+       RETURNING id, character_id, principal_minor, balance_minor, term_months,
+                 annual_rate_pct, status, opened_at, matures_at, closed_at`,
+      [input.characterId, input.amountMinor, input.termMonths, input.annualRatePct, maturesAt],
+    );
+    return r.rows[0]!;
+  }
+
+  async updateSavingsDeposit(
+    db: Db,
+    depositId: string,
+    balanceMinor: number,
+    status: 'active' | 'closed',
+  ): Promise<void> {
+    await db.query(
+      `UPDATE savings_deposits
+       SET balance_minor = $2, status = $3,
+           closed_at = CASE WHEN $3 = 'closed' THEN now() ELSE closed_at END,
+           updated_at = now()
+       WHERE id = $1`,
+      [depositId, balanceMinor, status],
+    );
+  }
+
+  async rolloverSavingsDeposit(
+    db: Db,
+    input: {
+      depositId: string;
+      principalMinor: number;
+      balanceMinor: number;
+      openedAt: Date;
+      maturesAt: Date | null;
+    },
+  ): Promise<void> {
+    await db.query(
+      `UPDATE savings_deposits
+       SET principal_minor = $2,
+           balance_minor = $3,
+           opened_at = $4,
+           matures_at = $5,
+           updated_at = now()
+       WHERE id = $1`,
+      [input.depositId, input.principalMinor, input.balanceMinor, input.openedAt, input.maturesAt],
+    );
+  }
+
   async updateCreditScore(db: Db, characterId: string, score: number): Promise<void> {
     await db.query(`UPDATE characters SET credit_score = $2, updated_at = now() WHERE id = $1`, [
       characterId,
@@ -238,7 +397,6 @@ export class BankingRepository {
     return Number(result.rows[0]?.macro?.baseRatePct ?? 5);
   }
 
-  /** Collateral is a banking concern: only an owned, unencumbered property counts. */
   async collateralValue(db: Db, characterId: string, propertyId: string): Promise<number | null> {
     const result = await db.query<{ current_value_minor: string }>(
       `SELECT p.current_value_minor
@@ -249,5 +407,83 @@ export class BankingRepository {
     );
     const row = result.rows[0];
     return row ? Number(row.current_value_minor) : null;
+  }
+
+  async insertTransfer(
+    db: Db,
+    input: {
+      fromCharacterId: string;
+      toCharacterId: string;
+      fromAccountNumber: string;
+      toAccountNumber: string;
+      amountMinor: number;
+      message: string;
+      status: 'completed' | 'failed';
+      ledgerTransactionId: string | null;
+    },
+  ): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO bank_transfers
+         (id, from_character_id, to_character_id, from_account_number, to_account_number,
+          amount_minor, message, status, ledger_transaction_id)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
+      [
+        input.fromCharacterId,
+        input.toCharacterId,
+        input.fromAccountNumber,
+        input.toAccountNumber,
+        input.amountMinor,
+        input.message,
+        input.status,
+        input.ledgerTransactionId,
+      ],
+    );
+    return r.rows[0]!.id;
+  }
+
+  async listTransfers(
+    characterId: string,
+    db: Db = this.db,
+  ): Promise<
+    Array<{
+      id: string;
+      direction: 'in' | 'out';
+      counterparty_account_number: string;
+      counterparty_name: string;
+      amount_minor: string;
+      message: string;
+      status: 'completed' | 'failed';
+      created_at: Date;
+    }>
+  > {
+    const r = await db.query<{
+      id: string;
+      direction: 'in' | 'out';
+      counterparty_account_number: string;
+      counterparty_name: string;
+      amount_minor: string;
+      message: string;
+      status: 'completed' | 'failed';
+      created_at: Date;
+    }>(
+      `SELECT
+         t.id,
+         CASE WHEN t.from_character_id = $1 THEN 'out' ELSE 'in' END AS direction,
+         CASE WHEN t.from_character_id = $1 THEN t.to_account_number ELSE t.from_account_number END AS counterparty_account_number,
+         CASE WHEN t.from_character_id = $1 THEN tc.full_name ELSE fc.full_name END AS counterparty_name,
+         t.amount_minor,
+         t.message,
+         t.status,
+         t.created_at
+       FROM bank_transfers t
+       JOIN characters fc ON fc.id = t.from_character_id
+       JOIN characters tc ON tc.id = t.to_character_id
+       WHERE t.from_character_id = $1 OR t.to_character_id = $1
+       ORDER BY t.created_at DESC
+       LIMIT 50`,
+      [characterId],
+    );
+    return r.rows;
   }
 }

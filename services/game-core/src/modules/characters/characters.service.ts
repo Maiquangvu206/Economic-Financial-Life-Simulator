@@ -1,18 +1,21 @@
 import { generateCccd, provinceByCode, PROVINCES_34 } from '@efls/domain';
-import type { CharacterDto, ProvinceDto, CreateCharacterRequest } from '@efls/contracts';
+import type { AccountTier, CharacterDto, ProvinceDto, CreateCharacterRequest } from '@efls/contracts';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction } from '../../shared/db/tx.js';
+import { generateAccountNumber, resolveAccountTier } from '../../shared/banking/accountTier.js';
 import {
   CharactersRepository,
   type CharacterRow,
   type ProvinceRow,
 } from './characters.repository.js';
 
-function toDto(row: CharacterRow): CharacterDto {
+function toDto(row: CharacterRow, tier: AccountTier, netWorthMinor?: number): CharacterDto {
   return {
     id: row.id,
     userId: row.user_id,
     fullName: row.full_name,
+    accountNumber: row.account_number,
+    accountTier: tier,
     cccd: row.cccd,
     birthplace: row.birthplace,
     birthplaceName: row.birthplace_name,
@@ -23,8 +26,7 @@ function toDto(row: CharacterRow): CharacterDto {
     maritalStatus: row.marital_status,
     spouseId: row.spouse_id,
     location: { x: row.location_x, y: row.location_y },
-    // TODO: replace with the real asset/liability balance from the finance module.
-    netWorth: { amount: Number(row.cash_minor), currency: 'VND' },
+    netWorth: { amount: netWorthMinor ?? Number(row.cash_minor), currency: 'VND' },
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -48,12 +50,17 @@ function provinceAnchor(code: string): { x: number; y: number } {
 export class CharactersService {
   constructor(private readonly repository: CharactersRepository = new CharactersRepository()) {}
 
+  private async toDtoWithTier(row: CharacterRow): Promise<CharacterDto> {
+    const netWorth = await this.repository.getNetWorthMinor(row.id);
+    return toDto(row, resolveAccountTier(netWorth), netWorth);
+  }
+
   async getMe(userId: string): Promise<CharacterDto> {
     const character = await this.repository.findByUserId(userId);
     if (!character) {
       throw AppError.notFound('Character');
     }
-    return toDto(character);
+    return this.toDtoWithTier(character);
   }
 
   async listProvinces(): Promise<ProvinceDto[]> {
@@ -70,7 +77,26 @@ export class CharactersService {
   async getById(characterId: string): Promise<CharacterDto> {
     const row = await this.repository.findById(characterId);
     if (!row) throw AppError.notFound('Character');
-    return toDto(row);
+    return this.toDtoWithTier(row);
+  }
+
+  /** Tra cứu theo số tài khoản (STK) để chuyển khoản. */
+  async lookupByAccountNumber(accountNumber: string): Promise<{
+    accountNumber: string;
+    characterId: string;
+    fullName: string;
+    accountTier: AccountTier;
+  }> {
+    const normalized = accountNumber.replace(/\s+/g, '');
+    const row = await this.repository.findByAccountNumber(normalized);
+    if (!row) throw AppError.notFound('Tài khoản (STK)');
+    const netWorth = await this.repository.getNetWorthMinor(row.id);
+    return {
+      accountNumber: row.account_number,
+      characterId: row.id,
+      fullName: row.full_name,
+      accountTier: resolveAccountTier(netWorth),
+    };
   }
 
   /** Di chuyển nơi ở hiện tại (không đổi nơi sinh / CCCD cố định). */
@@ -80,7 +106,7 @@ export class CharactersService {
     const updated = await this.repository.setLocation(row.id, x, y);
     if (!updated) throw new Error('Character disappeared during move');
     updated.birthplace_name = row.birthplace_name;
-    return toDto(updated);
+    return this.toDtoWithTier(updated);
   }
 
   async createProfile(userId: string, input: CreateCharacterRequest): Promise<CharacterDto> {
@@ -95,6 +121,7 @@ export class CharactersService {
       if (!province) throw AppError.badRequest('Mã tỉnh không hợp lệ.');
       const anchor = provinceAnchor(birthplaceCode);
       const cccd = await this.uniqueCccd(client, birthplaceCode);
+      const accountNumber = await this.uniqueAccountNumber(client);
       const created = await this.repository.createCharacter(client, {
         userId,
         fullName: input.fullName,
@@ -102,9 +129,10 @@ export class CharactersService {
         birthplace: birthplaceCode,
         locationX: anchor.x,
         locationY: anchor.y,
+        accountNumber,
       });
       created.birthplace_name = province.name;
-      return toDto(created);
+      return toDto(created, resolveAccountTier(Number(created.cash_minor)), Number(created.cash_minor));
     });
   }
 
@@ -121,5 +149,16 @@ export class CharactersService {
       if (!exists) return candidate;
     }
     throw AppError.conflict('cccd_exhausted', 'Không sinh được CCCD duy nhất.');
+  }
+
+  private async uniqueAccountNumber(
+    client: Parameters<CharactersRepository['getProvince']>[1],
+  ): Promise<string> {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const candidate = generateAccountNumber();
+      const exists = await this.repository.accountNumberExists(candidate, client);
+      if (!exists) return candidate;
+    }
+    throw AppError.conflict('account_number_exhausted', 'Không tạo được số tài khoản duy nhất.');
   }
 }

@@ -2,11 +2,14 @@ import { AppError } from '../../shared/http/errors.js';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js';
+import { callAiService } from '../../shared/ai/aiClient.js';
 import { notify } from '../notifications/notification.service.js';
 import {
   type CompanyDto,
   type CompanyEmployeesDto,
+  type CompanyHrAccountingDto,
   type CompanyOverviewDto,
+  type HiringPlanDto,
   MoneySchema,
 } from '@efls/contracts';
 import { corporationRepository } from './corporation.repository.js';
@@ -405,6 +408,14 @@ export class CorporationService {
         throw AppError.badRequest('Số tiền doanh thu không hợp lệ (1 - 5.000.000.000 ₫ mỗi lần).');
       }
       await this.repository.adjustCash(client, companyId, amountMinor);
+      await this.repository.addLedgerEntry(client, {
+        companyId,
+        entryType: 'revenue',
+        amountMinor,
+        declaredAmountMinor: amountMinor,
+        description: note ?? 'Ghi nhận doanh thu',
+        isEvasion: false,
+      });
       await notify(client, {
         userId,
         kind: 'company',
@@ -440,6 +451,14 @@ export class CorporationService {
         throw AppError.conflict('insufficient_funds', 'Quỹ công ty không đủ để chi OPEX.');
       }
       await this.repository.adjustCash(client, companyId, -amountMinor);
+      await this.repository.addLedgerEntry(client, {
+        companyId,
+        entryType: 'opex',
+        amountMinor,
+        declaredAmountMinor: amountMinor,
+        description: note ?? 'Chi OPEX',
+        isEvasion: false,
+      });
       await notify(client, {
         userId,
         kind: 'company',
@@ -450,6 +469,310 @@ export class CorporationService {
       const dto = await this.repository.getCompany(companyId, client);
       if (!dto) throw new Error('Company disappeared after opex');
       return { ...toCompanyDto(dto), isOwner: true, shareholders: [] };
+    });
+  }
+
+  private async assertOwner(client: any, userId: string, companyId: string) {
+    const character = await requireCharacterByUserId(client, userId);
+    const company = await this.repository.getCompany(companyId, client);
+    if (!company) throw AppError.notFound('Company');
+    if (company.ownerCharacterId !== character.id) {
+      throw AppError.forbidden('Chỉ chủ sở hữu công ty mới thực hiện thao tác này.');
+    }
+    return { character, company };
+  }
+
+  private mapHiringPlan(raw: any): HiringPlanDto {
+    return {
+      id: raw.id,
+      companyId: raw.companyId,
+      status: raw.status,
+      roleFocus: raw.roleFocus ?? '',
+      headcount: Number(raw.headcount ?? 0),
+      rationale: raw.rationale ?? '',
+      aiModel: raw.aiModel ?? null,
+      createdAt: new Date(raw.createdAt).toISOString(),
+      decidedAt: raw.decidedAt ? new Date(raw.decidedAt).toISOString() : null,
+      appliedAt: raw.appliedAt ? new Date(raw.appliedAt).toISOString() : null,
+      candidates: (raw.candidates ?? []).map((c: any) => ({
+        id: c.id,
+        fullName: c.fullName ?? c.full_name,
+        roleTitle: c.roleTitle ?? c.role_title,
+        seniority: c.seniority ?? 'junior',
+        proposedSalary: money(Number(c.proposedSalaryMinor ?? c.proposed_salary_minor ?? 0)),
+        fitScore: Number(c.fitScore ?? c.fit_score ?? 0),
+        riskNote: c.riskNote ?? c.risk_note ?? '',
+        aiReason: c.aiReason ?? c.ai_reason ?? '',
+        status: c.status,
+      })),
+    };
+  }
+
+  async getHrAccounting(userId: string, companyId: string): Promise<CompanyHrAccountingDto> {
+    const db = this.repository.db;
+    const character = await requireCharacterByUserId(db, userId);
+    const company = await this.repository.getCompany(companyId, db);
+    if (!company) throw AppError.notFound('Company');
+    if (company.ownerCharacterId !== character.id) {
+      throw AppError.forbidden('Chỉ chủ sở hữu mới xem HR & kế toán.');
+    }
+    const [plansRaw, staff, entries, totals, filings] = await Promise.all([
+      this.repository.listHiringPlans(companyId, db),
+      this.repository.listCompanyStaff(companyId, db),
+      this.repository.listLedgerEntries(companyId, 100, db),
+      this.repository.ledgerTotals(companyId, db),
+      this.repository.listTaxFilings(companyId, db),
+    ]);
+    return {
+      companyId,
+      plans: plansRaw.map((p) => this.mapHiringPlan(p)),
+      staff: staff.map((s: any) => ({
+        id: s.id,
+        fullName: s.fullName ?? s.full_name,
+        roleTitle: s.roleTitle ?? s.role_title,
+        salary: money(Number(s.salaryMinor ?? s.salary_minor ?? 0)),
+        status: s.status,
+        hiredAt: new Date(s.hiredAt ?? s.hired_at).toISOString(),
+        firedAt: s.firedAt || s.fired_at ? new Date(s.firedAt ?? s.fired_at).toISOString() : null,
+      })),
+      ledger: {
+        companyId,
+        entries: entries.map((e: any) => ({
+          id: e.id,
+          companyId: e.companyId ?? e.company_id ?? companyId,
+          entryType: e.entryType ?? e.entry_type,
+          amount: money(Number(e.amountMinor ?? e.amount_minor ?? 0)),
+          declaredAmount: money(Number(e.declaredAmountMinor ?? e.declared_amount_minor ?? 0)),
+          description: e.description ?? '',
+          isEvasion: Boolean(e.isEvasion ?? e.is_evasion),
+          occurredAt: new Date(e.occurredAt ?? e.occurred_at).toISOString(),
+        })),
+        totals: {
+          revenue: money(Number(totals.revenue)),
+          expense: money(Number(totals.expense)),
+          declaredRevenue: money(Number(totals.declaredRevenue)),
+          declaredExpense: money(Number(totals.declaredExpense)),
+          profit: money(Number(totals.profit)),
+          taxGap: money(Number(totals.taxGap)),
+        },
+      },
+      filings: filings.map((f: any) => ({
+        id: f.id,
+        companyId: f.companyId ?? companyId,
+        period: f.period,
+        declaredRevenue: money(Number(f.declaredRevenueMinor ?? 0)),
+        actualRevenue: money(Number(f.actualRevenueMinor ?? 0)),
+        declaredExpense: money(Number(f.declaredExpenseMinor ?? 0)),
+        actualExpense: money(Number(f.actualExpenseMinor ?? 0)),
+        taxDue: money(Number(f.taxDueMinor ?? 0)),
+        taxPaid: money(Number(f.taxPaidMinor ?? 0)),
+        riskScore: Number(f.riskScore ?? 0),
+        status: f.status,
+        notes: f.notes ?? '',
+        createdAt: new Date(f.createdAt).toISOString(),
+        filedAt: f.filedAt ? new Date(f.filedAt).toISOString() : null,
+      })),
+    };
+  }
+
+  async createHiringPlan(
+    userId: string,
+    companyId: string,
+    input: { roleFocus: string; headcount: number; budgetMinor?: number; context?: string },
+  ): Promise<HiringPlanDto> {
+    return withTransaction(async (client) => {
+      const { character, company } = await this.assertOwner(client, userId, companyId);
+      const { data } = await callAiService<any>('/v1/recruitment/propose', {
+        company_id: companyId,
+        company_name: company.name,
+        industry: company.industry,
+        role_focus: input.roleFocus,
+        headcount: input.headcount,
+        budget_minor: input.budgetMinor ?? Number(company.cashMinor),
+        context: input.context ?? '',
+      });
+      const rationale =
+        data?.rationale ?? 'AI đề xuất danh sách ứng viên, chờ chủ doanh nghiệp duyệt.';
+      const candidates: any[] = Array.isArray(data?.candidates) ? data.candidates : [];
+      const aiModel = data?.meta?.model ?? null;
+      const planId = await this.repository.createHiringPlan(client, {
+        companyId,
+        requestedBy: character.id,
+        roleFocus: input.roleFocus,
+        headcount: input.headcount,
+        rationale,
+        aiModel,
+      });
+      for (const c of candidates.slice(0, input.headcount)) {
+        await this.repository.addHiringCandidate(client, {
+          planId,
+          fullName: String(c.full_name ?? c.fullName ?? 'Ứng viên'),
+          roleTitle: String(c.role_title ?? c.roleTitle ?? input.roleFocus),
+          seniority: String(c.seniority ?? 'junior'),
+          salaryMinor: Math.max(
+            0,
+            Number(c.proposed_salary_minor ?? c.proposedSalaryMinor ?? 8_000_000),
+          ),
+          fitScore: Math.max(0, Math.min(100, Number(c.fit_score ?? c.fitScore ?? 70))),
+          riskNote: String(c.risk_note ?? c.riskNote ?? ''),
+          reason: String(c.reason ?? c.aiReason ?? ''),
+        });
+      }
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'AI đề xuất tuyển dụng',
+        body: `AI đã sắp xếp ${Math.min(candidates.length, input.headcount)} ứng viên cho "${company.name}". Vui lòng duyệt.`,
+        payload: { companyId, planId },
+      });
+      const plan = await this.repository.getHiringPlan(planId, client);
+      return this.mapHiringPlan(plan);
+    });
+  }
+
+  async decideHiringCandidate(
+    userId: string,
+    companyId: string,
+    planId: string,
+    candidateId: string,
+    decision: 'approved' | 'rejected',
+  ): Promise<HiringPlanDto> {
+    return withTransaction(async (client) => {
+      await this.assertOwner(client, userId, companyId);
+      const plan = await this.repository.getHiringPlan(planId, client);
+      if (!plan || plan.companyId !== companyId) throw AppError.notFound('Kế hoạch tuyển dụng');
+      if (plan.status === 'applied') throw AppError.badRequest('Kế hoạch đã được áp dụng.');
+      const ok = await this.repository.decideHiringCandidate(client, planId, candidateId, decision);
+      if (!ok) throw AppError.notFound('Ứng viên');
+      const updated = await this.repository.getHiringPlan(planId, client);
+      return this.mapHiringPlan(updated);
+    });
+  }
+
+  async applyHiringPlan(userId: string, companyId: string, planId: string): Promise<HiringPlanDto> {
+    return withTransaction(async (client) => {
+      const { company } = await this.assertOwner(client, userId, companyId);
+      const plan = await this.repository.getHiringPlan(planId, client);
+      if (!plan || plan.companyId !== companyId) throw AppError.notFound('Kế hoạch tuyển dụng');
+      if (plan.status === 'applied') throw AppError.badRequest('Kế hoạch đã được áp dụng.');
+      const hired = await this.repository.applyHiringPlan(client, planId);
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Đã tuyển nhân sự (AI đề xuất)',
+        body: `Đã tuyển ${hired} ứng viên đã duyệt cho "${company.name}".`,
+        payload: { companyId, planId, hired },
+      });
+      const updated = await this.repository.getHiringPlan(planId, client);
+      return this.mapHiringPlan(updated);
+    });
+  }
+
+  async fireStaff(userId: string, companyId: string, staffId: string): Promise<void> {
+    return withTransaction(async (client) => {
+      const { company } = await this.assertOwner(client, userId, companyId);
+      const ok = await this.repository.fireStaff(client, companyId, staffId);
+      if (!ok) throw AppError.notFound('Nhân sự');
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Sa thải nhân sự (AI-tuyển)',
+        body: `Đã chấm dứt hợp đồng nhân sự tại "${company.name}".`,
+        payload: { companyId, staffId },
+      });
+    });
+  }
+
+  async addLedgerEntry(
+    userId: string,
+    companyId: string,
+    input: {
+      entryType: string;
+      amountMinor: number;
+      declaredAmountMinor?: number;
+      description?: string;
+      isEvasion?: boolean;
+      applyToCash?: boolean;
+    },
+  ): Promise<CompanyHrAccountingDto> {
+    return withTransaction(async (client) => {
+      const { company } = await this.assertOwner(client, userId, companyId);
+      const amountMinor = input.amountMinor;
+      const declared = input.declaredAmountMinor ?? amountMinor;
+      const isEvasion = Boolean(input.isEvasion || declared !== amountMinor);
+      if (amountMinor < 0 || declared < 0) throw AppError.badRequest('Số tiền không hợp lệ.');
+      if (input.applyToCash !== false) {
+        if (input.entryType === 'revenue') {
+          await this.repository.adjustCash(client, companyId, amountMinor);
+        } else if (['opex', 'payroll', 'tax', 'fine', 'bribe', 'other'].includes(input.entryType)) {
+          if (Number(company.cashMinor) < amountMinor) {
+            throw AppError.conflict('insufficient_funds', 'Quỹ công ty không đủ.');
+          }
+          await this.repository.adjustCash(client, companyId, -amountMinor);
+        }
+      }
+      await this.repository.addLedgerEntry(client, {
+        companyId,
+        entryType: input.entryType,
+        amountMinor,
+        declaredAmountMinor: declared,
+        description: input.description ?? '',
+        isEvasion,
+      });
+      return this.getHrAccounting(userId, companyId);
+    });
+  }
+
+  async createTaxFiling(
+    userId: string,
+    companyId: string,
+    input: {
+      period: string;
+      declareFull?: boolean;
+      adjustmentDeclaredRevenue?: number;
+      adjustmentDeclaredExpense?: number;
+      notes?: string;
+    },
+  ): Promise<CompanyHrAccountingDto> {
+    return withTransaction(async (client) => {
+      await this.assertOwner(client, userId, companyId);
+      const totals = await this.repository.ledgerTotals(companyId, client);
+      let declaredRevenue = input.declareFull === false ? 0 : Number(totals.revenue);
+      let declaredExpense = input.declareFull === false ? 0 : Number(totals.expense);
+      if (typeof input.adjustmentDeclaredRevenue === 'number')
+        declaredRevenue = Math.max(0, input.adjustmentDeclaredRevenue);
+      if (typeof input.adjustmentDeclaredExpense === 'number')
+        declaredExpense = Math.max(0, input.adjustmentDeclaredExpense);
+      const actualRevenue = Number(totals.revenue);
+      const actualExpense = Number(totals.expense);
+      const taxable = Math.max(0, declaredRevenue - declaredExpense);
+      const taxDueMinor = Math.round(taxable * 0.1);
+      const hiddenRevenue = Math.max(0, actualRevenue - declaredRevenue);
+      const inflatedExpense = Math.max(0, declaredExpense - actualExpense);
+      const riskScore = Math.min(
+        100,
+        Math.round(
+          (hiddenRevenue / Math.max(1, actualRevenue)) * 60 +
+            (inflatedExpense / Math.max(1, actualExpense || 1)) * 30 +
+            (input.declareFull === false ? 20 : 0),
+        ),
+      );
+      await this.repository.createTaxFiling(client, {
+        companyId,
+        period: input.period,
+        declaredRevenueMinor: declaredRevenue,
+        actualRevenueMinor: actualRevenue,
+        declaredExpenseMinor: declaredExpense,
+        actualExpenseMinor: actualExpense,
+        taxDueMinor,
+        riskScore,
+        notes:
+          input.notes ??
+          (riskScore >= 60
+            ? 'Khai báo có dấu hiệu lệch soát thực tế (rủi ro kiểm toán cao).'
+            : 'Khai báo đã ghi nhận.'),
+      });
+      return this.getHrAccounting(userId, companyId);
     });
   }
 }

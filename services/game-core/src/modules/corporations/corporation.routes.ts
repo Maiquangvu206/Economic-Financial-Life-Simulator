@@ -7,6 +7,10 @@ import {
   CompanyInvestRequestSchema,
   CompanyOperationRequestSchema,
   CreateCompanyRequestSchema,
+  CreateCompanyTaxFilingRequestSchema,
+  CreateHiringPlanRequestSchema,
+  CreateLedgerEntryRequestSchema,
+  DecideHiringCandidateRequestSchema,
   DividendRequestSchema,
   IpoCompanyRequestSchema,
   TakeoverRequestSchema,
@@ -83,4 +87,44 @@ corporationRouter.post(
   '/:companyId/opex',
   validateBody(CompanyOperationRequestSchema),
   asyncHandler(controller.payOpex),
+);
+
+/** HR & Kế toán (tổng hợp): kế hoạch tuyển dụng AI, nhân sự, sổ cái, khai thuế. */
+corporationRouter.get('/:companyId/hr-accounting', asyncHandler(controller.getHrAccounting));
+
+/** AI đề xuất kế hoạch tuyển dụng (chờ chủ doanh nghiệp duyệt). */
+corporationRouter.post(
+  '/:companyId/hiring-plans',
+  validateBody(CreateHiringPlanRequestSchema),
+  asyncHandler(controller.createHiringPlan),
+);
+
+/** Duyệt/từ chối ứng viên trong kế hoạch. */
+corporationRouter.post(
+  '/:companyId/hiring-plans/:planId/candidates/:candidateId/decision',
+  validateBody(DecideHiringCandidateRequestSchema),
+  asyncHandler(controller.decideHiringCandidate),
+);
+
+/** Áp dụng kế hoạch: tuyển các ứng viên đã duyệt. */
+corporationRouter.post(
+  '/:companyId/hiring-plans/:planId/apply',
+  asyncHandler(controller.applyHiringPlan),
+);
+
+/** Sa thải nhân sự (AI-tuyển / company_staff). */
+corporationRouter.post('/:companyId/staff/:staffId/fire', asyncHandler(controller.fireStaff));
+
+/** Ghi bút toán sổ cái (có thể khai báo lệch thực tế). */
+corporationRouter.post(
+  '/:companyId/ledger',
+  validateBody(CreateLedgerEntryRequestSchema),
+  asyncHandler(controller.addLedgerEntry),
+);
+
+/** Lập & nộp hồ sơ khai thuế doanh nghiệp (tính rủi ro trốn thuế/lách luật). */
+corporationRouter.post(
+  '/:companyId/tax-filings',
+  validateBody(CreateCompanyTaxFilingRequestSchema),
+  asyncHandler(controller.createTaxFiling),
 );

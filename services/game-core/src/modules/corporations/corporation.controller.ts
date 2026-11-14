@@ -3,6 +3,10 @@ import type {
   CompanyInvestRequest,
   CompanyOperationRequest,
   CreateCompanyRequest,
+  CreateCompanyTaxFilingRequest,
+  CreateHiringPlanRequest,
+  CreateLedgerEntryRequest,
+  DecideHiringCandidateRequest,
   DividendRequest,
   IpoCompanyRequest,
   TakeoverRequest,
@@ -106,6 +110,87 @@ export class CorporationController {
     const { amount, note } = req.body as CompanyOperationRequest;
     const company = await this.service.payOpex(userId, companyId, amount.amount, note);
     res.status(200).json(company);
+  };
+
+  getHrAccounting = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const data = await this.service.getHrAccounting(userId, companyId);
+    res.status(200).json(data);
+  };
+
+  createHiringPlan = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const body = req.body as CreateHiringPlanRequest;
+    const plan = await this.service.createHiringPlan(userId, companyId, {
+      roleFocus: body.roleFocus,
+      headcount: body.headcount ?? 3,
+      budgetMinor: body.budget?.amount,
+      context: body.context,
+    });
+    res.status(201).json(plan);
+  };
+
+  decideHiringCandidate = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId, planId, candidateId } = req.params as {
+      companyId: string;
+      planId: string;
+      candidateId: string;
+    };
+    const { decision } = req.body as DecideHiringCandidateRequest;
+    const plan = await this.service.decideHiringCandidate(
+      userId,
+      companyId,
+      planId,
+      candidateId,
+      decision,
+    );
+    res.status(200).json(plan);
+  };
+
+  applyHiringPlan = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId, planId } = req.params as { companyId: string; planId: string };
+    const plan = await this.service.applyHiringPlan(userId, companyId, planId);
+    res.status(200).json(plan);
+  };
+
+  fireStaff = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId, staffId } = req.params as { companyId: string; staffId: string };
+    await this.service.fireStaff(userId, companyId, staffId);
+    res.status(204).end();
+  };
+
+  addLedgerEntry = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const body = req.body as CreateLedgerEntryRequest;
+    const data = await this.service.addLedgerEntry(userId, companyId, {
+      entryType: body.entryType,
+      amountMinor: body.amount.amount,
+      declaredAmountMinor: body.declaredAmount?.amount,
+      description: body.description,
+      isEvasion: body.isEvasion,
+      applyToCash: body.applyToCash,
+    });
+    res.status(201).json(data);
+  };
+
+  createTaxFiling = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const body = req.body as CreateCompanyTaxFilingRequest;
+    const data = await this.service.createTaxFiling(userId, companyId, {
+      period: body.period,
+      declareFull: body.declareFull,
+      adjustmentDeclaredRevenue: body.adjustmentDeclaredRevenue?.amount,
+      adjustmentDeclaredExpense: body.adjustmentDeclaredExpense?.amount,
+      notes: body.notes,
+    });
+    res.status(201).json(data);
   };
 }
 

@@ -25,6 +25,10 @@ export class CharactersController {
     res.json(await this.service.resolveByCccd(req.params.cccd as string));
   };
 
+  lookupByAccountNumber = async (req: Request, res: Response): Promise<void> => {
+    res.json(await this.service.lookupByAccountNumber(req.params.accountNumber as string));
+  };
+
   createProfile = async (req: Request, res: Response): Promise<void> => {
     const actorId = requireActorId(req);
     res.json(await this.service.createProfile(actorId, req.body as CreateCharacterRequest));

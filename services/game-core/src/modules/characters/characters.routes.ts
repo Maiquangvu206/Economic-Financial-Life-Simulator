@@ -13,6 +13,7 @@ charactersRouter.use(attachActor);
 
 charactersRouter.get('/provinces', asyncHandler(controller.listProvinces));
 charactersRouter.get('/by-cccd/:cccd', asyncHandler(controller.resolveByCccd));
+charactersRouter.get('/by-account/:accountNumber', asyncHandler(controller.lookupByAccountNumber));
 charactersRouter.get('/me', asyncHandler(controller.getMe));
 charactersRouter.get('/:id', asyncHandler(controller.getById));
 

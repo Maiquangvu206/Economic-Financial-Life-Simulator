@@ -15,6 +15,8 @@ const EnvSchema = z.object({
   AI_SERVICE_URL: z.string().url().default('http://localhost:8000'),
   AI_SERVICE_TOKEN: z.string().default(''),
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  REDIS_URL: z.string().optional(),
+  REALTIME_CHANNEL: z.string().default('efls:realtime'),
   LOG_LEVEL: z.string().default('info'),
 });
 

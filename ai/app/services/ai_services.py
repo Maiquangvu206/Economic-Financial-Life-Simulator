@@ -4,7 +4,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from app.domain.enums import AiTask, GmAction
-from app.domain.policies import guard_gm, guard_judge, guard_news, guard_npc
+from app.domain.policies import guard_gm, guard_judge, guard_news, guard_npc, guard_recruitment
 from app.domain.schemas import (
     GmProposal,
     GmRequest,
@@ -15,6 +15,8 @@ from app.domain.schemas import (
     NpcNegotiationProposal,
     NpcNegotiationRequest,
     ProposalMeta,
+    RecruitmentProposal,
+    RecruitmentRequest,
 )
 from app.providers.base import LLMProvider, ProviderError
 from app.services.prompt_loader import dump_request, load_prompt
@@ -23,6 +25,7 @@ JUDGE_PROMPT_VERSION = "judge@v1"
 NEWS_PROMPT_VERSION = "news@v1"
 NPC_PROMPT_VERSION = "npc_merchant@v1"
 GM_PROMPT_VERSION = "gm_economy@v1"
+RECRUITMENT_PROMPT_VERSION = "recruitment@v1"
 
 
 def make_meta(task: AiTask, model: str, version: str) -> ProposalMeta:
@@ -123,3 +126,23 @@ class GmService:
             proposal.action = GmAction(fallback)
 
         return guard_gm(proposal, request.allowed_actions)
+
+
+class RecruitmentService:
+    def __init__(self, provider: LLMProvider) -> None:
+        self._provider = provider
+
+    async def propose(self, request: RecruitmentRequest) -> RecruitmentProposal:
+        raw = await self._provider.complete_json(
+            task=AiTask.RECRUITMENT.value,
+            system_prompt=load_prompt("recruitment"),
+            user_prompt=dump_request(request),
+        )
+        try:
+            proposal = RecruitmentProposal(
+                meta=make_meta(AiTask.RECRUITMENT, self._provider.name, RECRUITMENT_PROMPT_VERSION),
+                **raw,
+            )
+        except (ValidationError, TypeError) as error:
+            raise _invalid_output(error) from error
+        return guard_recruitment(proposal)

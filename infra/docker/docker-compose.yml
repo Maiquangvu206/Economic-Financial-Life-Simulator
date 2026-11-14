@@ -125,6 +125,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
       ai:
@@ -134,6 +136,8 @@ services:
       CORE_PORT: 4000
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgresql://${POSTGRES_USER:-efls}:${POSTGRES_PASSWORD:-efls}@postgres:5432/${POSTGRES_DB:-efls}
+      REDIS_URL: redis://redis:6379
+      REALTIME_CHANNEL: ${REALTIME_CHANNEL:-efls:realtime}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}

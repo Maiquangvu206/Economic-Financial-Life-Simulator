@@ -4,6 +4,7 @@ from app.domain.schemas import (
     JudgeProposal,
     NewsProposal,
     NpcNegotiationProposal,
+    RecruitmentProposal,
 )
 
 
@@ -40,4 +41,11 @@ def guard_gm(proposal: GmProposal, allowed_actions: list[GmAction]) -> GmProposa
     proposal.magnitude = clamp(proposal.magnitude, 0.0, 1.0)
     if proposal.action not in allowed_actions:
         raise ValueError("GM proposed an action that is not allowed")
+    return proposal
+
+
+def guard_recruitment(proposal: RecruitmentProposal) -> RecruitmentProposal:
+    for c in proposal.candidates:
+        c.proposed_salary_minor = max(0, int(c.proposed_salary_minor))
+        c.fit_score = int(clamp(c.fit_score, 0, 100))
     return proposal

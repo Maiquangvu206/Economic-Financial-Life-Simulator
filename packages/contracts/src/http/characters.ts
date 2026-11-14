@@ -6,10 +6,15 @@ import { ZoneTypeSchema } from '../enums/index.js';
 export const MaritalStatusSchema = z.enum(['single', 'married', 'divorced', 'widowed']);
 export type MaritalStatus = z.infer<typeof MaritalStatusSchema>;
 
+export const AccountTierSchema = z.enum(['standard', 'silver', 'gold', 'platinum', 'diamond']);
+export type AccountTier = z.infer<typeof AccountTierSchema>;
+
 export const CharacterDtoSchema = z.object({
   id: IdSchema,
   userId: IdSchema,
   fullName: z.string(),
+  accountNumber: z.string(),
+  accountTier: AccountTierSchema,
   cccd: z.string().nullable(),
   birthplace: z.string().nullable(),
   birthplaceName: z.string().nullable(),
@@ -24,6 +29,14 @@ export const CharacterDtoSchema = z.object({
   createdAt: z.string().datetime(),
 });
 export type CharacterDto = z.infer<typeof CharacterDtoSchema>;
+
+export const AccountLookupDtoSchema = z.object({
+  accountNumber: z.string(),
+  characterId: IdSchema,
+  fullName: z.string(),
+  accountTier: AccountTierSchema,
+});
+export type AccountLookupDto = z.infer<typeof AccountLookupDtoSchema>;
 
 export const ProvinceDtoSchema = z.object({
   code: z.string(),

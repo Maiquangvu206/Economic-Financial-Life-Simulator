@@ -84,3 +84,127 @@ export const CompanyEmployeesDtoSchema = z.object({
   employees: z.array(CompanyEmployeeDtoSchema),
 });
 export type CompanyEmployeesDto = z.infer<typeof CompanyEmployeesDtoSchema>;
+
+export const HiringCandidateDtoSchema = z.object({
+  id: IdSchema,
+  fullName: z.string(),
+  roleTitle: z.string(),
+  seniority: z.string(),
+  proposedSalary: MoneySchema,
+  fitScore: z.number().int(),
+  riskNote: z.string(),
+  aiReason: z.string(),
+  status: z.enum(['proposed', 'approved', 'rejected', 'hired']),
+});
+export type HiringCandidateDto = z.infer<typeof HiringCandidateDtoSchema>;
+
+export const HiringPlanDtoSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  status: z.enum(['pending', 'approved', 'rejected', 'applied', 'cancelled']),
+  roleFocus: z.string(),
+  headcount: z.number().int(),
+  rationale: z.string(),
+  aiModel: z.string().nullable(),
+  candidates: z.array(HiringCandidateDtoSchema),
+  createdAt: z.string().datetime(),
+  decidedAt: z.string().datetime().nullable(),
+  appliedAt: z.string().datetime().nullable(),
+});
+export type HiringPlanDto = z.infer<typeof HiringPlanDtoSchema>;
+
+export const CreateHiringPlanRequestSchema = z.object({
+  roleFocus: z.string().min(1).max(200),
+  headcount: z.number().int().min(1).max(20).default(3),
+  budget: MoneySchema.optional(),
+  context: z.string().max(2000).optional(),
+});
+export type CreateHiringPlanRequest = z.infer<typeof CreateHiringPlanRequestSchema>;
+
+export const DecideHiringCandidateRequestSchema = z.object({
+  decision: z.enum(['approved', 'rejected']),
+});
+export type DecideHiringCandidateRequest = z.infer<typeof DecideHiringCandidateRequestSchema>;
+
+export const CompanyStaffDtoSchema = z.object({
+  id: IdSchema,
+  fullName: z.string(),
+  roleTitle: z.string(),
+  salary: MoneySchema,
+  status: z.enum(['active', 'fired', 'resigned']),
+  hiredAt: z.string().datetime(),
+  firedAt: z.string().datetime().nullable(),
+});
+export type CompanyStaffDto = z.infer<typeof CompanyStaffDtoSchema>;
+
+export const CompanyLedgerEntryDtoSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  entryType: z.enum(['revenue', 'opex', 'payroll', 'tax', 'adjustment', 'fine', 'bribe', 'other']),
+  amount: MoneySchema,
+  declaredAmount: MoneySchema,
+  description: z.string(),
+  isEvasion: z.boolean(),
+  occurredAt: z.string().datetime(),
+});
+export type CompanyLedgerEntryDto = z.infer<typeof CompanyLedgerEntryDtoSchema>;
+
+export const CreateLedgerEntryRequestSchema = z.object({
+  entryType: z.enum(['revenue', 'opex', 'payroll', 'tax', 'adjustment', 'fine', 'bribe', 'other']),
+  amount: MoneySchema,
+  declaredAmount: MoneySchema.optional(),
+  description: z.string().max(300).optional(),
+  isEvasion: z.boolean().optional(),
+  applyToCash: z.boolean().optional().default(true),
+});
+export type CreateLedgerEntryRequest = z.infer<typeof CreateLedgerEntryRequestSchema>;
+
+export const CompanyLedgerDtoSchema = z.object({
+  companyId: IdSchema,
+  entries: z.array(CompanyLedgerEntryDtoSchema),
+  totals: z.object({
+    revenue: MoneySchema,
+    expense: MoneySchema,
+    declaredRevenue: MoneySchema,
+    declaredExpense: MoneySchema,
+    profit: MoneySchema,
+    taxGap: MoneySchema,
+  }),
+});
+export type CompanyLedgerDto = z.infer<typeof CompanyLedgerDtoSchema>;
+
+export const CompanyTaxFilingDtoSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  period: z.string(),
+  declaredRevenue: MoneySchema,
+  actualRevenue: MoneySchema,
+  declaredExpense: MoneySchema,
+  actualExpense: MoneySchema,
+  taxDue: MoneySchema,
+  taxPaid: MoneySchema,
+  riskScore: z.number().int(),
+  status: z.enum(['draft', 'filed', 'audited', 'penalized']),
+  notes: z.string(),
+  createdAt: z.string().datetime(),
+  filedAt: z.string().datetime().nullable(),
+});
+export type CompanyTaxFilingDto = z.infer<typeof CompanyTaxFilingDtoSchema>;
+
+export const CreateCompanyTaxFilingRequestSchema = z.object({
+  period: z.string().min(3).max(20),
+  declareFull: z.boolean().optional().default(true),
+  adjustmentDeclaredRevenue: MoneySchema.optional(),
+  adjustmentDeclaredExpense: MoneySchema.optional(),
+  notes: z.string().max(500).optional(),
+});
+export type CreateCompanyTaxFilingRequest = z.infer<typeof CreateCompanyTaxFilingRequestSchema>;
+
+export const CompanyHrAccountingDtoSchema = z.object({
+  companyId: IdSchema,
+  plans: z.array(HiringPlanDtoSchema),
+  staff: z.array(CompanyStaffDtoSchema),
+  ledger: CompanyLedgerDtoSchema,
+  filings: z.array(CompanyTaxFilingDtoSchema),
+});
+export type CompanyHrAccountingDto = z.infer<typeof CompanyHrAccountingDtoSchema>;

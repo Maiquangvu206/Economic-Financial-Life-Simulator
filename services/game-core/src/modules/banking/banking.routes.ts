@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import {
   ApplyLoanRequestSchema,
+  CreateTransferRequestSchema,
   RepayLoanRequestSchema,
-  SavingsRequestSchema,
+  SavingsDepositRequestSchema,
+  SavingsWithdrawRequestSchema,
 } from '@efls/contracts';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
@@ -27,11 +29,20 @@ bankingRouter.post(
 );
 bankingRouter.post(
   '/savings/deposit',
-  validateBody(SavingsRequestSchema),
+  validateBody(SavingsDepositRequestSchema),
   asyncHandler(controller.depositSavings),
 );
 bankingRouter.post(
   '/savings/withdraw',
-  validateBody(SavingsRequestSchema),
+  validateBody(SavingsWithdrawRequestSchema),
   asyncHandler(controller.withdrawSavings),
+);
+
+// Chuyển khoản theo số tài khoản (STK) - thời gian thực
+bankingRouter.get('/transfers/lookup', asyncHandler(controller.lookupTransfer));
+bankingRouter.get('/transfers', asyncHandler(controller.listTransfers));
+bankingRouter.post(
+  '/transfers',
+  validateBody(CreateTransferRequestSchema),
+  asyncHandler(controller.createTransfer),
 );

@@ -255,6 +255,295 @@ export class CorporationRepository {
     );
     return result.rows[0]?.cash_minor ?? '0';
   }
+
+  // --- HR: kế hoạch tuyển dụng AI + nhân sự NPC ---
+  async createHiringPlan(
+    db: Db,
+    input: {
+      companyId: string;
+      requestedBy: string;
+      roleFocus: string;
+      headcount: number;
+      rationale: string;
+      aiModel: string | null;
+    },
+  ): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO company_hiring_plans (company_id, requested_by, role_focus, headcount, rationale, ai_model)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [
+        input.companyId,
+        input.requestedBy,
+        input.roleFocus,
+        input.headcount,
+        input.rationale,
+        input.aiModel,
+      ],
+    );
+    return r.rows[0]!.id;
+  }
+
+  async addHiringCandidate(
+    db: Db,
+    input: {
+      planId: string;
+      fullName: string;
+      roleTitle: string;
+      seniority: string;
+      salaryMinor: number;
+      fitScore: number;
+      riskNote: string;
+      reason: string;
+    },
+  ): Promise<void> {
+    await db.query(
+      `INSERT INTO company_hiring_candidates
+         (plan_id, full_name, role_title, seniority, proposed_salary_minor, fit_score, risk_note, ai_reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        input.planId,
+        input.fullName,
+        input.roleTitle,
+        input.seniority,
+        input.salaryMinor,
+        input.fitScore,
+        input.riskNote,
+        input.reason,
+      ],
+    );
+  }
+
+  async listHiringPlans(companyId: string, db: Db = this.db): Promise<any[]> {
+    const plans = await db.query(
+      `SELECT id, company_id AS "companyId", status, role_focus AS "roleFocus",
+              headcount, rationale, ai_model AS "aiModel",
+              created_at AS "createdAt", decided_at AS "decidedAt", applied_at AS "appliedAt"
+       FROM company_hiring_plans WHERE company_id = $1 ORDER BY created_at DESC LIMIT 20`,
+      [companyId],
+    );
+    const ids = plans.rows.map((p) => p.id);
+    let candidates: any[] = [];
+    if (ids.length > 0) {
+      const c = await db.query(
+        `SELECT id, plan_id AS "planId", full_name AS "fullName", role_title AS "roleTitle",
+                seniority, proposed_salary_minor AS "proposedSalaryMinor",
+                fit_score AS "fitScore", risk_note AS "riskNote", ai_reason AS "aiReason", status
+         FROM company_hiring_candidates WHERE plan_id = ANY($1::uuid[]) ORDER BY fit_score DESC`,
+        [ids],
+      );
+      candidates = c.rows;
+    }
+    return plans.rows.map((p) => ({
+      ...p,
+      candidates: candidates.filter((c) => c.planId === p.id),
+    }));
+  }
+
+  async getHiringPlan(planId: string, db: Db = this.db): Promise<any | null> {
+    const plan = await db.query(
+      `SELECT id, company_id AS "companyId", requested_by AS "requestedBy", status,
+              role_focus AS "roleFocus", headcount, rationale, ai_model AS "aiModel",
+              created_at AS "createdAt", decided_at AS "decidedAt", applied_at AS "appliedAt"
+       FROM company_hiring_plans WHERE id = $1`,
+      [planId],
+    );
+    if (!plan.rows[0]) return null;
+    const c = await db.query(
+      `SELECT id, plan_id AS "planId", full_name AS "fullName", role_title AS "roleTitle",
+              seniority, proposed_salary_minor AS "proposedSalaryMinor",
+              fit_score AS "fitScore", risk_note AS "riskNote", ai_reason AS "aiReason", status
+       FROM company_hiring_candidates WHERE plan_id = $1 ORDER BY fit_score DESC`,
+      [planId],
+    );
+    return { ...plan.rows[0], candidates: c.rows };
+  }
+
+  async decideHiringCandidate(
+    db: Db,
+    planId: string,
+    candidateId: string,
+    decision: 'approved' | 'rejected',
+  ): Promise<boolean> {
+    const r = await db.query(
+      `UPDATE company_hiring_candidates SET status = $3
+       WHERE id = $2 AND plan_id = $1 AND status IN ('proposed','approved','rejected')
+       RETURNING id`,
+      [planId, candidateId, decision],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  async applyHiringPlan(db: Db, planId: string): Promise<number> {
+    const approved = await db.query<{
+      id: string;
+      fullName: string;
+      roleTitle: string;
+      proposedSalaryMinor: string;
+    }>(
+      `SELECT id, full_name AS "fullName", role_title AS "roleTitle",
+              proposed_salary_minor AS "proposedSalaryMinor"
+       FROM company_hiring_candidates
+       WHERE plan_id = $1 AND status = 'approved'`,
+      [planId],
+    );
+    const plan = await db.query<{ companyId: string }>(
+      `SELECT company_id AS "companyId" FROM company_hiring_plans WHERE id = $1`,
+      [planId],
+    );
+    const companyId = plan.rows[0]?.companyId;
+    if (!companyId) return 0;
+    let hired = 0;
+    for (const c of approved.rows) {
+      await db.query(
+        `INSERT INTO company_staff (company_id, candidate_id, full_name, role_title, salary_minor, status)
+         VALUES ($1,$2,$3,$4,$5,'active')`,
+        [companyId, c.id, c.fullName, c.roleTitle, Number(c.proposedSalaryMinor)],
+      );
+      await db.query(`UPDATE company_hiring_candidates SET status = 'hired' WHERE id = $1`, [c.id]);
+      hired++;
+    }
+    await db.query(
+      `UPDATE company_hiring_plans SET status = 'applied', applied_at = now(), decided_at = COALESCE(decided_at, now()) WHERE id = $1`,
+      [planId],
+    );
+    return hired;
+  }
+
+  async listCompanyStaff(companyId: string, db: Db = this.db): Promise<any[]> {
+    const r = await db.query(
+      `SELECT id, full_name AS "fullName", role_title AS "roleTitle",
+              salary_minor AS "salaryMinor", status, hired_at AS "hiredAt", fired_at AS "firedAt"
+       FROM company_staff WHERE company_id = $1 ORDER BY hired_at DESC`,
+      [companyId],
+    );
+    return r.rows;
+  }
+
+  async fireStaff(db: Db, companyId: string, staffId: string): Promise<boolean> {
+    const r = await db.query(
+      `UPDATE company_staff SET status = 'fired', fired_at = now()
+       WHERE id = $1 AND company_id = $2 AND status = 'active' RETURNING id`,
+      [staffId, companyId],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  // --- Sổ cái/kế toán + khai thuế ---
+  async addLedgerEntry(
+    db: Db,
+    input: {
+      companyId: string;
+      entryType: string;
+      amountMinor: number;
+      declaredAmountMinor: number;
+      description: string;
+      isEvasion: boolean;
+      meta?: Record<string, unknown>;
+    },
+  ): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO company_ledger_entries
+         (company_id, entry_type, amount_minor, declared_amount_minor, description, is_evasion, meta)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb) RETURNING id`,
+      [
+        input.companyId,
+        input.entryType,
+        input.amountMinor,
+        input.declaredAmountMinor,
+        input.description,
+        input.isEvasion,
+        JSON.stringify(input.meta ?? {}),
+      ],
+    );
+    return r.rows[0]!.id;
+  }
+
+  async listLedgerEntries(companyId: string, limit = 100, db: Db = this.db): Promise<any[]> {
+    const r = await db.query(
+      `SELECT id, company_id AS "companyId", entry_type AS "entryType",
+              amount_minor AS "amountMinor", declared_amount_minor AS "declaredAmountMinor",
+              description, is_evasion AS "isEvasion", occurred_at AS "occurredAt"
+       FROM company_ledger_entries WHERE company_id = $1
+       ORDER BY occurred_at DESC LIMIT $2`,
+      [companyId, limit],
+    );
+    return r.rows;
+  }
+
+  async ledgerTotals(companyId: string, db: Db = this.db): Promise<any> {
+    const r = await db.query(
+      `SELECT
+         COALESCE(SUM(CASE WHEN entry_type = 'revenue' THEN amount_minor ELSE 0 END),0)::bigint AS revenue,
+         COALESCE(SUM(CASE WHEN entry_type IN ('opex','payroll','tax','fine','bribe','other') THEN amount_minor ELSE 0 END),0)::bigint AS expense,
+         COALESCE(SUM(CASE WHEN entry_type = 'revenue' THEN declared_amount_minor ELSE 0 END),0)::bigint AS "declaredRevenue",
+         COALESCE(SUM(CASE WHEN entry_type IN ('opex','payroll','tax','fine','bribe','other') THEN declared_amount_minor ELSE 0 END),0)::bigint AS "declaredExpense"
+       FROM company_ledger_entries WHERE company_id = $1`,
+      [companyId],
+    );
+    const t = r.rows[0] ?? { revenue: 0, expense: 0, declaredRevenue: 0, declaredExpense: 0 };
+    const revenue = Number(t.revenue);
+    const expense = Number(t.expense);
+    const declaredRevenue = Number(t.declaredRevenue);
+    const declaredExpense = Number(t.declaredExpense);
+    return {
+      revenue,
+      expense,
+      declaredRevenue,
+      declaredExpense,
+      profit: revenue - expense,
+      taxGap: Math.max(0, revenue - declaredRevenue) + Math.max(0, declaredExpense - expense),
+    };
+  }
+
+  async createTaxFiling(
+    db: Db,
+    input: {
+      companyId: string;
+      period: string;
+      declaredRevenueMinor: number;
+      actualRevenueMinor: number;
+      declaredExpenseMinor: number;
+      actualExpenseMinor: number;
+      taxDueMinor: number;
+      riskScore: number;
+      notes: string;
+    },
+  ): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO company_tax_filings
+         (company_id, period, declared_revenue_minor, actual_revenue_minor,
+          declared_expense_minor, actual_expense_minor, tax_due_minor, risk_score, status, notes, filed_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'filed',$9,now()) RETURNING id`,
+      [
+        input.companyId,
+        input.period,
+        input.declaredRevenueMinor,
+        input.actualRevenueMinor,
+        input.declaredExpenseMinor,
+        input.actualExpenseMinor,
+        input.taxDueMinor,
+        input.riskScore,
+        input.notes,
+      ],
+    );
+    return r.rows[0]!.id;
+  }
+
+  async listTaxFilings(companyId: string, db: Db = this.db): Promise<any[]> {
+    const r = await db.query(
+      `SELECT id, company_id AS "companyId", period,
+              declared_revenue_minor AS "declaredRevenueMinor",
+              actual_revenue_minor AS "actualRevenueMinor",
+              declared_expense_minor AS "declaredExpenseMinor",
+              actual_expense_minor AS "actualExpenseMinor",
+              tax_due_minor AS "taxDueMinor", tax_paid_minor AS "taxPaidMinor",
+              risk_score AS "riskScore", status, notes,
+              created_at AS "createdAt", filed_at AS "filedAt"
+       FROM company_tax_filings WHERE company_id = $1 ORDER BY created_at DESC LIMIT 30`,
+      [companyId],
+    );
+    return r.rows;
+  }
 }
 
 export const corporationRepository = new CorporationRepository();

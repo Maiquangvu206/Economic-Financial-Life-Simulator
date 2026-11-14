@@ -87,3 +87,29 @@ class GmProposal(BaseModel):
     action: GmAction
     magnitude: float = Field(ge=0, le=1)
     rationale: str = Field(min_length=1, max_length=2000)
+
+
+class RecruitmentCandidate(BaseModel):
+    full_name: str = Field(min_length=1, max_length=120)
+    role_title: str = Field(min_length=1, max_length=120)
+    seniority: Literal["intern", "junior", "mid", "senior", "lead"] = "junior"
+    proposed_salary_minor: int = Field(ge=0, le=10_000_000_000)
+    fit_score: int = Field(ge=0, le=100)
+    risk_note: str = Field(default="", max_length=500)
+    reason: str = Field(default="", max_length=500)
+
+
+class RecruitmentRequest(BaseModel):
+    company_id: UUID
+    company_name: str = Field(min_length=1, max_length=120)
+    industry: str = Field(min_length=1, max_length=80)
+    role_focus: str = Field(default="", max_length=200)
+    headcount: int = Field(ge=1, le=20)
+    budget_minor: int = Field(ge=0)
+    context: str = Field(default="", max_length=2000)
+
+
+class RecruitmentProposal(BaseModel):
+    meta: ProposalMeta
+    rationale: str = Field(min_length=1, max_length=2000)
+    candidates: list[RecruitmentCandidate] = Field(min_length=1, max_length=20)

@@ -1,5 +1,11 @@
 import type { Request, Response } from 'express';
-import type { ApplyLoanRequest, RepayLoanRequest, SavingsRequest } from '@efls/contracts';
+import type {
+  ApplyLoanRequest,
+  CreateTransferRequest,
+  RepayLoanRequest,
+  SavingsDepositRequest,
+  SavingsWithdrawRequest,
+} from '@efls/contracts';
 import { requireActorId } from '../../shared/http/actor.js';
 import { BankingService } from './banking.service.js';
 
@@ -33,15 +39,23 @@ export class BankingController {
 
   depositSavings = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
-    const input = req.body as SavingsRequest;
-    const savings = await this.service.depositSavings(userId, input.amount.amount);
+    const input = req.body as SavingsDepositRequest;
+    const savings = await this.service.depositSavings(
+      userId,
+      input.amount.amount,
+      input.termMonths ?? 0,
+    );
     res.json(savings);
   };
 
   withdrawSavings = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
-    const input = req.body as SavingsRequest;
-    const savings = await this.service.withdrawSavings(userId, input.amount.amount);
+    const input = req.body as SavingsWithdrawRequest;
+    const savings = await this.service.withdrawSavings(
+      userId,
+      input.amount.amount,
+      input.depositId,
+    );
     res.json(savings);
   };
 
@@ -50,5 +64,29 @@ export class BankingController {
     const { loanId } = req.params as { loanId: string };
     const loan = await this.service.getLoan(userId, loanId);
     res.json(loan);
+  };
+
+  lookupTransfer = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const accountNumber = String(req.query.accountNumber ?? '');
+    const result = await this.service.lookupTransferRecipient(userId, accountNumber);
+    res.json(result);
+  };
+
+  createTransfer = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const input = req.body as CreateTransferRequest;
+    const result = await this.service.createTransfer(userId, {
+      toAccountNumber: input.toAccountNumber,
+      amountMinor: input.amount.amount,
+      message: input.message,
+    });
+    res.status(201).json(result);
+  };
+
+  listTransfers = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const transfers = await this.service.listTransfers(userId);
+    res.json({ transfers });
   };
 }
