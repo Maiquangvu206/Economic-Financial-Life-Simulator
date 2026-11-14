@@ -3,7 +3,12 @@ import { toMinor, withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js';
 import { notify } from '../notifications/notification.service.js';
-import { type CompanyDto, type CompanyOverviewDto, MoneySchema } from '@efls/contracts';
+import {
+  type CompanyDto,
+  type CompanyEmployeesDto,
+  type CompanyOverviewDto,
+  MoneySchema,
+} from '@efls/contracts';
 import { corporationRepository } from './corporation.repository.js';
 
 function money(amount: number) {
@@ -310,6 +315,141 @@ export class CorporationService {
         isOwner: dto.ownerCharacterId === buyerCharacterId,
         shareholders: [],
       };
+    });
+  }
+
+  async getEmployees(userId: string, companyId: string): Promise<CompanyEmployeesDto> {
+    const character = await requireCharacterByUserId(this.repository.db, userId);
+    const company = await this.repository.getCompany(companyId);
+    if (!company) throw AppError.notFound('Company');
+    if (company.ownerCharacterId !== character.id) {
+      throw AppError.forbidden('Chỉ chủ sở hữu mới xem được danh sách nhân sự.');
+    }
+    const employees = await this.repository.listEmployees(companyId);
+    return {
+      companyId,
+      employees: employees.map((e) => ({
+        employmentId: e.employmentId,
+        characterId: e.characterId,
+        characterName: e.characterName,
+        jobTitle: e.jobTitle,
+        salary: money(Number(e.salaryMinor)),
+        status: e.status,
+        hiredAt: e.hiredAt.toISOString(),
+      })),
+    };
+  }
+
+  async fireEmployee(userId: string, companyId: string, employmentId: string): Promise<void> {
+    return withTransaction(async (client) => {
+      const character = await requireCharacterByUserId(client, userId);
+      const company = await this.repository.getCompany(companyId, client);
+      if (!company) throw AppError.notFound('Company');
+      if (company.ownerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ sở hữu mới sa thải nhân sự.');
+      }
+      const ok = await this.repository.fireEmployee(client, companyId, employmentId);
+      if (!ok) throw AppError.notFound('Nhân sự (đang làm việc)');
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Sa thải nhân sự',
+        body: `Đã chấm dứt hợp đồng lao động tại "${company.name}".`,
+        payload: { companyId, employmentId },
+      });
+    });
+  }
+
+  async dissolveCompany(userId: string, companyId: string): Promise<CompanyDto> {
+    return withTransaction(async (client) => {
+      const character = await requireCharacterByUserId(client, userId);
+      const company = await this.repository.getCompany(companyId, client);
+      if (!company) throw AppError.notFound('Company');
+      if (company.ownerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ sở hữu mới được giải thể công ty.');
+      }
+      if (company.status === 'bankrupt') {
+        throw AppError.badRequest('Công ty đã ở trạng thái phá sản/giải thể.');
+      }
+      await this.repository.setBankrupt(client, companyId);
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Giải thể công ty',
+        body: `Công ty "${company.name}" đã được giải thể (trạng thái phá sản).`,
+        payload: { companyId },
+      });
+      const dto = await this.repository.getCompany(companyId, client);
+      if (!dto) throw new Error('Company disappeared after dissolve');
+      return { ...toCompanyDto(dto), isOwner: true, shareholders: [] };
+    });
+  }
+
+  async collectRevenue(
+    userId: string,
+    companyId: string,
+    amountMinor: number,
+    note?: string,
+  ): Promise<CompanyDto> {
+    return withTransaction(async (client) => {
+      const character = await requireCharacterByUserId(client, userId);
+      const company = await this.repository.getCompany(companyId, client);
+      if (!company) throw AppError.notFound('Company');
+      if (company.ownerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ sở hữu mới ghi nhận doanh thu.');
+      }
+      if (company.status === 'bankrupt') {
+        throw AppError.badRequest('Công ty đã giải thể, không thể ghi nhận doanh thu.');
+      }
+      if (amountMinor <= 0 || amountMinor > 5_000_000_000) {
+        throw AppError.badRequest('Số tiền doanh thu không hợp lệ (1 - 5.000.000.000 ₫ mỗi lần).');
+      }
+      await this.repository.adjustCash(client, companyId, amountMinor);
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Ghi nhận doanh thu',
+        body: `Công ty "${company.name}" ghi nhận doanh thu ${formatMinor(amountMinor)}.${note ? ` Ghi chú: ${note}` : ''}`,
+        payload: { companyId, amountMinor, note },
+      });
+      const dto = await this.repository.getCompany(companyId, client);
+      if (!dto) throw new Error('Company disappeared after revenue');
+      return { ...toCompanyDto(dto), isOwner: true, shareholders: [] };
+    });
+  }
+
+  async payOpex(
+    userId: string,
+    companyId: string,
+    amountMinor: number,
+    note?: string,
+  ): Promise<CompanyDto> {
+    return withTransaction(async (client) => {
+      const character = await requireCharacterByUserId(client, userId);
+      const company = await this.repository.getCompany(companyId, client);
+      if (!company) throw AppError.notFound('Company');
+      if (company.ownerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ sở hữu mới chi OPEX.');
+      }
+      if (company.status === 'bankrupt') {
+        throw AppError.badRequest('Công ty đã giải thể, không thể chi OPEX.');
+      }
+      const cash = Number(company.cashMinor);
+      if (amountMinor <= 0) throw AppError.badRequest('Số tiền OPEX phải lớn hơn 0.');
+      if (cash < amountMinor) {
+        throw AppError.conflict('insufficient_funds', 'Quỹ công ty không đủ để chi OPEX.');
+      }
+      await this.repository.adjustCash(client, companyId, -amountMinor);
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Chi OPEX',
+        body: `Công ty "${company.name}" đã chi OPEX ${formatMinor(amountMinor)}.${note ? ` Ghi chú: ${note}` : ''}`,
+        payload: { companyId, amountMinor, note },
+      });
+      const dto = await this.repository.getCompany(companyId, client);
+      if (!dto) throw new Error('Company disappeared after opex');
+      return { ...toCompanyDto(dto), isOwner: true, shareholders: [] };
     });
   }
 }

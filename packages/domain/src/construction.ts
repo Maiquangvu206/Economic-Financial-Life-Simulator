@@ -94,16 +94,12 @@ export function findOwnedClusters(owned: OwnedCell[]): OwnedCluster[] {
 
 /** Khối chứa tọa độ cho trước (nếu ô đó thuộc sở hữu). */
 export function clusterContaining(clusters: OwnedCluster[], x: number, y: number) {
-  return (
-    clusters.find((cluster) => cluster.cells.some((c) => c.x === x && c.y === y)) ?? null
-  );
+  return clusters.find((cluster) => cluster.cells.some((c) => c.x === x && c.y === y)) ?? null;
 }
 
 /** Phương án xây dựng khả dụng cho một khối (lọc theo số ô tối thiểu). */
 export function constructionOptionsFor(cluster: OwnedCluster): ConstructionOption[] {
-  return CONSTRUCTION_OPTIONS[cluster.tier].filter(
-    (option) => option.minTiles <= cluster.size,
-  );
+  return CONSTRUCTION_OPTIONS[cluster.tier].filter((option) => option.minTiles <= cluster.size);
 }
 
 /** Giá trị BĐS ước tính sau xây dựng = giá trị hiện tại × hệ số. */

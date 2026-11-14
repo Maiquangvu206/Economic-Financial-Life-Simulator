@@ -61,3 +61,26 @@ export const DividendRequestSchema = z.object({
   amountPerShare: MoneySchema,
 });
 export type DividendRequest = z.infer<typeof DividendRequestSchema>;
+
+export const CompanyOperationRequestSchema = z.object({
+  amount: MoneySchema,
+  note: z.string().max(120).optional(),
+});
+export type CompanyOperationRequest = z.infer<typeof CompanyOperationRequestSchema>;
+
+export const CompanyEmployeeDtoSchema = z.object({
+  employmentId: IdSchema,
+  characterId: IdSchema,
+  characterName: z.string(),
+  jobTitle: z.string(),
+  salary: MoneySchema,
+  status: z.enum(['active', 'resigned', 'fired']),
+  hiredAt: z.string().datetime(),
+});
+export type CompanyEmployeeDto = z.infer<typeof CompanyEmployeeDtoSchema>;
+
+export const CompanyEmployeesDtoSchema = z.object({
+  companyId: IdSchema,
+  employees: z.array(CompanyEmployeeDtoSchema),
+});
+export type CompanyEmployeesDto = z.infer<typeof CompanyEmployeesDtoSchema>;

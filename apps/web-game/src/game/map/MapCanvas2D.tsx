@@ -5,15 +5,93 @@ import type { MapData, ZoneType } from './MapData';
 export const MAP_CANVAS_SIZE = 1000;
 
 const ZONE_HEX: Record<ZoneType, string> = {
-  residential: '#d1fae5',
-  commercial: '#bae6fd',
-  industrial: '#fef3c7',
-  civic: '#ede9fe',
-  port: '#cffafe',
-  slum: '#e2e8f0',
-  water: '#60a5fa',
-  park: '#ccfbf1',
+  // Soft Modern Pastel Palette — chuyển dốc mượt mà, tinh tế.
+  commercial: '#DDD6FE', // Trung tâm CBD (tím tím nhạt / hồng tím sang)
+  residential: '#FEF3C7', // Đất dân cư (vàng kem nhạt)
+  industrial: '#E5E7EB', // Công nghiệp (nâu xám nhạt)
+  civic: '#A7F3D0', // Hành chính / Ngoại ô (xanh lá mạ mềm)
+  port: '#60A5FA', // Cảng & ven biển (xanh navy dịu)
+  slum: '#D1D5DB', // Ngoại ô / Tự phát (xám nhạt)
+  water: '#3B82F6', // Đất sông/biển (xanh navy)
+  park: '#A7F3D0', // Công viên / Đồi núi (xanh lá mạ mềm)
 };
+
+/** Style ô đất theo loại phân khu: màu nền + viền mờ tinh tế (rgba 0.05). */
+export function getTileStyle(zoneType: ZoneType): { bg: string; border: string } {
+  const bg = ZONE_HEX[zoneType] ?? ZONE_HEX.residential;
+  return { bg, border: 'rgba(0,0,0,0.05)' };
+}
+
+/** Lưới filler dày đặc: 250×250 ô × 4px phủ toàn khung 1000×1000. */
+const FILL_GRID = 250;
+const FILL_CELL = MAP_CANVAS_SIZE / FILL_GRID;
+
+function seedFromCode(code: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < code.length; i += 1) {
+    h ^= code.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function makeNoise(seed: number): (wx: number, wy: number) => number {
+  let a = seed | 0;
+  const rand = () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const GW = 10;
+  const grid: number[][] = [];
+  for (let gy = 0; gy <= GW; gy += 1) {
+    grid.push([]);
+    for (let gx = 0; gx <= GW; gx += 1) grid[gy]!.push(rand());
+  }
+  return (wx: number, wy: number) => {
+    const fx = (wx / MAP_CANVAS_SIZE) * GW;
+    const fy = (wy / MAP_CANVAS_SIZE) * GW;
+    const x0 = Math.max(0, Math.min(GW - 1, Math.floor(fx)));
+    const y0 = Math.max(0, Math.min(GW - 1, Math.floor(fy)));
+    const tx = fx - x0;
+    const ty = fy - y0;
+    const va = grid[y0]![x0]!;
+    const vb = grid[y0]![x0 + 1]!;
+    const vc = grid[y0 + 1]![x0]!;
+    const vd = grid[y0 + 1]![x0 + 1]!;
+    return va + (vb - va) * tx + (vc - va) * ty + (va - vb - vc + vd) * tx * ty;
+  };
+}
+
+/** Vùng đất tại điểm world (1000×1000) — nhiễu mượt + CBD theo seed mã tỉnh.
+ *  Lưới phủ KÍN 100% khung: không còn biển/nước (hết rãnh hở), mọi ô đều là đất liền. */
+function createZoneSampler(seed: number): (wx: number, wy: number) => ZoneType {
+  const cbdR = 140 + (seed % 220);
+  const noise = makeNoise(seed);
+  const noise2 = makeNoise(seed ^ 0x9e3779b9);
+  return (wx: number, wy: number) => {
+    const dx = wx - MAP_CANVAS_SIZE / 2;
+    const dy = wy - MAP_CANVAS_SIZE / 2;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < cbdR) return 'commercial';
+    const n = noise(wx, wy);
+    const radial = dist / (MAP_CANVAS_SIZE / 2);
+    if (radial > 0.82 && noise2(wx, wy) > 0.55) return 'port';
+    if (n > 0.72) return 'park';
+    if (n > 0.62) return 'industrial';
+    if (n > 0.54 && radial < 0.6) return 'civic';
+    if (n > 0.5 && radial > 0.7) return 'slum';
+    return 'residential';
+  };
+}
+
+export interface FillTileInfo {
+  wx: number;
+  wy: number;
+  zone: ZoneType;
+}
 
 export interface AuctioningTile {
   x: number;
@@ -34,18 +112,19 @@ interface MapCanvas2DProps {
   auctioningTile?: AuctioningTile | null;
   /** Các khối hợp thửa (ô liền kề cùng chủ) — phủ cam + nhãn công trình. */
   mergedClusters?: MergedCluster[];
+  /** Click ô đất hoang (filler) ngoài ô dữ liệu server. */
+  onSelectFill?: (tile: FillTileInfo) => void;
   onSelectPlot?: (col: number, row: number) => void;
 }
 
 interface ViewTransform {
-  zoom: number;
   panX: number;
   panY: number;
 }
 
 /**
- * Bản đồ 2D Canvas 1000×1000 (thay hoàn toàn renderer 3D cũ):
- * zoom bằng cuộn chuột, pan bằng kéo thả; click chọn ô đất.
+ * Bản đồ 2D Canvas 1000×1000 (fit-to-container):
+ * không zoom — chuột chỉ kéo di chuyển (Pan Drag) và click chọn ô đất.
  * Ô đấu giá: overlay đỏ #EF4444 nhấp nháy + viền đỏ + nhãn "BĐS ĐẦU GIÁ".
  */
 export function MapCanvas2D({
@@ -53,20 +132,24 @@ export function MapCanvas2D({
   selected,
   auctioningTile,
   mergedClusters = [],
+  onSelectFill,
   onSelectPlot,
 }: MapCanvas2DProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [view, setView] = useState<ViewTransform>({ zoom: 1, panX: 0, panY: 0 });
-  const viewRef = useRef(view);
-  viewRef.current = view;
+  const [pan, setPan] = useState<ViewTransform>({ panX: 0, panY: 0 });
+  const viewRef = useRef(pan);
+  viewRef.current = pan;
   const dragRef = useRef<{ startX: number; startY: number; moved: boolean } | null>(null);
 
   const cols = mapData?.meta.cols ?? 32;
   const rows = mapData?.meta.rows ?? 20;
+  const seed = seedFromCode(mapData?.provinceCode ?? '001');
 
-  // Ô đất vuông lớn nhất vừa khung 1000×1000, căn giữa.
-  const cell = Math.min(MAP_CANVAS_SIZE / cols, MAP_CANVAS_SIZE / rows);
+  // Chuẩn hóa ô vuông 1:1 — cellWidth == cellHeight (lấy cạnh nhỏ nhất, căn giữa).
+  const cellWidth = MAP_CANVAS_SIZE / cols;
+  const cellHeight = MAP_CANVAS_SIZE / rows;
+  const cell = Math.min(cellWidth, cellHeight);
   const originX = (MAP_CANVAS_SIZE - cell * cols) / 2;
   const originY = (MAP_CANVAS_SIZE - cell * rows) / 2;
 
@@ -80,8 +163,19 @@ export function MapCanvas2D({
     ctx.clearRect(0, 0, MAP_CANVAS_SIZE, MAP_CANVAS_SIZE);
     ctx.fillStyle = '#f8fafc';
     ctx.fillRect(0, 0, MAP_CANVAS_SIZE, MAP_CANVAS_SIZE);
-    // Apply zoom/pan (world 1000×1000 → canvas pixel).
-    ctx.setTransform(v.zoom, 0, 0, v.zoom, v.panX, v.panY);
+    // Khung chứa vừa khít toàn bộ ma trận (fit-to-container), chuột chỉ Pan + Click.
+    ctx.setTransform(1, 0, 0, 1, v.panX, v.panY);
+
+    // Lưới filler dày đặc 250×250 (ô 4px) phủ nền dưới ô dữ liệu.
+    const zoneAt = createZoneSampler(seed);
+    for (let fy = 0; fy < FILL_GRID; fy += 1) {
+      for (let fx = 0; fx < FILL_GRID; fx += 1) {
+        const wx = fx * FILL_CELL;
+        const wy = fy * FILL_CELL;
+        ctx.fillStyle = getTileStyle(zoneAt(wx + FILL_CELL / 2, wy + FILL_CELL / 2)).bg;
+        ctx.fillRect(wx, wy, FILL_CELL, FILL_CELL);
+      }
+    }
 
     const nodeById = new Map((mapData?.nodes ?? []).map((n) => [n.id, n]));
     const propertyKeys = new Set<string>();
@@ -93,9 +187,10 @@ export function MapCanvas2D({
     for (const node of mapData?.nodes ?? []) {
       const px = originX + node.x * cell;
       const py = originY + node.y * cell;
-      ctx.fillStyle = ZONE_HEX[node.zoneType] ?? ZONE_HEX.residential;
+      const style = getTileStyle(node.zoneType);
+      ctx.fillStyle = style.bg;
       ctx.fillRect(px, py, cell, cell);
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+      ctx.strokeStyle = style.border;
       ctx.lineWidth = 1;
       ctx.strokeRect(px + 0.5, py + 0.5, cell - 1, cell - 1);
       if (propertyKeys.has(`${node.x}-${node.y}`)) {
@@ -119,7 +214,10 @@ export function MapCanvas2D({
         ctx.strokeRect(px + 1, py + 1, cell - 2, cell - 2);
       }
       const centroid = cluster.cells.reduce(
-        (acc, c) => ({ sx: acc.sx + originX + c.x * cell + cell / 2, sy: acc.sy + originY + c.y * cell + cell / 2 }),
+        (acc, c) => ({
+          sx: acc.sx + originX + c.x * cell + cell / 2,
+          sy: acc.sy + originY + c.y * cell + cell / 2,
+        }),
         { sx: 0, sy: 0 },
       );
       ctx.save();
@@ -181,29 +279,24 @@ export function MapCanvas2D({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [mapData, selected, auctioningTile, mergedClusters, cols, rows]);
+  }, [mapData, selected, auctioningTile, mergedClusters, pan, cols, rows]);
 
   function screenToWorld(clientX: number, clientY: number): { wx: number; wy: number } | null {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    const sx = ((clientX - rect.left) / rect.width) * MAP_CANVAS_SIZE;
-    const sy = ((clientY - rect.top) / rect.height) * MAP_CANVAS_SIZE;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
     const v = viewRef.current;
-    return { wx: (sx - v.panX) / v.zoom, wy: (sy - v.panY) / v.zoom };
+    return {
+      wx: (clientX - rect.left) * scaleX - v.panX,
+      wy: (clientY - rect.top) * scaleY - v.panY,
+    };
   }
 
+  // Zoom đã tắt hoàn toàn: wheel không đổi view, không có nút +/- / % nào.
   function handleWheel(e: React.WheelEvent<HTMLCanvasElement>) {
     e.preventDefault();
-    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
-    const mx = ((e.clientX - rect.left) / rect.width) * MAP_CANVAS_SIZE;
-    const my = ((e.clientY - rect.top) / rect.height) * MAP_CANVAS_SIZE;
-    setView((v) => {
-      const nextZoom = Math.min(6, Math.max(1, v.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
-      const panX = mx - ((mx - v.panX) / v.zoom) * nextZoom;
-      const panY = my - ((my - v.panY) / v.zoom) * nextZoom;
-      return { zoom: nextZoom, panX, panY };
-    });
   }
 
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -222,7 +315,7 @@ export function MapCanvas2D({
       drag.moved = true;
     }
     if (drag.moved) {
-      setView((v) => ({ ...v, panX: v.panX + dx, panY: v.panY + dy }));
+      setPan((v) => ({ panX: v.panX + dx, panY: v.panY + dy }));
       drag.startX = e.clientX;
       drag.startY = e.clientY;
     }
@@ -238,13 +331,20 @@ export function MapCanvas2D({
         const row = Math.floor((world.wy - originY) / cell);
         if (col >= 0 && col < cols && row >= 0 && row < rows) {
           onSelectPlot?.(col, row);
+        } else if (
+          world.wx >= 0 &&
+          world.wx < MAP_CANVAS_SIZE &&
+          world.wy >= 0 &&
+          world.wy < MAP_CANVAS_SIZE
+        ) {
+          onSelectFill?.({
+            wx: world.wx,
+            wy: world.wy,
+            zone: createZoneSampler(seed)(world.wx, world.wy),
+          });
         }
       }
     }
-  }
-
-  function resetView() {
-    setView({ zoom: 1, panX: 0, panY: 0 });
   }
 
   return (
@@ -263,20 +363,10 @@ export function MapCanvas2D({
       </div>
       <div className="flex items-center justify-between border-t border-slate-200 px-3 py-2 text-[11px] text-slate-500">
         <span>
-          {mapData?.provinceName ?? 'Bản đồ'} ({cols}×{rows}) · cuộn chuột để zoom · kéo để di
-          chuyển · nhấn ô để xem
+          {mapData?.provinceName ?? 'Bản đồ'} ({cols}×{rows}) · Kéo để di chuyển · Nhấn ô để xem
           {auctioningTile && <span className="ml-2 font-bold text-red-500">🔨 ĐANG ĐẤU GIÁ</span>}
         </span>
-        <span className="flex items-center gap-2">
-          <span className="font-mono text-slate-600">{Math.round(view.zoom * 100)}%</span>
-          <button
-            type="button"
-            onClick={resetView}
-            className="rounded-lg bg-slate-100 px-2 py-0.5 font-semibold text-slate-600 transition hover:bg-slate-200"
-          >
-            Đặt lại
-          </button>
-        </span>
+        <span className="font-mono text-slate-600">Fit 100%</span>
       </div>
     </div>
   );

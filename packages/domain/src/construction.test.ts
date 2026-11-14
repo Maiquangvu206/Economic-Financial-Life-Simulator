@@ -31,12 +31,17 @@ describe('construction merging', () => {
   });
 
   it('offers larger projects only when the cluster is big enough', () => {
-    expect(constructionOptionsFor({ cells: [{ x: 0, y: 0 }], size: 1, tier: 'single' }).map((o) => o.id)).toEqual([
-      'house4',
-      'shop',
-      'garage',
-    ]);
-    const small = { cells: [{ x: 0, y: 0 }, { x: 1, y: 0 }], size: 2, tier: 'small' as const };
+    expect(
+      constructionOptionsFor({ cells: [{ x: 0, y: 0 }], size: 1, tier: 'single' }).map((o) => o.id),
+    ).toEqual(['house4', 'shop', 'garage']);
+    const small = {
+      cells: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+      ],
+      size: 2,
+      tier: 'small' as const,
+    };
     // Khách sạn boutique cần 3 ô → khối 2 ô chỉ thấy chung cư mini.
     expect(constructionOptionsFor(small).map((o) => o.id)).toEqual(['mini-apartment']);
     const large = findOwnedClusters([

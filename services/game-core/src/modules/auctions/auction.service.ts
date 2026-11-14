@@ -152,6 +152,21 @@ export class AuctionService {
   }
 
   /** Quyết toán một phiên: escrow → người bán, chuyển chủ sở hữu, thông báo. */
+  private async notifyCharacter(
+    client: Parameters<Parameters<typeof withTransaction>[0]>[0],
+    characterId: string,
+    input: { kind: string; title: string; body: string; payload?: Record<string, unknown> },
+  ): Promise<void> {
+    const result = await client.query<{ user_id: string }>(
+      `SELECT user_id FROM characters WHERE id = $1`,
+      [characterId],
+    );
+    const userId = result.rows[0]?.user_id;
+    if (!userId) return;
+    await notify(client, { userId, ...input });
+  }
+
+  /** Quyết toán một phiên: escrow → người bán, chuyển chủ sở hữu, thông báo. */
   private async settleAuction(
     client: Parameters<Parameters<typeof withTransaction>[0]>[0],
     auction: NonNullable<Awaited<ReturnType<typeof auctionRepository.getAuction>>>,
@@ -160,58 +175,55 @@ export class AuctionService {
     const winner = await this.repository.endAuction(client, auctionId);
 
     if (winner.winnerId && Number(auction.currentBidMinor) > 0) {
-        // Chuyển tiền từ escrow đến người bán.
-        await ledger.transfer(client, {
-          from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
-          to: { ownerType: 'character', ownerId: auction.sellerCharacterId },
-          amountMinor: Number(auction.currentBidMinor),
-          kind: 'auction_settlement',
-          description: `Thanh toán đấu giá ${auctionId}`,
-          referenceType: 'auction',
-          referenceId: auctionId,
-        });
+      // Chuyển tiền từ escrow đến người bán.
+      await ledger.transfer(client, {
+        from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
+        to: { ownerType: 'character', ownerId: auction.sellerCharacterId },
+        amountMinor: Number(auction.currentBidMinor),
+        kind: 'auction_settlement',
+        description: `Thanh toán đấu giá ${auctionId}`,
+        referenceType: 'auction',
+        referenceId: auctionId,
+      });
 
-        // Chuyển chủ sở hữu propriétés cho người thắng.
-        await client.query(
-          `UPDATE properties
+      // Chuyển chủ sở hữu propriétés cho người thắng.
+      await client.query(
+        `UPDATE properties
            SET owner_character_id = $2, owner_company_id = NULL,
                status = 'owned', updated_at = now()
            WHERE id = $1 AND status IN ('listed', 'owned')`,
-          [auction.propertyId, winner.winnerId],
-        );
+        [auction.propertyId, winner.winnerId],
+      );
 
-        await notify(client, {
-          userId: winner.winnerId,
-          kind: 'auction',
-          title: 'Bạn thắng đấu giá',
-          body: `Bạn đã sở hữu "${auction.propertyName}" với giá ${formatMinor(Number(auction.currentBidMinor))} VND.`,
-          payload: {
-            auctionId,
-            propertyId: auction.propertyId,
-            priceMinor: Number(auction.currentBidMinor),
-          },
-        });
-        await notify(client, {
-          userId: auction.sellerCharacterId,
-          kind: 'auction',
-          title: 'Đấu giá đã kết thúc',
-          body: `Tài sản "${auction.propertyName}" đã được bán với giá ${formatMinor(Number(auction.currentBidMinor))} VND.`,
-          payload: {
-            auctionId,
-            propertyId: auction.propertyId,
-            priceMinor: Number(auction.currentBidMinor),
-          },
-        });
-      } else {
-        // Không có ai đấu giá: hoàn toàn escrow (trống) và hủy.
-        await notify(client, {
-          userId: auction.sellerCharacterId,
-          kind: 'auction',
-          title: 'Đấu giá không có người tham gia',
-          body: `Tài sản "${auction.propertyName}" không có người đấu giá và được hoàn trả.`,
-          payload: { auctionId, propertyId: auction.propertyId },
-        });
-      }
+      await this.notifyCharacter(client, winner.winnerId, {
+        kind: 'auction',
+        title: 'Bạn thắng đấu giá',
+        body: `Bạn đã sở hữu "${auction.propertyName}" với giá ${formatMinor(Number(auction.currentBidMinor))} VND.`,
+        payload: {
+          auctionId,
+          propertyId: auction.propertyId,
+          priceMinor: Number(auction.currentBidMinor),
+        },
+      });
+      await this.notifyCharacter(client, auction.sellerCharacterId, {
+        kind: 'auction',
+        title: 'Đấu giá đã kết thúc',
+        body: `Tài sản "${auction.propertyName}" đã được bán với giá ${formatMinor(Number(auction.currentBidMinor))} VND.`,
+        payload: {
+          auctionId,
+          propertyId: auction.propertyId,
+          priceMinor: Number(auction.currentBidMinor),
+        },
+      });
+    } else {
+      // Không có ai đấu giá: hoàn toàn escrow (trống) và hủy.
+      await this.notifyCharacter(client, auction.sellerCharacterId, {
+        kind: 'auction',
+        title: 'Đấu giá không có người tham gia',
+        body: `Tài sản "${auction.propertyName}" không có người đấu giá và được hoàn trả.`,
+        payload: { auctionId, propertyId: auction.propertyId },
+      });
+    }
   }
 
   /** Hủy phiên đấu giá và hoàn trả toàn bộ tiền escrow (chỉ admin). */
@@ -238,8 +250,7 @@ export class AuctionService {
         });
       }
 
-      await notify(client, {
-        userId: auction.sellerCharacterId,
+      await this.notifyCharacter(client, auction.sellerCharacterId, {
         kind: 'auction',
         title: 'Đấu giá bị hủy',
         body: `Phiên đấu giá "${auction.propertyName}" đã bị hủy.`,

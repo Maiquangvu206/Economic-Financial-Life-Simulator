@@ -267,9 +267,7 @@ export function MapEditorPage() {
                 step="1000000"
                 value={zonePrices[row.id] ?? '0'}
                 disabled={!editable}
-                onChange={(e) =>
-                  setZonePrices((prev) => ({ ...prev, [row.id]: e.target.value }))
-                }
+                onChange={(e) => setZonePrices((prev) => ({ ...prev, [row.id]: e.target.value }))}
                 className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-mono font-bold text-emerald-700 focus:border-emerald-500 focus:outline-none disabled:opacity-60"
               />
               <span className="font-mono text-[10px] text-slate-500">
@@ -406,8 +404,8 @@ export function MapEditorPage() {
         </div>
       )}
 
-      {/* Bản đồ 2D theo tỉnh (chấm đỏ = ô có BĐS, viền vàng = tâm đang chọn) */}
-      <div className="space-y-2">
+      {/* Bản đồ 2D theo tỉnh (~60% diện tích, căn giữa) */}
+      <div className="mx-auto w-[48%] space-y-2">
         <MapCanvas2D
           key={provinceCode}
           mapData={mapData}

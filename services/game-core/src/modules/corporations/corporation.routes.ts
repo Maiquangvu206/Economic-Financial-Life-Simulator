@@ -5,6 +5,7 @@ import { validateBody } from '../../shared/http/validate.js';
 import { CorporationController } from './corporation.controller.js';
 import {
   CompanyInvestRequestSchema,
+  CompanyOperationRequestSchema,
   CreateCompanyRequestSchema,
   DividendRequestSchema,
   IpoCompanyRequestSchema,
@@ -56,4 +57,30 @@ corporationRouter.post(
   '/:companyId/takeover',
   validateBody(TakeoverRequestSchema),
   asyncHandler(controller.takeoverCompany),
+);
+
+/** Danh sách nhân sự của công ty (chủ sở hữu). */
+corporationRouter.get('/:companyId/employees', asyncHandler(controller.getEmployees));
+
+/** Sa thải nhân sự. */
+corporationRouter.post(
+  '/:companyId/employees/:employmentId/fire',
+  asyncHandler(controller.fireEmployee),
+);
+
+/** Giải thể/phá sản công ty (chủ sở hữu). */
+corporationRouter.post('/:companyId/dissolve', asyncHandler(controller.dissolveCompany));
+
+/** Ghi nhận doanh thu vào quỹ công ty. */
+corporationRouter.post(
+  '/:companyId/revenue',
+  validateBody(CompanyOperationRequestSchema),
+  asyncHandler(controller.collectRevenue),
+);
+
+/** Chi OPEX từ quỹ công ty. */
+corporationRouter.post(
+  '/:companyId/opex',
+  validateBody(CompanyOperationRequestSchema),
+  asyncHandler(controller.payOpex),
 );

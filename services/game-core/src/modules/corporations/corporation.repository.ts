@@ -15,6 +15,16 @@ export interface CompanyRow {
   updatedAt: Date;
 }
 
+export interface CompanyEmployeeRow {
+  employmentId: string;
+  characterId: string;
+  characterName: string;
+  jobTitle: string;
+  salaryMinor: string;
+  status: 'active' | 'resigned' | 'fired';
+  hiredAt: Date;
+}
+
 interface CreateCompanyInput {
   name: string;
   industry: string;
@@ -201,6 +211,49 @@ export class CorporationRepository {
        WHERE id = $1::uuid`,
       [companyId, newOwnerCharacterId],
     );
+  }
+
+  async listEmployees(companyId: string, db: Db = this.db): Promise<CompanyEmployeeRow[]> {
+    const result = await db.query<CompanyEmployeeRow>(
+      `SELECT e.id AS "employmentId", e.character_id AS "characterId",
+              ch.full_name AS "characterName", j.title AS "jobTitle",
+              e.salary_minor AS "salaryMinor", e.status, e.hired_at AS "hiredAt"
+       FROM employments e
+       JOIN characters ch ON ch.id = e.character_id
+       JOIN jobs j ON j.id = e.job_id
+       WHERE e.company_id = $1
+       ORDER BY e.hired_at DESC`,
+      [companyId],
+    );
+    return result.rows;
+  }
+
+  async fireEmployee(db: Db, companyId: string, employmentId: string): Promise<boolean> {
+    const result = await db.query<{ id: string }>(
+      `UPDATE employments
+       SET status = 'fired', ended_at = now()
+       WHERE id = $1 AND company_id = $2 AND status = 'active'
+       RETURNING id`,
+      [employmentId, companyId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async setBankrupt(db: Db, companyId: string): Promise<void> {
+    await db.query(`UPDATE companies SET status = 'bankrupt', updated_at = now() WHERE id = $1`, [
+      companyId,
+    ]);
+  }
+
+  async adjustCash(db: Db, companyId: string, deltaMinor: number): Promise<string> {
+    const result = await db.query<{ cash_minor: string }>(
+      `UPDATE companies
+       SET cash_minor = GREATEST(0, cash_minor + $2::bigint), updated_at = now()
+       WHERE id = $1
+       RETURNING cash_minor`,
+      [companyId, deltaMinor],
+    );
+    return result.rows[0]?.cash_minor ?? '0';
   }
 }
 

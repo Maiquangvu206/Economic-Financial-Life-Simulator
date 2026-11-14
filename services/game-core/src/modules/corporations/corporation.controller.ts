@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import type {
   CompanyInvestRequest,
+  CompanyOperationRequest,
   CreateCompanyRequest,
   DividendRequest,
   IpoCompanyRequest,
@@ -67,6 +68,43 @@ export class CorporationController {
     const { companyId } = req.params as { companyId: string };
     const { buyerCharacterId } = req.body as TakeoverRequest;
     const company = await this.service.takeoverCompany(userId, companyId, buyerCharacterId);
+    res.status(200).json(company);
+  };
+
+  getEmployees = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const employees = await this.service.getEmployees(userId, companyId);
+    res.status(200).json(employees);
+  };
+
+  fireEmployee = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId, employmentId } = req.params as { companyId: string; employmentId: string };
+    await this.service.fireEmployee(userId, companyId, employmentId);
+    res.status(204).end();
+  };
+
+  dissolveCompany = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const company = await this.service.dissolveCompany(userId, companyId);
+    res.status(200).json(company);
+  };
+
+  collectRevenue = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const { amount, note } = req.body as CompanyOperationRequest;
+    const company = await this.service.collectRevenue(userId, companyId, amount.amount, note);
+    res.status(200).json(company);
+  };
+
+  payOpex = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const { amount, note } = req.body as CompanyOperationRequest;
+    const company = await this.service.payOpex(userId, companyId, amount.amount, note);
     res.status(200).json(company);
   };
 }
