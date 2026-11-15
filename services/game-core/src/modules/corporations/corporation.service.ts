@@ -1,4 +1,5 @@
 ﻿import { AppError } from '../../shared/http/errors.js';
+import type { PoolClient } from 'pg';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharacterByCccd } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js';
@@ -362,6 +363,142 @@ export class CorporationService {
     });
   }
 
+  private async liquidateCompanyOnBankruptcy(
+    client: import('pg').PoolClient,
+    companyId: string,
+    companyName: string,
+  ): Promise<void> {
+    // 1) Nếu công ty có mã niêm yết/sàn chứng khoán: hủy niêm yết, hoàn tiền lệnh mua đang treo, hủy lệnh, xóa dữ liệu thị trường và cổ phần sở hữu
+    const tickerRes = await client.query<{ id: string; symbol: string }>(
+      `SELECT id, symbol FROM stock_tickers WHERE company_id = $1 LIMIT 1`,
+      [companyId],
+    );
+    const ticker = tickerRes.rows[0] ?? null;
+
+    if (ticker) {
+      // 1a) Hoàn tiền escrow cho các lệnh MUA đang mở/còn khớp dở
+      const buyOrders = await client.query<{
+        id: string;
+        character_id: string;
+        user_id: string | null;
+        refund_minor: string;
+      }>(
+        `SELECT o.id, o.character_id, ch.user_id,
+                ((o.amount - o.filled_amount) * o.price_minor)::bigint AS refund_minor
+         FROM stock_orders o
+         JOIN characters ch ON ch.id = o.character_id
+         WHERE o.ticker_id = $1
+           AND o.side = 'buy'
+           AND o.status IN ('open', 'partially_filled')
+           AND (o.amount - o.filled_amount) > 0`,
+        [ticker.id],
+      );
+      for (const o of buyOrders.rows) {
+        const refund = Number(o.refund_minor ?? 0);
+        if (refund > 0) {
+          await ledger.transfer(client, {
+            from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
+            to: { ownerType: 'character', ownerId: o.character_id },
+            amountMinor: refund,
+            kind: 'order_escrow_refund',
+            description: `Hoàn tiền lệnh mua do công ty ${companyName} (${ticker.symbol}) phá sản/giải thể`,
+            referenceType: 'order',
+            referenceId: o.id,
+          });
+        }
+        await client.query(
+          `UPDATE stock_orders SET status = 'cancelled', updated_at = now() WHERE id = $1`,
+          [o.id],
+        );
+        if (o.user_id) {
+          await notify(client, {
+            userId: o.user_id,
+            kind: 'stock_market',
+            title: 'Lệnh mua bị hủy do công ty phá sản',
+            body: `Công ty "${companyName}" (${ticker.symbol}) đã phá sản/giải thể. Lệnh mua của bạn đã bị hủy${refund > 0 ? ` và hoàn ${refund.toLocaleString('vi-VN')} ₫` : ''}.`,
+            payload: { companyId, tickerId: ticker.id, symbol: ticker.symbol, orderId: o.id, refundedMinor: refund },
+          }).catch(() => {});
+        }
+      }
+
+      // 1b) Hủy các lệnh BÁN đang mở/còn khớp dở (không giữ tiền escrow)
+      await client.query(
+        `UPDATE stock_orders
+         SET status = 'cancelled', updated_at = now()
+         WHERE ticker_id = $1 AND status IN ('open','partially_filled')`,
+        [ticker.id],
+      );
+
+      // 1c) Thông báo cho tất cả người đang sở hữu cổ phiếu/cổ phần: cổ phiếu bị mất (gộp từ sàn và danh sách cổ đông công ty)
+      const holders = await client.query<{ character_id: string; user_id: string | null; shares: string }>(
+        `SELECT x.character_id, ch.user_id, SUM(x.shares)::bigint::text AS shares
+         FROM (
+           SELECT h.character_id, h.shares::bigint AS shares
+           FROM stock_holdings h
+           WHERE h.ticker_id = $1 AND h.shares > 0
+           UNION ALL
+           SELECT cs.holder_character_id AS character_id, cs.shares::bigint AS shares
+           FROM company_shareholders cs
+           WHERE cs.company_id = $2 AND cs.shares > 0
+         ) x
+         JOIN characters ch ON ch.id = x.character_id
+         GROUP BY x.character_id, ch.user_id`,
+        [ticker.id, companyId],
+      );
+      for (const h of holders.rows) {
+        if (!h.user_id) continue;
+        const shares = Number(h.shares ?? 0);
+        await notify(client, {
+          userId: h.user_id,
+          kind: 'stock_market',
+          title: 'Công ty phá sản - Cổ phiếu bị mất',
+          body: `Công ty "${companyName}" (${ticker.symbol}) đã phá sản/giải thể. ${shares.toLocaleString('vi-VN')} cổ phiếu/cổ phần bạn đang sở hữu đã bị mất và công ty không còn giao dịch trên sàn chứng khoán.`,
+          payload: { companyId, tickerId: ticker.id, symbol: ticker.symbol, sharesLost: shares },
+        }).catch(() => {});
+      }
+
+      // 1d) Xóa dữ liệu thị trường/sàn chứng khoán của công ty
+      await client.query(`DELETE FROM stock_trades WHERE ticker_id = $1`, [ticker.id]);
+      await client.query(`DELETE FROM stock_orders WHERE ticker_id = $1`, [ticker.id]);
+      await client.query(`DELETE FROM stock_holdings WHERE ticker_id = $1`, [ticker.id]);
+      await client.query(`DELETE FROM stock_tickers WHERE id = $1`, [ticker.id]);
+    }
+
+    // 2) Xóa quyền sở hữu cổ phần công ty (cổ đông mất cổ phần), kết thúc nhân sự còn active, cập nhật trạng thái công ty
+    // Trường hợp công ty chưa/không niêm yết: vẫn thông báo cho cổ đông (company_shareholders) nếu có
+    if (!ticker) {
+      const holders = await client.query<{ character_id: string; user_id: string | null; shares: string }>(
+        `SELECT cs.holder_character_id AS character_id, ch.user_id, cs.shares::text AS shares
+         FROM company_shareholders cs
+         JOIN characters ch ON ch.id = cs.holder_character_id
+         WHERE cs.company_id = $1 AND cs.shares > 0`,
+        [companyId],
+      );
+      for (const h of holders.rows) {
+        if (!h.user_id) continue;
+        const shares = Number(h.shares ?? 0);
+        await notify(client, {
+          userId: h.user_id,
+          kind: 'company',
+          title: 'Công ty phá sản - Cổ phần bị mất',
+          body: `Công ty "${companyName}" đã phá sản/giải thể. ${shares.toLocaleString('vi-VN')} cổ phần bạn đang sở hữu đã bị mất.`,
+          payload: { companyId, sharesLost: shares },
+        }).catch(() => {});
+      }
+    }
+
+    await client.query(`DELETE FROM company_shareholders WHERE company_id = $1`, [companyId]);
+    await client.query(
+      `UPDATE employments SET status = 'fired', ended_at = COALESCE(ended_at, now())
+       WHERE company_id = $1 AND status = 'active'`,
+      [companyId],
+    );
+    await client.query(
+      `UPDATE companies SET status = 'bankrupt', ticker_symbol = NULL, updated_at = now() WHERE id = $1`,
+      [companyId],
+    );
+  }
+
   async dissolveCompany(userId: string, companyId: string): Promise<CompanyDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
@@ -373,14 +510,17 @@ export class CorporationService {
       if (company.status === 'bankrupt') {
         throw AppError.badRequest('Công ty đã ở trạng thái phá sản/giải thể.');
       }
-      await this.repository.setBankrupt(client, companyId);
+
+      await this.liquidateCompanyOnBankruptcy(client, companyId, company.name);
+
       await notify(client, {
         userId,
         kind: 'company',
         title: 'Giải thể công ty',
-        body: `Công ty "${company.name}" đã được giải thể (trạng thái phá sản).`,
+        body: `Công ty "${company.name}" đã được giải thể/phá sản. Dữ liệu công ty đã được gỡ khỏi thị trường và sàn chứng khoán (nếu có).`,
         payload: { companyId },
       });
+
       const dto = await this.repository.getCompany(companyId, client);
       if (!dto) throw new Error('Company disappeared after dissolve');
       return { ...toCompanyDto(dto), isOwner: true, shareholders: [] };
