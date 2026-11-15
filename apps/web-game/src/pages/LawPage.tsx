@@ -195,66 +195,100 @@ export function LawPage() {
 
       {activeTab === 'court' && (
         <div className="grid gap-4">
+          <Panel title="Cách hoạt động (Tòa án & Bằng chứng)" borderColor="emerald">
+            <div className="space-y-1.5 text-xs text-slate-700 leading-relaxed">
+              <p><b>1. Vụ án được mở</b> khi có cáo buộc/tố giác hoặc vi phạm liên quan đến bạn (bạn có thể là bị cáo hoặc bên liên quan).</p>
+              <p><b>2. Nộp bằng chứng</b>: mỗi lần nộp sẽ <b>cộng dồn</b> độ mạnh vào vụ án (tối đa 100). Mô tả rõ ràng để dễ theo dõi.</p>
+              <p><b>3. Xét xử</b>: <b>chỉ bị cáo</b> mới yêu cầu xét xử. Hệ thống (core) kết luận dựa trên bằng chứng: <b>≥ 60/100</b> → <b>Có tội</b> (tính phạt tiền/tù và ghi án tích, tăng heat), ngược lại → <b>Vô tội</b>. AI chỉ đưa gợi ý, không tự phán quyết.</p>
+            </div>
+          </Panel>
+
           <Panel title="Vụ án của bạn" borderColor="rose">
             <div className="space-y-3">
               {courtCases.length > 0 ? (
-                courtCases.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-800">
-                          {CRIME_LABEL[c.crimeType as CrimeType] ?? c.crimeType ?? 'Vụ án'}
-                        </span>
-                        <Badge
-                          variant={
-                            c.status === 'closed'
-                              ? c.verdict === 'guilty'
-                                ? 'error'
-                                : 'success'
-                              : 'warning'
-                          }
-                        >
-                          {c.status === 'closed'
-                            ? c.verdict === 'guilty'
-                              ? 'Có tội'
-                              : 'Vô tội'
-                            : 'Đang xét xử'}
-                        </Badge>
+                courtCases.map((c) => {
+                  const strength = Number(c.evidenceStrength ?? 0);
+                  const pct = Math.max(0, Math.min(100, strength));
+                  const isDefendant = !!myCharId && c.defendantId === myCharId;
+                  const roleLabel = isDefendant ? 'Bạn là bị cáo' : 'Bạn liên quan vụ án';
+                  const canRequestTrial = c.status !== 'closed' && isDefendant;
+                  return (
+                    <div
+                      key={c.id}
+                      className="p-3 rounded-xl border border-slate-200 bg-white/50 space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-slate-800">
+                              {CRIME_LABEL[c.crimeType as CrimeType] ?? c.crimeType ?? 'Vụ án'}
+                            </span>
+                            <Badge
+                              variant={
+                                c.status === 'closed'
+                                  ? c.verdict === 'guilty'
+                                    ? 'error'
+                                    : 'success'
+                                  : 'warning'
+                              }
+                            >
+                              {c.status === 'closed'
+                                ? c.verdict === 'guilty'
+                                  ? 'Kết luận: Có tội'
+                                  : 'Kết luận: Vô tội'
+                                : 'Chờ xét xử'}
+                            </Badge>
+                            <span className="text-[10px] rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600 border border-slate-200">{roleLabel}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-600">
+                            Mức phạt nếu có tội (ước tính): <b>{formatMoney(c.fine?.amount ?? 0)}</b> · Tù: <b>{c.prisonDays} ngày</b>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          {c.status !== 'closed' && (
+                            <>
+                              <GameButton
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setEvidenceOpen(c.id)}
+                              >
+                                Nộp bằng chứng
+                              </GameButton>
+                              {canRequestTrial ? (
+                                <GameButton
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => void handleTrial(c.id)}
+                                  disabled={trialBusy === c.id}
+                                >
+                                  {trialBusy === c.id ? 'Đang xét xử…' : 'Yêu cầu xét xử'}
+                                </GameButton>
+                              ) : (
+                                <span className="text-[10px] text-slate-500 text-right max-w-[140px]">
+                                  {isDefendant ? '' : 'Chỉ bị cáo mới được yêu cầu xét xử'}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        Bằng chứng: {c.evidenceStrength}/100 · Phạt:{' '}
-                        {formatMoney(c.fine?.amount ?? 0)} · Tù {c.prisonDays} ngày
+
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                        <div className="flex items-center justify-between text-[11px] text-slate-600 mb-1">
+                          <span>Độ mạnh bằng chứng (cộng dồn): <b>{strength}/100</b></span>
+                          <span>Ngưỡng có tội: <b>60/100</b> {strength >= 60 ? '· Đủ điều kiện kết luận có tội' : `· Còn thiếu ${Math.max(0, 60 - strength)} điểm`}</span>
+                        </div>
+                        <div className="relative h-2.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                          <div className={`h-full rounded-full ${strength >= 60 ? 'bg-rose-500' : 'bg-amber-400'}`} style={{ width: `${pct}%` }} />
+                          <div className="absolute top-0 bottom-0 w-0.5 bg-slate-700/70" style={{ left: '60%' }} title="Ngưỡng 60" />
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {c.status !== 'closed' && (
-                        <>
-                          <GameButton
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setEvidenceOpen(c.id)}
-                          >
-                            Nộp bằng chứng
-                          </GameButton>
-                          <GameButton
-                            variant="primary"
-                            size="sm"
-                            onClick={() => void handleTrial(c.id)}
-                            disabled={trialBusy === c.id}
-                          >
-                            {trialBusy === c.id ? 'Đang xét xử…' : 'Yêu cầu xét xử'}
-                          </GameButton>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-center py-4 text-xs text-slate-500">
-                  Chưa có vụ án nào. Sạch!
+                  Chưa có vụ án nào liên quan đến bạn.
                 </div>
               )}
             </div>
@@ -635,21 +669,26 @@ export function LawPage() {
       <Modal
         open={evidenceOpen != null}
         onClose={() => setEvidenceOpen(null)}
-        title="Nộp bằng chứng"
+        title="Nộp bằng chứng cho vụ án"
       >
         <div className="space-y-3">
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-xs text-slate-700 leading-relaxed">
+            <p><b>Độ mạnh (1-100):</b> mức độ thuyết phục của bằng chứng lần này. Điểm sẽ được <b>cộng dồn</b> vào tổng bằng chứng của vụ án (tối đa 100). Khi tổng đạt <b>≥ 60</b>, bị cáo yêu cầu xét xử có thể bị kết luận <b>có tội</b>.</p>
+          </div>
           <GameInput
             label="Độ mạnh bằng chứng (1-100)"
             value={evidenceStrength}
             onChange={(e) => setEvidenceStrength(e.target.value)}
             type="number"
-            placeholder="20"
+            min={1}
+            max={100}
+            placeholder="Ví dụ: 20"
           />
           <GameInput
-            label="Mô tả"
+            label="Mô tả bằng chứng (nên ghi rõ)"
             value={evidenceDesc}
             onChange={(e) => setEvidenceDesc(e.target.value)}
-            placeholder="Mô tả bằng chứng..."
+            placeholder="Ví dụ: Biên lai giao dịch, ảnh chụp, lời khai..."
           />
           <GameButton
             variant="primary"
@@ -663,18 +702,19 @@ export function LawPage() {
                     method: 'POST',
                     body: JSON.stringify({
                       caseId: evidenceOpen,
-                      strength: Number(evidenceStrength) || 0,
+                      strength: Math.max(1, Math.min(100, Number(evidenceStrength) || 0)),
                       description: evidenceDesc,
                     }),
                   }),
                 () => {
                   setEvidenceOpen(null);
                   setEvidenceDesc('');
+                  setEvidenceStrength('20');
                 },
               )
             }
           >
-            Nộp
+            Nộp bằng chứng
           </GameButton>
         </div>
       </Modal>
