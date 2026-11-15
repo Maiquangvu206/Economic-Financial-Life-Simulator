@@ -4,6 +4,7 @@ import {
   type DeclareCandidacyRequest,
   type DonateRequest,
   type VoteRequest,
+  type MayorPolicyActionRequest,
 } from '@efls/contracts';
 import { PoliticsService } from './politics.service.js';
 
@@ -15,11 +16,17 @@ export class PoliticsController {
     res.status(200).json(overview);
   };
 
+  getMayorState = async (req: Request, res: Response): Promise<void> => {
+    const state = await this.service.getMayorState(req.actorId!);
+    res.status(200).json(state);
+  };
+
   createElection = async (req: Request, res: Response): Promise<void> => {
-    const { endsAt } = (req.body ?? {}) as CreateElectionRequest;
+    const { endsAt, termDays } = (req.body ?? {}) as CreateElectionRequest & { termDays?: number };
     const election = await this.service.createElection(
       req.actorId!,
       endsAt ? new Date(endsAt) : undefined,
+      termDays,
     );
     res.status(200).json(election);
   };
@@ -49,6 +56,12 @@ export class PoliticsController {
       req.actorRole,
     );
     res.status(200).json(election);
+  };
+
+  mayorPolicyAction = async (req: Request, res: Response): Promise<void> => {
+    const body = req.body as MayorPolicyActionRequest;
+    const result = await this.service.performPolicyAction(req.actorId!, body);
+    res.status(200).json(result);
   };
 }
 

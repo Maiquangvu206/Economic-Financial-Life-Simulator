@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@efls/ui';
 import { Panel } from '../shared/ui/Panel';
@@ -10,6 +10,22 @@ import { GameInput } from '../shared/ui/GameInput';
 import { formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
 import { type PoliticsOverviewDto } from '@efls/contracts';
+
+function fmtDate(iso?: string | null) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString('vi-VN');
+}
+
+function termLabel(status?: string | null) {
+  switch (status) {
+    case 'active': return 'Đang tại nhiệm';
+    case 'revoked': return 'Bị thu hồi tư cách';
+    case 'expired': return 'Hết nhiệm kỳ';
+    case 'none':
+    default: return 'Không có nhiệm kỳ';
+  }
+}
 
 export function PoliticsPage() {
   const {
@@ -26,15 +42,21 @@ export function PoliticsPage() {
   const [candidateName, setCandidateName] = useState('');
   const [donateOpen, setDonateOpen] = useState<string | null>(null);
   const [donateAmount, setDonateAmount] = useState('1000000');
+  const [policyMsg, setPolicyMsg] = useState<string | null>(null);
+  const [otRate, setOtRate] = useState<string>('');
+  const [welfarePerCitizen, setWelfarePerCitizen] = useState<string>('');
+  const [welfareMax, setWelfareMax] = useState<string>('');
 
   async function handleAction(key: string, fn: () => Promise<unknown>, onDone?: () => void) {
     setBusy(key);
+    setPolicyMsg(null);
     try {
       await fn();
       onDone?.();
       void refetch();
-    } catch {
-      // lỗi đã xử lý bởi httpClient
+    } catch (e: any) {
+      const msg = e?.problem?.detail || e?.message || 'Thao tác thất bại.';
+      setPolicyMsg(msg);
     } finally {
       setBusy(null);
     }
@@ -42,6 +64,15 @@ export function PoliticsPage() {
 
   const election = overview?.election ?? null;
   const candidates = overview?.candidates ?? [];
+  const mayor = overview?.mayor ?? null;
+  const isMayor = !!mayor?.active && !!mayor?.isYou;
+
+  const totalVotes = candidates.reduce((sum, c) => sum + (c.votes ?? 0), 0);
+  const totalDonations = candidates.reduce((sum, c) => sum + (c.donations?.amount ?? 0), 0);
+
+  const sortedCandidates = useMemo(() => {
+    return [...candidates].sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || (b.votes ?? 0) - (a.votes ?? 0));
+  }, [candidates]);
 
   if (isLoading) {
     return (
@@ -53,34 +84,156 @@ export function PoliticsPage() {
     );
   }
 
-  const totalVotes = candidates.reduce((sum, c) => sum + (c.votes ?? 0), 0);
-  const totalDonations = candidates.reduce((sum, c) => sum + (c.donations?.amount ?? 0), 0);
-
   return (
     <div className="space-y-5">
       <PageHeader
         title="Chính trị & Bầu cử"
-        description="Ứng cử Thị trưởng, vận động quyên góp (1tr = +10 điểm) và bỏ phiếu. AI/GM duy trì trật tự vĩ mô."
+        description="Bầu cử Thị trưởng, nhiệm kỳ & quyền lợi, chính sách trong giới hạn. Admin có quyền thu hồi tư cách nếu lạm dụng."
       />
+
+      {/* Mayor status (Pha A/C) */}
+      <Panel title="Thị trưởng đương nhiệm" borderColor={mayor?.active ? 'emerald' : 'default'}>
+        {mayor?.active ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="success">Đương nhiệm</Badge>
+              <span className="text-sm font-semibold text-slate-900">{mayor.characterName ?? '—'}</span>
+              {mayor.isYou && <Badge variant="default">Bạn</Badge>}
+              <span className="text-xs text-slate-600">({termLabel(mayor.termStatus)})</span>
+            </div>
+            <div className="grid gap-2 text-xs text-slate-700 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                <div className="text-slate-500">Bắt đầu nhiệm kỳ</div>
+                <div className="font-medium">{fmtDate(mayor.termStartedAt)}</div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                <div className="text-slate-500">Kết thúc nhiệm kỳ</div>
+                <div className="font-medium">{fmtDate(mayor.termEndsAt)}</div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                <div className="text-slate-500">Phụ cấp (Pha A)</div>
+                <div className="font-medium">
+                  {formatMoney(mayor.config.salaryMinor)} / {mayor.config.salaryIntervalGameDays} ngày game
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                <div className="text-slate-500">Đặc quyền/giới hạn</div>
+                <div className="font-medium">Chính sách whitelist, có cooldown & kiểm soát ngân sách</div>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Quyền hạn và lợi ích do máy chủ kiểm soát theo cấu hình. Lạm dụng có thể bị quản trị viên thu hồi tư cách ngay lập tức.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2 text-sm text-slate-600">
+            <div>Hiện chưa có Thị trưởng đương nhiệm.</div>
+            {mayor?.config?.enabled === false && (
+              <div className="text-xs text-amber-700">Hệ thống Thị trưởng đang tạm tắt bởi quản trị.</div>
+            )}
+          </div>
+        )}
+      </Panel>
+
+      {/* Mayor actions (Pha B) */}
+      {isMayor && mayor && (
+        <Panel title="Hành động & Chính sách của Thị trưởng (Pha B)" borderColor="amber">
+          <div className="space-y-4 text-sm">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              Mọi hành động được kiểm tra server-side (whitelist, ngưỡng, cooldown {mayor.config.policyCooldownMinutes} phút, nguồn quỹ/giới hạn). Lạm dụng sẽ bị thu hồi tư cách.
+            </div>
+
+            {policyMsg && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">{policyMsg}</div>
+            )}
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+                <div className="font-semibold text-slate-900">Điều chỉnh mức OT (%)</div>
+                <div className="text-xs text-slate-600">
+                  Phạm vi cho phép: {mayor.config.otRateAdjustMinPct}% - {mayor.config.otRateAdjustMaxPct}% (bước {mayor.config.otRateAdjustStepPct}%).
+                </div>
+                <GameInput
+                  label="Mức OT mới (%)"
+                  type="number"
+                  value={otRate}
+                  onChange={(e) => setOtRate(e.target.value)}
+                  placeholder={`${mayor.config.otRateAdjustMinPct}`}
+                />
+                <GameButton
+                  variant="primary"
+                  disabled={busy === 'policy-ot'}
+                  onClick={() =>
+                    void handleAction(
+                      'policy-ot',
+                      () => apiRequest('/api/v1/politics/mayor/actions', {
+                        method: 'POST',
+                        body: JSON.stringify({ type: 'adjust_ot_rate', otRatePercent: Number(otRate) || 0, reason: 'Điều chỉnh bởi Thị trưởng' }),
+                      }),
+                      () => setPolicyMsg('Đã gửi yêu cầu điều chỉnh OT.'),
+                    )
+                  }
+                >
+                  {busy === 'policy-ot' ? 'Đang thực hiện…' : 'Áp dụng điều chỉnh OT'}
+                </GameButton>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+                <div className="font-semibold text-slate-900">Gói hỗ trợ phúc lợi (ngân sách)</div>
+                <div className="text-xs text-slate-600">
+                  Chi từ quỹ nhà nước (có hạn mức tổng {formatMoney(mayor.config.treasurySpendLimitMinor)}). Tối đa {mayor.config.welfareBonusMaxCitizens} công dân/lần.
+                </div>
+                <GameInput
+                  label="Số tiền mỗi công dân (VNĐ)"
+                  type="number"
+                  value={welfarePerCitizen}
+                  onChange={(e) => setWelfarePerCitizen(e.target.value)}
+                  placeholder={String(mayor.config.welfareBonusPerCitizenMinor || 50000)}
+                />
+                <GameInput
+                  label="Số công dân tối đa"
+                  type="number"
+                  value={welfareMax}
+                  onChange={(e) => setWelfareMax(e.target.value)}
+                  placeholder={String(mayor.config.welfareBonusMaxCitizens || 50)}
+                />
+                <GameButton
+                  variant="primary"
+                  disabled={busy === 'policy-welfare'}
+                  onClick={() =>
+                    void handleAction(
+                      'policy-welfare',
+                      () => apiRequest('/api/v1/politics/mayor/actions', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          type: 'treasury_welfare_bonus',
+                          amountPerCitizen: welfarePerCitizen ? Number(welfarePerCitizen) : undefined,
+                          maxCitizens: welfareMax ? Number(welfareMax) : undefined,
+                          reason: 'Gói hỗ trợ phúc lợi do Thị trưởng ban hành',
+                        }),
+                      }),
+                      () => setPolicyMsg('Đã ban hành gói hỗ trợ phúc lợi.'),
+                    )
+                  }
+                >
+                  {busy === 'policy-welfare' ? 'Đang thực hiện…' : 'Ban hành gói hỗ trợ'}
+                </GameButton>
+              </div>
+            </div>
+          </div>
+        </Panel>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Trạng thái bầu cử"
           value={election ? (election.status === 'open' ? 'Đang mở' : 'Đã kết thúc') : 'Chưa có'}
-          hint={
-            election?.endsAt
-              ? `Kết thúc ${new Date(election.endsAt).toLocaleDateString('vi-VN')}`
-              : '—'
-          }
+          hint={election?.endsAt ? `Kết thúc ${fmtDate(election.endsAt)}` : '—'}
           tone="positive"
         />
-        <StatCard label="Ứng viên" value={candidates.length} hint="Đang tranh cử Thị trưởng" />
+        <StatCard label="Ứng viên" value={candidates.length} hint="Tranh cử Thị trưởng" />
         <StatCard label="Tổng phiếu" value={totalVotes} hint="Số phiếu đã bỏ" />
-        <StatCard
-          label="Tổng quyên góp"
-          value={formatMoney(totalDonations)}
-          hint="Vận động tranh cử"
-        />
+        <StatCard label="Tổng quyên góp" value={formatMoney(totalDonations)} hint="Vận động tranh cử" />
       </div>
 
       <div className="grid gap-4">
@@ -88,53 +241,32 @@ export function PoliticsPage() {
           <div className="space-y-3">
             {!election && (
               <div className="text-center py-4 space-y-3">
-                <p className="text-xs text-slate-500">
-                  Chưa có cuộc bầu cử nào. Mở cuộc đầu tiên để bắt đầu chính trị thành phố!
-                </p>
-                <GameButton
-                  variant="primary"
-                  disabled={busy === 'create'}
-                  onClick={() =>
-                    void handleAction('create', () =>
-                      apiRequest('/api/v1/politics/elections', {
-                        method: 'POST',
-                        body: JSON.stringify({}),
-                      }),
-                    )
-                  }
-                >
-                  Mở cuộc bầu cử
-                </GameButton>
+                <p className="text-xs text-slate-500">Chưa có cuộc bầu cử nào.</p>
               </div>
             )}
 
-            {candidates.map((c) => {
+            {sortedCandidates.map((c) => {
               const pct = totalVotes > 0 ? ((c.votes ?? 0) / totalVotes) * 100 : 0;
+              const isWinner = election?.winnerCandidateId === c.id;
               return (
-                <div key={c.id} className="p-4 rounded-xl border border-slate-200 bg-white/50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                <div key={c.id} className={`p-4 rounded-xl border ${isWinner ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200 bg-white/50'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-slate-800">{c.name ?? '—'}</span>
                       {c.isMe && <Badge variant="success">Bạn</Badge>}
+                      {isWinner && <Badge variant="warning">Thắng cử</Badge>}
                     </div>
                     <div className="text-right">
                       <div className="font-mono font-bold text-emerald-700">{pct.toFixed(1)}%</div>
-                      <div className="text-xs text-slate-500">
-                        {c.votes ?? 0} phiếu · Điểm {c.score ?? 0}
-                      </div>
+                      <div className="text-xs text-slate-500">{c.votes ?? 0} phiếu · Điểm {c.score ?? 0}</div>
                     </div>
                   </div>
                   <div className="mt-2 h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all"
-                      style={{ width: `${pct}%` }}
-                    />
+                    <div className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all" style={{ width: `${pct}%` }} />
                   </div>
-                  <div className="mt-2 text-xs text-slate-500">
-                    Quyên góp {formatMoney(c.donations?.amount ?? 0)}
-                  </div>
+                  <div className="mt-2 text-xs text-slate-500">Quyên góp {formatMoney(c.donations?.amount ?? 0)}</div>
                   {election?.status === 'open' && (
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-2 flex gap-2 flex-wrap">
                       {!election.youVoted && (
                         <GameButton
                           variant="primary"
@@ -144,10 +276,7 @@ export function PoliticsPage() {
                             void handleAction(`vote-${c.id}`, () =>
                               apiRequest('/api/v1/politics/vote', {
                                 method: 'POST',
-                                body: JSON.stringify({
-                                  electionId: election.id,
-                                  candidateId: c.id,
-                                }),
+                                body: JSON.stringify({ electionId: election.id, candidateId: c.id }),
                               }),
                             )
                           }
@@ -165,9 +294,7 @@ export function PoliticsPage() {
             })}
 
             {election?.status === 'open' && candidates.length === 0 && (
-              <div className="text-center py-4 text-xs text-slate-500">
-                Chưa có ứng viên. Hãy ra ứng cử!
-              </div>
+              <div className="text-center py-4 text-xs text-slate-500">Chưa có ứng viên. Hãy ra ứng cử!</div>
             )}
 
             {election?.status === 'open' && !election.youCandidateId && (
@@ -178,19 +305,26 @@ export function PoliticsPage() {
               </div>
             )}
 
-            {election?.status === 'ended' && election.winnerCandidateId && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center text-sm">
-                <span className="font-semibold text-emerald-800">
-                  Thị trưởng mới:{' '}
-                  {candidates.find((c) => c.id === election.winnerCandidateId)?.name ?? '—'}
-                </span>
+            {election?.status === 'ended' && (
+              <div className={`rounded-xl border p-4 text-sm space-y-1 ${election.winnerCandidateId ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+                <div className="font-semibold text-slate-900">
+                  Kết quả: {election.winnerCandidateId
+                    ? `Thị trưởng mới ${candidates.find((c) => c.id === election.winnerCandidateId)?.name ?? election.winnerCharacterName ?? '—'}`
+                    : 'Không có người thắng (hòa điểm hoặc không có ứng viên)'}
+                </div>
+                {election.termStatus && election.termStatus !== 'none' && (
+                  <div className="text-xs text-slate-700">
+                    Nhiệm kỳ: <b>{termLabel(election.termStatus)}</b>
+                    {election.termEndsAt ? ` · đến ${fmtDate(election.termEndsAt)}` : ''}
+                    {election.termStatus === 'revoked' && election.revokedReason ? ` · Lý do thu hồi: ${election.revokedReason}` : ''}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </Panel>
       </div>
 
-      {/* Modal: ứng cử */}
       <Modal open={candidacyOpen} onClose={() => setCandidacyOpen(false)} title="Ứng cử Thị trưởng">
         <div className="space-y-3">
           <GameInput
@@ -199,9 +333,7 @@ export function PoliticsPage() {
             onChange={(e) => setCandidateName(e.target.value)}
             placeholder="Tên của bạn trên phiếu bầu..."
           />
-          <p className="text-[11px] text-slate-500">
-            Phí tranh cử 5.000.000 ₫ chuyển thẳng vào ngân sách thành phố.
-          </p>
+          <p className="text-[11px] text-slate-500">Phí tranh cử 5.000.000 ₫ chuyển thẳng vào ngân sách thành phố.</p>
           <GameButton
             variant="primary"
             disabled={busy === 'candidacy'}
@@ -223,12 +355,7 @@ export function PoliticsPage() {
         </div>
       </Modal>
 
-      {/* Modal: quyên góp */}
-      <Modal
-        open={donateOpen != null}
-        onClose={() => setDonateOpen(null)}
-        title="Quyên góp vận động"
-      >
+      <Modal open={donateOpen != null} onClose={() => setDonateOpen(null)} title="Quyên góp vận động">
         <div className="space-y-3">
           <GameInput
             label="Số tiền ủng hộ (VNĐ)"
@@ -237,9 +364,7 @@ export function PoliticsPage() {
             type="number"
             placeholder="1000000"
           />
-          <p className="text-[11px] text-slate-500">
-            Mỗi 1.000.000 ₫ quyên góp = +10 điểm cho ứng viên (tối thiểu 1tr).
-          </p>
+          <p className="text-[11px] text-slate-500">Mỗi 1.000.000 ₫ quyên góp = +10 điểm cho ứng viên (tối thiểu 1tr).</p>
           <GameButton
             variant="primary"
             disabled={busy === 'donate'}

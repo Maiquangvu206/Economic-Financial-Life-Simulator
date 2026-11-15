@@ -307,6 +307,119 @@ export async function processGameTick(): Promise<GameTickResult> {
       applied.push(`death:${ch.id}:${reason}`);
     }
 
+    // ---- 9. Mayor term expiry & salary (Pha A/C, best-effort) ----
+    try {
+      const macroRes = await client.query<{ macro: any }>(`SELECT macro FROM game_state WHERE id = 1`);
+      const macro = (macroRes.rows[0]?.macro && typeof macroRes.rows[0].macro === 'object') ? macroRes.rows[0].macro : {};
+      const mayorCfg = (macro as any).mayor && typeof (macro as any).mayor === 'object' ? (macro as any).mayor : {};
+      const mayorEnabled = mayorCfg.enabled !== false;
+      if (mayorEnabled) {
+        // expire overdue active terms (real-time end)
+        const expiredRes = await client.query<{ id: string }>(
+          `UPDATE elections
+           SET term_status = 'expired'
+           WHERE term_status = 'active' AND term_ends_at IS NOT NULL AND term_ends_at <= now()
+           RETURNING id`,
+        );
+        if (expiredRes.rows.length > 0) {
+          for (const e of expiredRes.rows) {
+            await client.query(
+              `INSERT INTO mayor_actions (id, election_id, action_type, status, reason, payload)
+               VALUES (gen_random_uuid(), $1, 'term_expired', 'applied', 'Hết hạn nhiệm kỳ (tick)', '{}'::jsonb)`,
+              [e.id],
+            );
+          }
+          applied.push(`mayor: ${expiredRes.rows.length} term(s) expired`);
+        }
+
+        // salary payout for active mayor (per in-game day, idempotent)
+        const salaryMinor = Math.max(0, Math.round(Number(mayorCfg.salaryMinor ?? 0)));
+        const intervalDays = Math.max(1, Math.round(Number(mayorCfg.salaryIntervalGameDays ?? 1)));
+        if (salaryMinor > 0) {
+          const activeMayor = await client.query<{
+            id: string; winner_character_id: string | null; salary_last_game_day: number | null; salary_last_game_year: number | null;
+          }>(
+            `SELECT id, winner_character_id, salary_last_game_day, salary_last_game_year
+             FROM elections
+             WHERE term_status = 'active' AND revoked_at IS NULL AND winner_character_id IS NOT NULL
+               AND (term_ends_at IS NULL OR term_ends_at > now())
+             ORDER BY term_started_at DESC NULLS LAST, created_at DESC
+             LIMIT 1
+             FOR UPDATE`,
+          );
+          const term = activeMayor.rows[0];
+          if (term?.winner_character_id) {
+            const lastDay = term.salary_last_game_day == null ? null : Number(term.salary_last_game_day);
+            const lastYear = term.salary_last_game_year == null ? null : Number(term.salary_last_game_year);
+            const due = (lastDay === null || lastYear === null)
+              ? true
+              : (nextYear > lastYear || (nextYear === lastYear && (nextDay - lastDay) >= intervalDays));
+            if (due) {
+              const alive = await client.query<{ id: string }>(
+                `SELECT id FROM characters WHERE id = $1 AND COALESCE(is_alive,true)=true FOR UPDATE`,
+                [term.winner_character_id],
+              );
+              if (alive.rows[0]) {
+                // credit via character cash + ledger (government -> character)
+                await client.query(
+                  `UPDATE characters SET cash_minor = cash_minor + $1, updated_at = now() WHERE id = $2`,
+                  [salaryMinor, term.winner_character_id],
+                );
+                await client.query(
+                  `INSERT INTO ledger_accounts (id, owner_type, owner_id, kind, balance_minor, is_system)
+                   VALUES (gen_random_uuid(), 'character', $1, 'cash', 0, false)
+                   ON CONFLICT (owner_type, owner_id, kind, currency) DO NOTHING`,
+                  [term.winner_character_id],
+                );
+                await client.query(
+                  `INSERT INTO ledger_accounts (id, owner_type, owner_id, kind, balance_minor, is_system)
+                   VALUES (gen_random_uuid(), 'government', $1, 'treasury', 0, true)
+                   ON CONFLICT (owner_type, owner_id, kind, currency) DO NOTHING`,
+                  ['00000000-0000-0000-0000-000000000002'],
+                );
+                await client.query(
+                  `UPDATE ledger_accounts SET balance_minor = balance_minor - $2, updated_at = now()
+                   WHERE owner_type='government' AND owner_id=$1 AND kind='treasury' AND currency='VND'`,
+                  ['00000000-0000-0000-0000-000000000002', salaryMinor],
+                );
+                await client.query(
+                  `UPDATE ledger_accounts SET balance_minor = balance_minor + $2, updated_at = now()
+                   WHERE owner_type='character' AND owner_id=$1 AND kind='cash' AND currency='VND'`,
+                  [term.winner_character_id, salaryMinor],
+                );
+                await client.query(
+                  `INSERT INTO ledger_transactions (id, from_account_id, to_account_id, amount_minor, currency, kind, description, reference_type, reference_id)
+                   SELECT gen_random_uuid(), g.id, c.id, $3, 'VND', 'mayor_salary', 'Phụ cấp Thị trưởng', 'election', $4::uuid
+                   FROM ledger_accounts g, ledger_accounts c
+                   WHERE g.owner_type='government' AND g.owner_id=$1 AND g.kind='treasury' AND g.currency='VND'
+                     AND c.owner_type='character' AND c.owner_id=$2 AND c.kind='cash' AND c.currency='VND'`,
+                  ['00000000-0000-0000-0000-000000000002', term.winner_character_id, salaryMinor, term.id],
+                );
+                await client.query(
+                  `UPDATE elections SET salary_last_game_day = $2, salary_last_game_year = $3 WHERE id = $1`,
+                  [term.id, nextDay, nextYear],
+                );
+                await client.query(
+                  `INSERT INTO mayor_actions (id, election_id, actor_character_id, action_type, status, amount_minor, reason, payload)
+                   VALUES (gen_random_uuid(), $1, $2, 'salary_payout', 'applied', $3, 'Phụ cấp định kỳ', $4::jsonb)`,
+                  [term.id, term.winner_character_id, salaryMinor, JSON.stringify({ gameDay: nextDay, gameYear: nextYear })],
+                );
+                await enqueueDomainEvent(client, {
+                  type: 'mayor.salary.v1',
+                  aggregateType: 'election',
+                  aggregateId: term.id,
+                  payload: { electionId: term.id, characterId: term.winner_character_id, amountMinor: salaryMinor, gameDay: nextDay, gameYear: nextYear },
+                });
+                applied.push(`mayor: salary paid ${salaryMinor} to ${term.winner_character_id}`);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn({ err: e }, 'Mayor term/salary tick step failed (best-effort)');
+    }
+
     await client.query('COMMIT');
     logger.info({ tick, appliedCount: applied.length }, 'Game tick committed');
 

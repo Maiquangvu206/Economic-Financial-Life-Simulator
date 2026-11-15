@@ -8,6 +8,7 @@ import {
   DeclareCandidacyRequestSchema,
   DonateRequestSchema,
   VoteRequestSchema,
+  MayorPolicyActionRequestSchema,
 } from '@efls/contracts';
 
 const controller = new PoliticsController();
@@ -17,6 +18,7 @@ export const politicsRouter: Router = Router();
 politicsRouter.use(attachActor);
 
 politicsRouter.get('/overview', asyncHandler(controller.getOverview));
+politicsRouter.get('/mayor', asyncHandler(controller.getMayorState));
 
 politicsRouter.post(
   '/elections',
@@ -35,3 +37,10 @@ politicsRouter.post('/vote', validateBody(VoteRequestSchema), asyncHandler(contr
 politicsRouter.post('/donate', validateBody(DonateRequestSchema), asyncHandler(controller.donate));
 
 politicsRouter.post('/elections/:electionId/end', asyncHandler(controller.endElection));
+
+// Pha B: hành động/chính sách của Thị trưởng (whitelist, server-authoritative)
+politicsRouter.post(
+  '/mayor/actions',
+  validateBody(MayorPolicyActionRequestSchema),
+  asyncHandler(controller.mayorPolicyAction),
+);

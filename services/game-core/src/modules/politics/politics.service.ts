@@ -1,14 +1,20 @@
-﻿import { candidateScore, electionWinner } from '@efls/domain';
+import { candidateScore, electionWinner } from '@efls/domain';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
 import { enqueueDomainEvent } from '../../shared/events/eventBus.js';
 import { notify } from '../notifications/notification.service.js';
+import { publishToUser, publishToAllUsers } from '../../shared/realtime/publish.js';
+import { writeActionLog } from '../../shared/audit/actionLog.js';
+import { pool } from '../../shared/db/pool.js';
 import {
   type PoliticsOverviewDto,
   type CandidateDto,
   type ElectionDto,
+  type MayorConfigDto,
+  type MayorStateDto,
+  type MayorPolicyActionRequest,
   MoneySchema,
 } from '@efls/contracts';
 import { politicsRepository } from './politics.repository.js';
@@ -19,7 +25,37 @@ function money(amount: number) {
 
 const CAMPAIGN_FEE = 5_000_000;
 
-/** Dịch vụ chính trị & bầu cử Thị trưởng: ứng cử, quyên góp, bỏ phiếu, chốt kết quả. */
+function clampInt(n: number, min: number, max: number) {
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+export function normalizeMayorConfig(raw: any): MayorConfigDto {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  return {
+    enabled: d.enabled !== false,
+    termDays: clampInt(Number(d.termDays ?? 7), 1, 365),
+    salaryMinor: clampInt(Number(d.salaryMinor ?? 2_000_000), 0, 1_000_000_000),
+    salaryIntervalGameDays: clampInt(Number(d.salaryIntervalGameDays ?? 1), 1, 30),
+    perkTaxDiscountPct: clampInt(Number(d.perkTaxDiscountPct ?? 5), 0, 100),
+    policyCooldownMinutes: clampInt(Number(d.policyCooldownMinutes ?? 30), 0, 1440),
+    policyCostMinor: clampInt(Number(d.policyCostMinor ?? 1_000_000), 0, 1_000_000_000),
+    treasurySpendLimitMinor: clampInt(Number(d.treasurySpendLimitMinor ?? 50_000_000), 0, 10_000_000_000),
+    otRateAdjustMinPct: clampInt(Number(d.otRateAdjustMinPct ?? 100), 0, 1000),
+    otRateAdjustMaxPct: clampInt(Number(d.otRateAdjustMaxPct ?? 500), 0, 1000),
+    otRateAdjustStepPct: clampInt(Number(d.otRateAdjustStepPct ?? 10), 1, 100),
+    welfareBonusPerCitizenMinor: clampInt(Number(d.welfareBonusPerCitizenMinor ?? 50_000), 0, 100_000_000),
+    welfareBonusMaxCitizens: clampInt(Number(d.welfareBonusMaxCitizens ?? 200), 0, 2000),
+  };
+}
+
+async function getMayorConfig(db: Db): Promise<MayorConfigDto> {
+  const r = await db.query(`SELECT macro FROM game_state WHERE id = 1`);
+  const macro = (r.rows[0]?.macro && typeof r.rows[0].macro === 'object') ? r.rows[0].macro : {};
+  return normalizeMayorConfig((macro as any).mayor);
+}
+
+/** Dịch vụ chính trị & bầu cử Thị trưởng (3 pha): bầu cử, nhiệm kỳ/quyền lợi, chính sách/quỹ, thu hồi tư cách. */
 export class PoliticsService {
   constructor(private readonly repository = politicsRepository) {}
 
@@ -28,8 +64,40 @@ export class PoliticsService {
     const character = await requireCharacterByUserId(db, userId);
     const electionRow =
       (await this.repository.getCurrentElection(db)) ?? (await this.repository.latestElection(db));
+    const [activeMayor, config] = await Promise.all([
+      this.repository.getActiveMayor(db),
+      getMayorConfig(db),
+    ]);
+    const mayor: MayorStateDto | null = activeMayor ? {
+      active: true,
+      electionId: activeMayor.electionId,
+      characterId: activeMayor.characterId,
+      characterName: activeMayor.characterName,
+      userId: activeMayor.userId,
+      termStatus: (activeMayor.termStatus as any) ?? 'active',
+      termStartedAt: activeMayor.termStartedAt ? activeMayor.termStartedAt.toISOString() : null,
+      termEndsAt: activeMayor.termEndsAt ? activeMayor.termEndsAt.toISOString() : null,
+      revokedAt: activeMayor.revokedAt ? activeMayor.revokedAt.toISOString() : null,
+      revokedReason: activeMayor.revokedReason ?? null,
+      isYou: activeMayor.characterId === character.id,
+      config,
+    } : {
+      active: false,
+      electionId: null,
+      characterId: null,
+      characterName: null,
+      userId: null,
+      termStatus: 'none',
+      termStartedAt: null,
+      termEndsAt: null,
+      revokedAt: null,
+      revokedReason: null,
+      isYou: false,
+      config,
+    };
+
     if (!electionRow) {
-      return { election: null, candidates: [] };
+      return { election: null, candidates: [], mayor };
     }
     const [candidates, voted] = await Promise.all([
       this.repository.listCandidates(electionRow.id, db),
@@ -45,32 +113,47 @@ export class PoliticsService {
       winnerCandidateId: electionRow.winnerCandidateId,
       youVoted: voted,
       youCandidateId: myCandidate?.id ?? null,
+      winnerCharacterId: electionRow.winnerCharacterId ?? null,
+      winnerCharacterName: (electionRow as any).winnerCharacterName ?? null,
+      termDays: electionRow.termDays ?? null,
+      termStartedAt: electionRow.termStartedAt ? electionRow.termStartedAt.toISOString() : null,
+      termEndsAt: electionRow.termEndsAt ? electionRow.termEndsAt.toISOString() : null,
+      termStatus: ((electionRow.termStatus as any) ?? 'none'),
+      revokedAt: electionRow.revokedAt ? electionRow.revokedAt.toISOString() : null,
+      revokedReason: electionRow.revokedReason ?? null,
     };
     return {
       election,
       candidates: candidates.map((c) => this.toCandidateDto(c, character.id)),
+      mayor,
     };
   }
 
-  /** Tạo cuộc bầu cử mới (khi chưa có cuộc mở, hoặc đã kết thúc). */
-  async createElection(userId: string, endsAt?: Date): Promise<ElectionDto> {
+  async getMayorState(userId: string): Promise<MayorStateDto> {
+    const ov = await this.getOverview(userId);
+    return ov.mayor!;
+  }
+
+  async createElection(userId: string, endsAt?: Date, termDays?: number): Promise<ElectionDto> {
     return withTransaction(async (client) => {
       await requireLivingCharacterByUserId(client, userId);
       const open = await this.repository.getCurrentElection(client);
       if (open) {
         throw AppError.conflict('election_open', 'Đã có cuộc bầu cử đang mở.');
       }
+      const config = await getMayorConfig(client as any);
       const election = await this.repository.createElection(
         client,
         endsAt ?? new Date(Date.now() + 7 * 24 * 3600_000),
+        termDays ?? config.termDays,
       );
-      await enqueueDomainEvent(client, {
+      await enqueueDomainEvent(client as any, {
         type: 'election.started.v1',
         aggregateType: 'election',
         aggregateId: election.id,
         payload: { electionId: election.id, office: 'mayor' },
       });
-      await notify(client, {
+      await notify(client as any, {
         userId,
         kind: 'politics',
         title: 'Bầu cử Thị trưởng đã mở',
@@ -82,7 +165,6 @@ export class PoliticsService {
     });
   }
 
-  /** Ứng cử: phí tranh cử 5tr, mỗi người mỗi cuộc 1 lần. */
   async declareCandidacy(userId: string, electionId: string, name: string): Promise<CandidateDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
@@ -91,11 +173,11 @@ export class PoliticsService {
       if (election.status !== 'open') {
         throw AppError.badRequest('Cuộc bầu cử đã kết thúc.');
       }
-      const balance = await ledger.getBalance(client, 'character', character.id);
+      const balance = await ledger.getBalance(client as any, 'character', character.id);
       if (balance < CAMPAIGN_FEE) {
         throw AppError.conflict('insufficient_funds', 'Không đủ tiền phí tranh cử (5.000.000 ₫).');
       }
-      await ledger.transfer(client, {
+      await ledger.transfer(client as any, {
         from: { ownerType: 'character', ownerId: character.id },
         to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
         amountMinor: CAMPAIGN_FEE,
@@ -110,13 +192,13 @@ export class PoliticsService {
         character.id,
         name || character.full_name,
       );
-      await enqueueDomainEvent(client, {
+      await enqueueDomainEvent(client as any, {
         type: 'election.candidacy.v1',
         aggregateType: 'election',
         aggregateId: electionId,
         payload: { electionId, candidateId, characterId: character.id },
       });
-      await notify(client, {
+      await notify(client as any, {
         userId,
         kind: 'politics',
         title: 'Đã ứng cử',
@@ -130,7 +212,6 @@ export class PoliticsService {
     });
   }
 
-  /** Quyên góp cho ứng viên: 1tr = +10 điểm (theo rule domain). */
   async donate(userId: string, candidateId: string, amountMinor: number): Promise<CandidateDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
@@ -144,11 +225,11 @@ export class PoliticsService {
       const before = await this.repository.listCandidates(election.id, client);
       const target = before.find((c) => c.id === candidateId);
       if (!target) throw AppError.notFound('Candidate');
-      const balance = await ledger.getBalance(client, 'character', character.id);
+      const balance = await ledger.getBalance(client as any, 'character', character.id);
       if (balance < amountMinor) {
         throw AppError.conflict('insufficient_funds', 'Không đủ tiền quyên góp.');
       }
-      await ledger.transfer(client, {
+      await ledger.transfer(client as any, {
         from: { ownerType: 'character', ownerId: character.id },
         to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
         amountMinor,
@@ -157,7 +238,7 @@ export class PoliticsService {
         referenceType: 'candidate',
         referenceId: candidateId,
       });
-      await this.repository.addDonation(client, candidateId, amountMinor);
+      await this.repository.addDonation(client as any, candidateId, amountMinor);
       const after = await this.repository.listCandidates(election.id, client);
       const updated = after.find((c) => c.id === candidateId);
       if (!updated) throw AppError.notFound('Candidate');
@@ -165,7 +246,6 @@ export class PoliticsService {
     });
   }
 
-  /** Bỏ phiếu: mỗi người mỗi cuộc 1 phiếu. */
   async vote(
     userId: string,
     electionId: string,
@@ -188,8 +268,8 @@ export class PoliticsService {
       if (!candidates.some((c) => c.id === candidateId)) {
         throw AppError.notFound('Candidate');
       }
-      await this.repository.insertVote(client, electionId, character.id, candidateId);
-      await enqueueDomainEvent(client, {
+      await this.repository.insertVote(client as any, electionId, character.id, candidateId);
+      await enqueueDomainEvent(client as any, {
         type: 'election.vote.v1',
         aggregateType: 'election',
         aggregateId: electionId,
@@ -199,36 +279,322 @@ export class PoliticsService {
     });
   }
 
-  /** Chốt kết quả: chỉ admin/moderator mới được chốt (không phải người chơi). */
+  /** Kết thúc bầu cử và (nếu có người thắng) kích hoạt nhiệm kỳ Thị trưởng (Pha A/C). */
   async endElection(userId: string, electionId: string, role?: string): Promise<ElectionDto> {
     return withTransaction(async (client) => {
       await requireLivingCharacterByUserId(client, userId);
       if (role !== 'admin' && role !== 'moderator') {
         throw AppError.forbidden('Chỉ admin mới được chốt kết quả bầu cử.');
       }
-      const election = await this.repository.getElection(electionId, client);
-      if (!election) throw AppError.notFound('Election');
-      if (election.status !== 'open') {
-        throw AppError.badRequest('Cuộc bầu cử đã kết thúc.');
-      }
-      const candidates = await this.repository.listCandidates(electionId, client);
-      const winnerId = electionWinner(
-        candidates.map((c) => ({
-          id: c.id,
-          votes: c.votes,
-          donationsMinor: Number(c.donationsMinor),
-        })),
-      );
-      await this.repository.endElection(client, electionId, winnerId);
-      await enqueueDomainEvent(client, {
-        type: 'election.ended.v1',
-        aggregateType: 'election',
-        aggregateId: electionId,
-        payload: { electionId, winnerCandidateId: winnerId },
-      });
-      const overview = await this.getOverview(userId, client);
-      return overview.election!;
+      return this.finalizeElection(client, electionId, { actorUserId: userId, source: 'user-endpoint' });
     });
+  }
+
+  /** Dùng chung cho user/admin/auto: chốt kết quả, gán nhiệm kỳ, thông báo. Phải gọi trong transaction. */
+  async finalizeElection(
+    client: Db,
+    electionId: string,
+    opts: { actorUserId?: string | null; source?: string } = {},
+  ): Promise<ElectionDto> {
+    const election = await this.repository.getElection(electionId, client);
+    if (!election) throw AppError.notFound('Election');
+    if (election.status !== 'open') {
+      throw AppError.badRequest('Cuộc bầu cử đã kết thúc.');
+    }
+    const candidates = await this.repository.listCandidates(electionId, client);
+    const winnerId = electionWinner(
+      candidates.map((c) => ({
+        id: c.id,
+        votes: c.votes,
+        donationsMinor: Number(c.donationsMinor),
+      })),
+    );
+    const winner = winnerId ? candidates.find((c) => c.id === winnerId) : null;
+    const config = await getMayorConfig(client as any);
+    let term: { winnerCharacterId: string; termDays: number; startedAt: Date; endsAt: Date } | null = null;
+    if (winner) {
+      // Hết hiệu lực thị trưởng đương nhiệm (nếu có) trước khi nhậm chức mới
+      const active = await this.repository.getActiveMayorForUpdate(client as any);
+      if (active) {
+        await this.repository.expireMayor(client as any, active.electionId);
+        await this.repository.insertMayorAction(client as any, {
+          electionId: active.electionId,
+          actorCharacterId: active.characterId,
+          actorUserId: active.userId,
+          actionType: 'term_replaced',
+          reason: 'Nhiệm kỳ được thay thế bởi kết quả bầu cử mới',
+          payload: { newElectionId: electionId },
+        });
+      }
+      const termDays = clampInt(Number(election.termDays ?? config.termDays ?? 7), 1, 365);
+      const startedAt = new Date();
+      const endsAt = new Date(startedAt.getTime() + termDays * 24 * 3600_000);
+      term = { winnerCharacterId: winner.characterId, termDays, startedAt, endsAt };
+    }
+    await this.repository.endElection(client as any, electionId, winnerId, term);
+    await this.repository.insertMayorAction(client as any, {
+      electionId,
+      actorCharacterId: winner?.characterId ?? null,
+      actionType: 'election_finalized',
+      reason: opts.source ?? 'finalize',
+      payload: { winnerCandidateId: winnerId, winnerCharacterId: winner?.characterId ?? null },
+    });
+    await enqueueDomainEvent(client as any, {
+      type: 'election.ended.v1',
+      aggregateType: 'election',
+      aggregateId: electionId,
+      payload: { electionId, winnerCandidateId: winnerId, winnerCharacterId: winner?.characterId ?? null },
+    });
+
+    if (winner) {
+      const winChar = await client.query<{ user_id: string | null; full_name: string }>(
+        `SELECT user_id, full_name FROM characters WHERE id = $1`,
+        [winner.characterId],
+      );
+      const u = winChar.rows[0];
+      if (u?.user_id) {
+        await notify(client as any, {
+          userId: u.user_id,
+          kind: 'politics',
+          title: 'Bạn đã đắc cử Thị trưởng',
+          body: `Chúc mừng ${u.full_name}! Bạn đã trở thành Thị trưởng (nhiệm kỳ ${term!.termDays} ngày). Hãy sử dụng quyền hạn đúng quy định.`,
+          payload: { electionId, characterId: winner.characterId, termEndsAt: term!.endsAt.toISOString() },
+        });
+        try {
+          await publishToUser(u.user_id, 'notification', {
+            kind: 'politics',
+            title: 'Bạn đã đắc cử Thị trưởng',
+            body: 'Bạn đã nhậm chức Thị trưởng. Kiểm tra trang Chính trị để xem quyền lợi và nhiệm vụ.',
+            at: Date.now(),
+          });
+        } catch { /* ignore */ }
+      }
+      try {
+        await publishToAllUsers('notification', {
+          kind: 'politics',
+          title: 'Thị trưởng mới được bầu',
+          body: `${u?.full_name ?? winner.name} đã đắc cử Thị trưởng.`,
+          at: Date.now(),
+        });
+      } catch { /* ignore */ }
+    }
+
+    const updated = (await this.repository.getElection(electionId, client))!;
+    const candidatesAfter = await this.repository.listCandidates(electionId, client);
+    return this.toElectionDto(updated, {
+      voted: false,
+      youCandidateId: null,
+      candidates: candidatesAfter,
+      viewerId: null,
+    });
+  }
+
+  // --- Pha B: Mayor policy actions (whitelist) ---
+  async requireActiveMayor(client: Db, userId: string): Promise<{ electionId: string; characterId: string; characterName: string; userId: string; config: MayorConfigDto }> {
+    const character = await requireLivingCharacterByUserId(client, userId);
+    const active = await this.repository.getActiveMayorForUpdate(client as any);
+    if (!active || active.characterId !== character.id) {
+      throw AppError.forbidden('Chỉ Thị trưởng đương nhiệm (còn hiệu lực) mới được thực hiện thao tác này.');
+    }
+    if (active.termEndsAt && active.termEndsAt.getTime() <= Date.now()) {
+      await this.repository.expireMayor(client as any, active.electionId);
+      throw AppError.forbidden('Nhiệm kỳ Thị trưởng đã hết hạn.');
+    }
+    const config = await getMayorConfig(client as any);
+    if (!config.enabled) throw AppError.forbidden('Hệ thống Thị trưởng hiện đang tạm tắt.');
+    return { electionId: active.electionId, characterId: character.id, characterName: character.full_name, userId, config };
+  }
+
+  async performPolicyAction(userId: string, req: MayorPolicyActionRequest): Promise<{ ok: true; action: string; detail: Record<string, unknown> }> {
+    return withTransaction(async (client) => {
+      const mayor = await this.requireActiveMayor(client, userId);
+      const cooldownMs = mayor.config.policyCooldownMinutes * 60_000;
+      const last = await this.repository.getLastPolicyActionAt(client as any, `policy_${req.type}`);
+      if (last && Date.now() - last.getTime() < cooldownMs) {
+        const waitMin = Math.ceil((cooldownMs - (Date.now() - last.getTime())) / 60000);
+        throw AppError.conflict('mayor_cooldown', `Hành động chính sách đang hồi. Vui lòng thử lại sau ~${waitMin} phút.`);
+      }
+      if (mayor.config.policyCostMinor > 0) {
+        const govBal = await ledger.getBalance(client as any, 'government', SYSTEM_GOVERNMENT_ID);
+        if (govBal < mayor.config.policyCostMinor) {
+          throw AppError.conflict('insufficient_treasury', 'Ngân sách nhà nước không đủ để thực hiện hành động này.');
+        }
+      }
+
+      if (req.type === 'adjust_ot_rate') {
+        const min = mayor.config.otRateAdjustMinPct;
+        const max = Math.max(min, mayor.config.otRateAdjustMaxPct);
+        const raw = Number(req.otRatePercent);
+        if (!Number.isFinite(raw)) throw AppError.badRequest('otRatePercent không hợp lệ.');
+        const value = clampInt(raw, min, max);
+        const macroR = await client.query(`SELECT macro FROM game_state WHERE id = 1 FOR UPDATE`);
+        const prevMacro = (macroR.rows[0]?.macro && typeof macroR.rows[0].macro === 'object') ? (macroR.rows[0].macro as any) : {};
+        const nextMacro = { ...prevMacro, otRatePercent: value };
+        await client.query(
+          `INSERT INTO game_state (id, current_day, current_year, season, macro)
+           VALUES (1, 0, 1, 'spring', $1::jsonb)
+           ON CONFLICT (id) DO UPDATE SET macro = $1::jsonb, updated_at = now()`,
+          [JSON.stringify(nextMacro)],
+        );
+        await this.repository.insertMayorAction(client as any, {
+          electionId: mayor.electionId, actorCharacterId: mayor.characterId, actorUserId: mayor.userId,
+          actionType: 'policy_adjust_ot_rate', amountMinor: mayor.config.policyCostMinor || null,
+          reason: req.reason ?? null, payload: { from: prevMacro.otRatePercent ?? null, to: value },
+        });
+        await writeActionLog(pool as any, mayor.userId, 'mayor.policy.adjust_ot_rate', { to: value, reason: req.reason ?? null });
+        try { await publishToAllUsers('notification', { kind: 'politics', title: 'Thị trưởng điều chỉnh OT', body: `Mức OT được điều chỉnh thành ${value}%.`, at: Date.now() }); } catch {}
+        return { ok: true, action: 'adjust_ot_rate', detail: { otRatePercent: value } };
+      }
+
+      if (req.type === 'treasury_welfare_bonus') {
+        const perCitizen = clampInt(Number(req.amountPerCitizen ?? mayor.config.welfareBonusPerCitizenMinor), 1_000, mayor.config.treasurySpendLimitMinor);
+        const maxCitizens = clampInt(Number(req.maxCitizens ?? mayor.config.welfareBonusMaxCitizens), 1, mayor.config.welfareBonusMaxCitizens || 200);
+        const citizens = await client.query<{ id: string }>(
+          `SELECT c.id FROM characters c
+           JOIN users u ON u.id = c.user_id
+           WHERE COALESCE(c.is_alive,true)=true AND (u.status IS DISTINCT FROM 'banned')
+           ORDER BY c.created_at DESC
+           LIMIT $1`,
+          [maxCitizens],
+        );
+        if (citizens.rows.length === 0) throw AppError.badRequest('Không có công dân phù hợp để nhận hỗ trợ.');
+        const total = perCitizen * citizens.rows.length;
+        if (total > mayor.config.treasurySpendLimitMinor) {
+          throw AppError.badRequest(`Tổng chi vượt hạn mức cho phép (${mayor.config.treasurySpendLimitMinor.toLocaleString('vi-VN')} ₫).`);
+        }
+        const govBal = await ledger.getBalance(client as any, 'government', SYSTEM_GOVERNMENT_ID);
+        if (govBal < total) throw AppError.conflict('insufficient_treasury', 'Ngân sách nhà nước không đủ cho gói hỗ trợ.');
+        for (const c of citizens.rows) {
+          await ledger.transfer(client as any, {
+            from: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
+            to: { ownerType: 'character', ownerId: c.id },
+            amountMinor: perCitizen,
+            kind: 'mayor_welfare_bonus',
+            description: 'Gói hỗ trợ phúc lợi do Thị trưởng ban hành',
+            referenceType: 'election',
+            referenceId: mayor.electionId,
+          });
+        }
+        await this.repository.insertMayorAction(client as any, {
+          electionId: mayor.electionId, actorCharacterId: mayor.characterId, actorUserId: mayor.userId,
+          actionType: 'policy_treasury_welfare_bonus', amountMinor: total,
+          reason: req.reason ?? null, payload: { perCitizen, recipients: citizens.rows.length },
+        });
+        await writeActionLog(pool as any, mayor.userId, 'mayor.policy.welfare_bonus', { perCitizen, recipients: citizens.rows.length, total, reason: req.reason ?? null });
+        try { await publishToAllUsers('notification', { kind: 'politics', title: 'Thị trưởng ban hành gói hỗ trợ', body: `Đã chi ${total.toLocaleString('vi-VN')} ₫ hỗ trợ ${citizens.rows.length} công dân (${perCitizen.toLocaleString('vi-VN')} ₫/người).`, at: Date.now() }); } catch {}
+        return { ok: true, action: 'treasury_welfare_bonus', detail: { perCitizen, recipients: citizens.rows.length, total } };
+      }
+
+      throw AppError.badRequest('Loại hành động chính sách không được hỗ trợ.');
+    });
+  }
+
+  /** Pha C: Admin thu hồi/hủy tư cách Thị trưởng khi lạm dụng. */
+  async adminRevokeMayor(actorUserId: string, reason: string, electionId?: string): Promise<MayorStateDto> {
+    return withTransaction(async (client) => {
+      let targetElectionId = electionId ?? null;
+      if (!targetElectionId) {
+        const active = await this.repository.getActiveMayorForUpdate(client as any);
+        if (!active) throw AppError.notFound('Không có Thị trưởng đương nhiệm để thu hồi tư cách.');
+        targetElectionId = active.electionId;
+      }
+      const election = await this.repository.getElection(targetElectionId, client);
+      if (!election) throw AppError.notFound('Election');
+      if (election.termStatus === 'revoked') {
+        throw AppError.badRequest('Tư cách Thị trưởng của nhiệm kỳ này đã bị thu hồi trước đó.');
+      }
+      if (election.termStatus !== 'active') {
+        throw AppError.badRequest('Chỉ có thể thu hồi tư cách của Thị trưởng đang tại nhiệm.');
+      }
+      await this.repository.revokeMayor(client as any, targetElectionId, actorUserId, reason);
+      await this.repository.insertMayorAction(client as any, {
+        electionId: targetElectionId,
+        actorUserId,
+        actionType: 'mayor_revoked',
+        reason,
+        payload: { by: actorUserId },
+      });
+      await writeActionLog(pool as any, actorUserId, 'politics.mayor.revoke', { electionId: targetElectionId, reason });
+
+      if (election.winnerCharacterId) {
+        const u = await client.query<{ user_id: string | null; full_name: string }>(
+          `SELECT user_id, full_name FROM characters WHERE id = $1`, [election.winnerCharacterId]
+        );
+        const row = u.rows[0];
+        if (row?.user_id) {
+          await notify(client as any, {
+            userId: row.user_id,
+            kind: 'politics',
+            title: 'Tư cách Thị trưởng đã bị thu hồi',
+            body: `Tư cách Thị trưởng của bạn đã bị quản trị viên thu hồi. Lý do: ${reason}`,
+            payload: { electionId: targetElectionId, reason },
+          });
+          try { await publishToUser(row.user_id, 'notification', { kind: 'politics', title: 'Bị thu hồi tư cách Thị trưởng', body: 'Quyền hạn và lợi ích Thị trưởng đã bị thu hồi.', at: Date.now() }); } catch {}
+        }
+        try { await publishToAllUsers('notification', { kind: 'politics', title: 'Thu hồi tư cách Thị trưởng', body: `Tư cách Thị trưởng của ${row?.full_name ?? 'nhân vật'} đã bị thu hồi do vi phạm/lạm dụng.`, at: Date.now() }); } catch {}
+      }
+
+      // return latest state for actor context not needed; caller can refetch overview
+      const dummyUser = actorUserId;
+      // build minimal mayor state (inactive) best-effort
+      const config = await getMayorConfig(client as any);
+      return {
+        active: false, electionId: null, characterId: null, characterName: null, userId: null,
+        termStatus: 'none', termStartedAt: null, termEndsAt: null, revokedAt: null, revokedReason: null,
+        isYou: false, config,
+      };
+    });
+  }
+
+  /** Hết hạn nhiệm kỳ (Pha C) - có thể gọi định kỳ/best-effort. */
+  async expireOverdueTerms(): Promise<number> {
+    return withTransaction(async (client) => {
+      const r = await client.query<{ id: string; winner_character_id: string | null }>(
+        `SELECT id, winner_character_id FROM elections
+         WHERE term_status = 'active' AND term_ends_at IS NOT NULL AND term_ends_at <= now()
+         FOR UPDATE`,
+      );
+      let n = 0;
+      for (const row of r.rows) {
+        await this.repository.expireMayor(client as any, row.id);
+        await this.repository.insertMayorAction(client as any, {
+          electionId: row.id,
+          actorCharacterId: row.winner_character_id,
+          actionType: 'term_expired',
+          reason: 'Hết hạn nhiệm kỳ',
+          payload: {},
+        });
+        n++;
+      }
+      if (n > 0) {
+        try { await publishToAllUsers('notification', { kind: 'politics', title: 'Nhiệm kỳ Thị trưởng kết thúc', body: 'Nhiệm kỳ Thị trưởng đã hết hạn. Hệ thống có thể mở bầu cử mới.', at: Date.now() }); } catch {}
+      }
+      return n;
+    });
+  }
+
+  private toElectionDto(
+    row: any,
+    ctx: { voted: boolean; youCandidateId: string | null; candidates: any[]; viewerId: string | null },
+  ): ElectionDto {
+    return {
+      id: row.id,
+      office: (row.office ?? 'mayor') as 'mayor',
+      status: row.status as 'open' | 'ended',
+      startsAt: row.startsAt instanceof Date ? row.startsAt.toISOString() : new Date(row.startsAt).toISOString(),
+      endsAt: row.endsAt instanceof Date ? row.endsAt.toISOString() : new Date(row.endsAt).toISOString(),
+      winnerCandidateId: row.winnerCandidateId ?? null,
+      youVoted: ctx.voted,
+      youCandidateId: ctx.youCandidateId,
+      winnerCharacterId: row.winnerCharacterId ?? null,
+      winnerCharacterName: row.winnerCharacterName ?? null,
+      termDays: row.termDays ?? null,
+      termStartedAt: row.termStartedAt ? new Date(row.termStartedAt).toISOString() : null,
+      termEndsAt: row.termEndsAt ? new Date(row.termEndsAt).toISOString() : null,
+      termStatus: (row.termStatus ?? 'none') as any,
+      revokedAt: row.revokedAt ? new Date(row.revokedAt).toISOString() : null,
+      revokedReason: row.revokedReason ?? null,
+    };
   }
 
   private toCandidateDto(

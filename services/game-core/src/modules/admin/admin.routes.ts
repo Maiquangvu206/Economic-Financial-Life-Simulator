@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema } from '@efls/contracts';
+import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema, RevokeMayorRequestSchema, UpdateMayorConfigRequestSchema } from '@efls/contracts';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import {
@@ -15,6 +15,9 @@ import {
   getPoliticsAdminOverview,
   createPoliticsElection,
   endPoliticsElection,
+  revokeMayor,
+  updateMayorConfig,
+  expireMayorTerms,
 } from './admin.politics.js';
 import {
   getMacroSnapshot,
@@ -53,7 +56,10 @@ adminRouter.post('/education/jobs', validateBody(UpsertJobRequestSchema), asyncH
 adminRouter.put('/education/jobs/:id', validateBody(UpsertJobRequestSchema), asyncHandler(updateJob));
 adminRouter.delete('/education/jobs/:id', asyncHandler(deleteJob));
 
-// Politics & elections (admin)
+// Politics & elections (admin) - 3 pha Thị trưởng + thu hồi tư cách
 adminRouter.get('/politics/overview', asyncHandler(getPoliticsAdminOverview));
 adminRouter.post('/politics/elections', asyncHandler(createPoliticsElection));
 adminRouter.post('/politics/elections/:id/end', asyncHandler(endPoliticsElection));
+adminRouter.put('/politics/mayor/config', validateBody(UpdateMayorConfigRequestSchema), asyncHandler(updateMayorConfig));
+adminRouter.post('/politics/mayor/revoke', validateBody(RevokeMayorRequestSchema), asyncHandler(revokeMayor));
+adminRouter.post('/politics/mayor/expire', asyncHandler(expireMayorTerms));
