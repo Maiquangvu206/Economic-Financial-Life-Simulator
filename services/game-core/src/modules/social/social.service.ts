@@ -1,4 +1,4 @@
-﻿import type { PoolClient } from 'pg';
+import type { PoolClient } from 'pg';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharacterByCccd } from '../../shared/actors/character.js';
@@ -256,7 +256,9 @@ export class SocialService {
     return this.proposeMarriage(userId, spouse, prenupEnabled);
   }
 
-  /** Gửi yêu cầu ly hôn (cần người còn lại đồng ý). Đồng thời chụp snapshot & kích hoạt phong tỏa tài sản. */
+  /** Gửi yêu cầu ly hôn (cần người còn lại đồng ý). Đồng thời chụp snapshot & kích hoạt phong tỏa tài sản.
+   *  Nếu đối phương bị khóa/không thể xác thực (tài khoản bị khóa/hạn chế, hoặc nhân vật không còn hoạt động),
+   *  cho phép người còn lại ly hôn đơn phương ngay (không cần chờ xác thực). */
   async proposeDivorce(userId: string, marriageId: string): Promise<SocialOverviewDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
@@ -266,21 +268,52 @@ export class SocialService {
       if (marriage.characterId !== character.id && marriage.spouseId !== character.id) {
         throw AppError.forbidden('Bạn không phải là thành viên của hôn nhân này.');
       }
-      const pending = await this.repository.findPendingDivorceProposal(marriageId, client);
-      if (pending) throw AppError.conflict('proposal_exists', 'Đã có yêu cầu ly hôn đang chờ phản hồi.');
 
-      const proposalId = await this.repository.createDivorceProposal(client, marriageId, character.id);
       const otherId = marriage.characterId === character.id ? marriage.spouseId : marriage.characterId;
 
-      // Snapshot (2): chụp tiền mặt + BĐS sở hữu cá nhân (không đấu giá) tại thời điểm gửi yêu cầu
+      const otherInfoRes = await client.query<{
+        id: string;
+        user_id: string | null;
+        is_alive: boolean;
+        user_status: string | null;
+      }>(
+        `SELECT c.id, c.user_id, COALESCE(c.is_alive, true) AS is_alive, u.status AS user_status
+         FROM characters c
+         LEFT JOIN users u ON u.id = c.user_id
+         WHERE c.id = $1
+         FOR UPDATE`,
+        [otherId],
+      );
+      const otherInfo = otherInfoRes.rows[0];
+      const otherLocked =
+        !otherInfo ||
+        otherInfo.is_alive === false ||
+        !otherInfo.user_id ||
+        otherInfo.user_status === 'banned' ||
+        otherInfo.user_status === 'restricted';
+
+      let pending = await this.repository.findPendingDivorceProposal(marriageId, client);
+      let proposalId = pending;
+
+      if (pending) {
+        if (!otherLocked) {
+          throw AppError.conflict('proposal_exists', 'Đã có yêu cầu ly hôn đang chờ phản hồi.');
+        }
+        // Đối phương hiện bị khóa/không thể xác thực: cho phép hoàn tất ly hôn đơn phương từ yêu cầu đang chờ.
+      } else {
+        proposalId = await this.repository.createDivorceProposal(client, marriageId, character.id);
+      }
+      if (!proposalId) throw new Error('Không tạo/khởi tạo được yêu cầu ly hôn');
+
+      // Snapshot: chụp tiền mặt + BĐS sở hữu cá nhân (không đấu giá) tại thời điểm gửi yêu cầu / đơn phương
       const chars = await client.query<{ id: string; cash_minor: string }>(
         `SELECT id, cash_minor FROM characters WHERE id = $1 OR id = $2 FOR UPDATE`,
         [character.id, otherId],
       );
       const props = await client.query<{ id: string; owner_character_id: string; current_value_minor: string; status: string }>(
-        `SELECT id, owner_character_id, current_value_minor, status
-         FROM properties
-         WHERE owner_character_id = $1 OR owner_character_id = $2
+        `SELECT p.id, p.owner_character_id, p.current_value_minor, p.status
+         FROM properties p
+         WHERE p.owner_character_id = $1 OR p.owner_character_id = $2
          FOR UPDATE`,
         [character.id, otherId],
       );
@@ -298,6 +331,38 @@ export class SocialService {
         );
       }
 
+      if (otherLocked) {
+        // Ly hôn đơn phương: đối phương bị khóa/không thể xác thực.
+        const result = await this.executeDivorce(client, marriage.id, marriage.characterId, marriage.spouseId, marriage.prenupEnabled, proposalId);
+        await this.repository.setDivorceProposalStatus(client, proposalId, 'accepted');
+        const reason = !otherInfo || otherInfo.is_alive === false
+          ? 'đối phương không còn hoạt động'
+          : otherInfo.user_status === 'banned'
+            ? 'đối phương đang bị khóa tài khoản'
+            : otherInfo.user_status === 'restricted'
+              ? 'đối phương đang bị hạn chế tài khoản'
+              : 'đối phương không thể xác thực';
+        const body = `${result.body} (Ly hôn đơn phương do ${reason}, không cần chờ xác thực.)`;
+        await notify(client, {
+          userId,
+          kind: 'social',
+          title: 'Ly hôn đơn phương hoàn tất',
+          body,
+          payload: { proposalId, marriageId, unilateral: true, reason, split: result.split, prenupEnabled: marriage.prenupEnabled },
+        });
+        const otherUserId = await this.repository.getUserIdByCharacterId(otherId, client);
+        if (otherUserId) {
+          await notify(client, {
+            userId: otherUserId,
+            kind: 'social',
+            title: 'Ly hôn đơn phương',
+            body: `${character.full_name} đã thực hiện ly hôn đơn phương (${reason}). ${result.body}`,
+            payload: { proposalId, marriageId, unilateral: true, reason, split: result.split, prenupEnabled: marriage.prenupEnabled },
+          });
+        }
+        return this.getOverview(userId, client);
+      }
+
       const otherUserId = await this.repository.getUserIdByCharacterId(otherId, client);
       if (otherUserId) {
         await notify(client, {
@@ -312,7 +377,6 @@ export class SocialService {
       return this.getOverview(userId, client);
     });
   }
-
   /** Phản hồi yêu cầu ly hôn (chỉ người còn lại). accept=true để ly hôn (v1: chia tài sản). */
   async respondDivorceProposal(userId: string, proposalId: string, accept: boolean): Promise<SocialOverviewDto> {
     return withTransaction(async (client) => {
