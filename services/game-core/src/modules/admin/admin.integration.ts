@@ -7,7 +7,7 @@ import { notify } from '../notifications/notification.service.js';
 import { publishToUser, publishToAllUsers } from '../../shared/realtime/publish.js';
 import { AuthRepository } from '../auth/auth.repository.js';
 import { underworldService } from '../underworld/underworld.service.js';
-import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest, AdminTriggerSweepRequest } from '@efls/contracts';
+import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest, AdminTriggerSweepRequest, UpdateInterestRateConfigRequest, InterestRateConfigDto } from '@efls/contracts';
 
 function ensureAdmin(req: Request): void {
   if (req.actorRole !== 'admin' && req.actorRole !== 'moderator') {
@@ -621,4 +621,112 @@ export async function adminAiEvaluateSweeps(req: Request, res: Response): Promis
   ensureAdmin(req);
   const result = await underworldService.evaluateSweepsWithAI({ actorId: req.actorId ?? null, trigger: 'manual_ai' });
   res.json({ ok: true, ...result });
+}
+
+export async function getInterestRateConfig(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const [stateRes, termsRes] = await Promise.all([
+    pool.query(`SELECT macro FROM game_state WHERE id = 1`),
+    pool.query(
+      `SELECT term_months, annual_rate_pct, early_withdraw_penalty_pct, label
+       FROM savings_rate_config ORDER BY term_months ASC`,
+    ),
+  ]);
+  const macro = (stateRes.rows[0]?.macro && typeof stateRes.rows[0].macro === 'object') ? (stateRes.rows[0].macro as any) : {};
+  const dto: InterestRateConfigDto = {
+    loanBaseRatePct: Number(macro.baseRatePct ?? 5),
+    savingsTerms: termsRes.rows.map((r: any) => ({
+      termMonths: Number(r.term_months),
+      annualRatePct: Number(r.annual_rate_pct),
+      earlyWithdrawPenaltyPct: Number(r.early_withdraw_penalty_pct ?? 0),
+      label: String(r.label ?? ''),
+    })),
+  };
+  res.json(dto);
+}
+
+export async function updateInterestRateConfig(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const body = req.body as UpdateInterestRateConfigRequest;
+  const loanBaseRatePct = Number(body.loanBaseRatePct);
+  if (!Number.isFinite(loanBaseRatePct) || loanBaseRatePct < 0 || loanBaseRatePct > 100) {
+    throw AppError.badRequest('Lãi suất cơ sở cho vay không hợp lệ (0-100%).');
+  }
+  const terms = Array.isArray(body.savingsTerms) ? body.savingsTerms : [];
+  if (terms.length === 0) throw AppError.badRequest('Cần ít nhất một kỳ hạn tiết kiệm.');
+  const seen = new Set<number>();
+  for (const t of terms) {
+    const m = Number(t.termMonths);
+    if (!Number.isInteger(m) || m < 0 || m > 360) throw AppError.badRequest('Kỳ hạn tiết kiệm không hợp lệ.');
+    if (seen.has(m)) throw AppError.badRequest(`Kỳ hạn ${m} tháng bị trùng.`);
+    seen.add(m);
+    if (!Number.isFinite(Number(t.annualRatePct)) || Number(t.annualRatePct) < 0 || Number(t.annualRatePct) > 100) {
+      throw AppError.badRequest(`Lãi suất tiết kiệm kỳ hạn ${m} tháng không hợp lệ.`);
+    }
+    if (!Number.isFinite(Number(t.earlyWithdrawPenaltyPct)) || Number(t.earlyWithdrawPenaltyPct) < 0 || Number(t.earlyWithdrawPenaltyPct) > 100) {
+      throw AppError.badRequest(`Phạt rút trước hạn kỳ hạn ${m} tháng không hợp lệ.`);
+    }
+    if (!String(t.label ?? '').trim()) throw AppError.badRequest(`Thiếu nhãn cho kỳ hạn ${m} tháng.`);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query(`SELECT macro FROM game_state WHERE id = 1 FOR UPDATE`);
+    const prevMacro = (existing.rows[0]?.macro && typeof existing.rows[0].macro === 'object') ? (existing.rows[0].macro as any) : {};
+    const prevBaseRate = Number(prevMacro.baseRatePct ?? 5);
+    const nextMacro = { ...prevMacro, baseRatePct: loanBaseRatePct };
+
+    await client.query(
+      `INSERT INTO game_state (id, current_day, current_year, season, macro)
+       VALUES (1, 0, 1, 'spring', $1::jsonb)
+       ON CONFLICT (id) DO UPDATE SET macro = $1::jsonb, updated_at = now()`,
+      [JSON.stringify(nextMacro)],
+    );
+
+    for (const t of terms) {
+      await client.query(
+        `INSERT INTO savings_rate_config (term_months, annual_rate_pct, early_withdraw_penalty_pct, label)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (term_months) DO UPDATE SET
+           annual_rate_pct = EXCLUDED.annual_rate_pct,
+           early_withdraw_penalty_pct = EXCLUDED.early_withdraw_penalty_pct,
+           label = EXCLUDED.label`,
+        [
+          Math.trunc(Number(t.termMonths)),
+          Number(t.annualRatePct),
+          Number(t.earlyWithdrawPenaltyPct ?? 0),
+          String(t.label).trim().slice(0, 100),
+        ],
+      );
+    }
+    const keep = terms.map((t) => Math.trunc(Number(t.termMonths)));
+    await client.query(
+      `DELETE FROM savings_rate_config WHERE NOT (term_months = ANY($1::int[]))`,
+      [keep],
+    );
+
+    await client.query('COMMIT');
+
+    await writeActionLog(pool as any, req.actorId, 'banking.interest_config.update', {
+      loanBaseRatePct: { before: prevBaseRate, after: loanBaseRatePct },
+      savingsTermCount: terms.length,
+      savingsTerms: terms.map((t) => ({ termMonths: t.termMonths, annualRatePct: t.annualRatePct })),
+    });
+    try {
+      await publishToAllUsers('notification', {
+        kind: 'info',
+        title: 'Cấu hình lãi suất đã cập nhật',
+        body: 'Quản trị viên đã cập nhật lãi suất vay ngân hàng và lãi suất gửi tiết kiệm.',
+        at: Date.now(),
+      });
+    } catch { /* ignore */ }
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+
+  await getInterestRateConfig(req, res);
 }

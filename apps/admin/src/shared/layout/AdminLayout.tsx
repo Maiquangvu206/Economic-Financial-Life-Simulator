@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: '/calendar-seasons', label: 'Mùa & Lịch nghỉ Công nhân', icon: '🗓️' },
   { to: '/education-config', label: 'Giáo dục & Đại học', icon: '🎓' },
   { to: '/politics', label: 'Chính trị & Bầu cử', icon: '🗳️' },
+  { to: '/interest-rates', label: 'Lãi suất vay & Tiết kiệm', icon: '💹' },
   { to: '/offline', label: 'Cấu hình Offline', icon: '🌙' },
   { to: '/restriction', label: 'Hạn chế & Liên hệ', icon: '🚫' },
   { to: '/map-editor', label: 'Map Editor', icon: '🗺️' },

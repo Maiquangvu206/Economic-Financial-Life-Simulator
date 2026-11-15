@@ -15,6 +15,7 @@ import { SeasonCalendarPage } from '../pages/SeasonCalendarPage';
 import { GiftCodesPage } from '../pages/GiftCodesPage';
 import { SsoPage } from '../pages/SsoPage';
 import { SystemBroadcastPage } from '../pages/SystemBroadcastPage';
+import { InterestRatesConfigPage } from '../pages/InterestRatesConfigPage';
 
 const router = createBrowserRouter([
   {
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
           { path: 'calendar-seasons', element: <SeasonCalendarPage /> },
           { path: 'education-config', element: <EducationConfigPage /> },
           { path: 'politics', element: <PoliticsConfigPage /> },
+          { path: 'interest-rates', element: <InterestRatesConfigPage /> },
           { path: 'offline', element: <OfflinePolicyPage /> },
           { path: 'restriction', element: <RestrictionSettingsPage /> },
           { path: 'audit-logs', element: <AuditLogsPage /> },

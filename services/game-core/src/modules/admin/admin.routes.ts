@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema, RevokeMayorRequestSchema, UpdateMayorConfigRequestSchema } from '@efls/contracts';
+import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema, RevokeMayorRequestSchema, UpdateMayorConfigRequestSchema, UpdateInterestRateConfigRequestSchema } from '@efls/contracts';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import {
@@ -31,6 +31,8 @@ import {
   getGameConfig,
   updateGameConfig,
   triggerMacroEvent,
+  getInterestRateConfig,
+  updateInterestRateConfig,
 } from './admin.integration.js';
 
 export const adminRouter: Router = Router();
@@ -46,6 +48,8 @@ adminRouter.post('/sweeps/trigger', validateBody(AdminTriggerSweepRequestSchema)
 adminRouter.post('/sweeps/ai-evaluate', asyncHandler(adminAiEvaluateSweeps));
 adminRouter.get('/game-config', asyncHandler(getGameConfig));
 adminRouter.put('/game-config', validateBody(UpdateGameConfigRequestSchema), asyncHandler(updateGameConfig));
+adminRouter.get('/interest-rates', asyncHandler(getInterestRateConfig));
+adminRouter.put('/interest-rates', validateBody(UpdateInterestRateConfigRequestSchema), asyncHandler(updateInterestRateConfig));
 
 // Education config (ngành/trường, học phí, thời gian học, mức lương sau tốt nghiệp)
 adminRouter.get('/education/config', asyncHandler(getEducationConfig));

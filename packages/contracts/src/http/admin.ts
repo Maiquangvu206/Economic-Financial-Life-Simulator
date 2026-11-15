@@ -158,3 +158,23 @@ export const AdminTriggerSweepRequestSchema = z
     message: 'Khi scope="character" cần cung cấp characterId hoặc cccd.',
   });
 export type AdminTriggerSweepRequest = z.infer<typeof AdminTriggerSweepRequestSchema>;
+
+export const SavingsRateTermConfigSchema = z.object({
+  termMonths: z.number().int().min(0).max(360),
+  annualRatePct: z.number().min(0).max(100),
+  earlyWithdrawPenaltyPct: z.number().min(0).max(100).default(0),
+  label: z.string().trim().min(1).max(100),
+});
+export type SavingsRateTermConfig = z.infer<typeof SavingsRateTermConfigSchema>;
+
+export const InterestRateConfigDtoSchema = z.object({
+  loanBaseRatePct: z.number().min(0).max(100),
+  savingsTerms: z.array(SavingsRateTermConfigSchema),
+});
+export type InterestRateConfigDto = z.infer<typeof InterestRateConfigDtoSchema>;
+
+export const UpdateInterestRateConfigRequestSchema = z.object({
+  loanBaseRatePct: z.number().min(0).max(100),
+  savingsTerms: z.array(SavingsRateTermConfigSchema).min(1),
+});
+export type UpdateInterestRateConfigRequest = z.infer<typeof UpdateInterestRateConfigRequestSchema>;
