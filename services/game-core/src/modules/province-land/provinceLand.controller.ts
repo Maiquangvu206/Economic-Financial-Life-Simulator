@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import type { ConstructPropertyRequest } from '@efls/contracts';
 import { provinceLandService } from './provinceLand.service.js';
 
 export class ProvinceLandController {
@@ -9,9 +10,15 @@ export class ProvinceLandController {
   };
 
   construct = async (req: Request, res: Response): Promise<void> => {
-    const { propertyId, optionId, memberPropertyIds } = req.body as { propertyId: string; optionId: string; memberPropertyIds?: string[] };
+    const { propertyId, optionId, memberPropertyIds, constructionName } = req.body as ConstructPropertyRequest;
     const provinceCode = String(req.query.province ?? req.body?.provinceCode ?? '001');
-    const properties = await provinceLandService.construct(req.actorId!, propertyId, optionId, memberPropertyIds ?? []);
+    const properties = await provinceLandService.construct(
+      req.actorId!,
+      propertyId,
+      optionId,
+      memberPropertyIds ?? [],
+      constructionName,
+    );
     res.status(200).json({ provinceCode, properties });
   };
 }

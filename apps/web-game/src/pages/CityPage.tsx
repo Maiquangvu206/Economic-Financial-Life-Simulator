@@ -224,6 +224,25 @@ export function CityPage() {
   const [constructError, setConstructError] = useState<string | null>(null);
   const [constructOk, setConstructOk] = useState<string | null>(null);
 
+  function isConnectedCells(cells: Array<{ x: number; y: number }>): boolean {
+    if (cells.length <= 1) return true;
+    const remaining = new Set(cells.map((c) => `${c.x}-${c.y}`));
+    const queue = [cells[0]!];
+    remaining.delete(`${cells[0]!.x}-${cells[0]!.y}`);
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const n of cells) {
+        const key = `${n.x}-${n.y}`;
+        if (!remaining.has(key)) continue;
+        if (Math.abs(cur.x - n.x) + Math.abs(cur.y - n.y) === 1) {
+          remaining.delete(key);
+          queue.push(n);
+        }
+      }
+    }
+    return remaining.size === 0;
+  }
+
   const auctionCountdown = activeAuction
     ? Math.max(0, Math.floor((new Date(activeAuction.endsAt).getTime() - now) / 1000))
     : 0;
@@ -234,7 +253,12 @@ export function CityPage() {
 
   async function handleConstruct() {
     if (!selected?.property || !buildChoice || !selectedCluster) return;
-    const memberIds = selectedClusterMemberIds.filter((id) => id !== selected.property!.id);
+    const memberIds = effectiveMergeIds.filter((id) => id !== selected.property!.id);
+    if (effectiveMergeIds.length === 0) return;
+    if (!effectiveMergeConnected) {
+      setConstructError('Các ô đã chọn phải liền kề nhau (4 hướng) và tạo thành một cụm liên thông.');
+      return;
+    }
     setConstructing(true);
     setConstructError(null);
     setConstructOk(null);
@@ -250,10 +274,12 @@ export function CityPage() {
           optionId: buildChoice,
           memberPropertyIds: memberIds,
           provinceCode: activeProvince,
+          constructionName: constructionName.trim() || undefined,
         }),
       });
       setConstructOk('Xây dựng/hợp thửa thành công.');
       setBuildChoice(null);
+      setConstructionName('');
       await Promise.all([refetchRealEstate(), refetchProvinceLand(), refetchCharacter(), refetchMap()]);
     } catch (caught) {
       setConstructError(caught instanceof Error ? caught.message : 'Không thể xây dựng công trình.');
@@ -319,8 +345,66 @@ export function CityPage() {
         .map((c) => ownedClusterData.byCoord.get(`${c.x}-${c.y}`))
         .filter((id): id is string => !!id);
     }, [selectedCluster, ownedClusterData.byCoord]);
-    const buildOptions = selectedCluster ? constructionOptionsFor(selectedCluster) : [];
+
+    const [mergeSelectedIds, setMergeSelectedIds] = useState<string[]>([]);
+    const [constructionName, setConstructionName] = useState('');
     const [buildChoice, setBuildChoice] = useState<string | null>(null);
+
+    // Mặc định chọn toàn bộ cụm khi đổi ô/cụm; người chơi có thể bỏ chọn để hợp thửa một phần.
+    useEffect(() => {
+      if (!selected?.property || !selectedCluster) {
+        setMergeSelectedIds([]);
+        setConstructionName('');
+        setBuildChoice(null);
+        return;
+      }
+      setMergeSelectedIds(selectedClusterMemberIds);
+      setConstructionName('');
+      setBuildChoice(null);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selected?.property?.id, selectedCluster?.size, selectedClusterMemberIds.join(',')]);
+
+    const selectedClusterProperties = useMemo(() => {
+      const byId = new Map<string, any>((mapData?.properties ?? []).map((p: any) => [p.id, p]));
+      return selectedClusterMemberIds.map((id) => byId.get(id)).filter(Boolean);
+    }, [selectedClusterMemberIds, mapData?.properties]);
+
+    const effectiveMergeIds = useMemo(() => {
+      if (!selected?.property) return [] as string[];
+      const allowed = new Set(selectedClusterMemberIds);
+      const picked = mergeSelectedIds.filter((id) => allowed.has(id));
+      if (!picked.includes(selected.property.id)) picked.unshift(selected.property.id);
+      return Array.from(new Set(picked));
+    }, [mergeSelectedIds, selectedClusterMemberIds, selected?.property?.id]);
+
+    const effectiveMergeProps = useMemo(() => {
+      const byId = new Map<string, any>((mapData?.properties ?? []).map((p: any) => [p.id, p]));
+      return effectiveMergeIds.map((id) => byId.get(id)).filter(Boolean);
+    }, [effectiveMergeIds, mapData?.properties]);
+
+    const effectiveMergeCells = useMemo(
+      () => effectiveMergeProps.map((p: any) => ({ x: p.location?.x ?? -1, y: p.location?.y ?? -1 })),
+      [effectiveMergeProps],
+    );
+    const effectiveMergeConnected = useMemo(() => isConnectedCells(effectiveMergeCells), [effectiveMergeCells]);
+    const effectiveMergeCluster = useMemo(() => {
+      const size = effectiveMergeProps.length;
+      const tier = size >= 4 ? 'large' : size >= 2 ? 'small' : 'single';
+      const cells = [...effectiveMergeCells].sort((a, b) => a.y - b.y || a.x - b.x);
+      return { cells, size, tier } as any;
+    }, [effectiveMergeProps.length, effectiveMergeCells]);
+    const buildOptions = effectiveMergeProps.length > 0 ? constructionOptionsFor(effectiveMergeCluster) : [];
+    const effectiveMergeValue = useMemo(
+      () => effectiveMergeProps.reduce((sum: number, p: any) => sum + (p?.valueMinor ?? p?.currentValue?.amount ?? 0), 0),
+      [effectiveMergeProps],
+    );
+    const effectiveMergeCost = Math.round(effectiveMergeValue * 0.2);
+
+    useEffect(() => {
+      if (buildChoice && !buildOptions.some((o) => o.id === buildChoice)) {
+        setBuildChoice(null);
+      }
+    }, [buildChoice, buildOptions]);
 
     const filteredProvinces = useMemo(() => {
       return (provinces ?? []).filter((p) => {
@@ -479,17 +563,66 @@ export function CityPage() {
                                                                 </span>
                                                               )}
                                                               {selected.property?.isMine && selectedCluster && !selected.property.constructionOption && !selected.property.mergedIntoPropertyId && (
-                                                                <div className="flex flex-wrap items-center gap-1.5">
-                                                                  <span className="font-semibold text-orange-700">
-                                                                    Hợp thửa {selectedCluster.size} ô:
-                                                                  </span>
-                                                                  {buildOptions.map((opt) => {
-                                                                    const clusterValue = selectedClusterMemberIds.reduce((sum, id) => {
-                                                                      const p = (mapData?.properties as any[] | undefined)?.find((x) => x.id === id);
-                                                                      return sum + (p?.valueMinor ?? p?.currentValue?.amount ?? 0);
-                                                                    }, 0);
-                                                                    const cost = Math.round(clusterValue * 0.2);
-                                                                    return (
+                                                                <div className="flex w-full flex-col gap-2 rounded-lg border border-orange-200 bg-orange-50/60 p-2">
+                                                                  <div className="flex flex-wrap items-center gap-2">
+                                                                    <span className="font-semibold text-orange-700">
+                                                                      Hợp thửa {effectiveMergeIds.length}/{selectedCluster.size} ô
+                                                                    </span>
+                                                                    <span className="text-[11px] text-slate-600">
+                                                                      Chi phí ~{formatMoney(effectiveMergeCost)} (20% giá trị cụm)
+                                                                    </span>
+                                                                    {!effectiveMergeConnected && (
+                                                                      <span className="text-[11px] font-semibold text-rose-600">Cụm chọn chưa liền kề</span>
+                                                                    )}
+                                                                  </div>
+
+                                                                  <div className="flex flex-wrap gap-1.5">
+                                                                    {selectedClusterProperties.map((p: any) => {
+                                                                      const checked = effectiveMergeIds.includes(p.id);
+                                                                      const isPrimary = p.id === selected.property?.id;
+                                                                      const label = `Ô [${p.location?.x ?? '?'},${p.location?.y ?? '?'}]`;
+                                                                      return (
+                                                                        <button
+                                                                          key={p.id}
+                                                                          type="button"
+                                                                          disabled={constructing || isPrimary}
+                                                                          onClick={() => {
+                                                                            setMergeSelectedIds((prev) => {
+                                                                              const set = new Set(prev.length ? prev : selectedClusterMemberIds);
+                                                                              if (set.has(p.id)) set.delete(p.id); else set.add(p.id);
+                                                                              if (selected.property?.id) set.add(selected.property.id);
+                                                                              return selectedClusterMemberIds.filter((id) => set.has(id));
+                                                                            });
+                                                                            setConstructError(null);
+                                                                            setConstructOk(null);
+                                                                          }}
+                                                                          className={`rounded-md border px-2 py-1 text-[11px] font-medium transition ${
+                                                                            checked
+                                                                              ? 'border-orange-500 bg-orange-500 text-white'
+                                                                              : 'border-orange-200 bg-white text-orange-700 hover:bg-orange-100'
+                                                                          } ${isPrimary ? 'opacity-80' : ''}`}
+                                                                          title={isPrimary ? `${label} (ô đang chọn, bắt buộc)` : `Chọn/bỏ chọn ${label} để hợp thửa`}
+                                                                        >
+                                                                          {checked ? '✓ ' : ''}{label}{isPrimary ? ' • chính' : ''}
+                                                                        </button>
+                                                                      );
+                                                                    })}
+                                                                  </div>
+
+                                                                  <div className="flex flex-wrap items-center gap-2">
+                                                                    <input
+                                                                      type="text"
+                                                                      value={constructionName}
+                                                                      onChange={(e) => setConstructionName(e.target.value)}
+                                                                      maxLength={80}
+                                                                      placeholder="Tên công trình (tuỳ chọn)"
+                                                                      className="min-w-[220px] flex-1 rounded-lg border border-orange-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-orange-400"
+                                                                    />
+                                                                  </div>
+
+                                                                  <div className="flex flex-wrap items-center gap-1.5">
+                                                                    <span className="text-[11px] font-medium text-slate-600">Công trình:</span>
+                                                                    {buildOptions.map((opt) => (
                                                                       <button
                                                                         key={opt.id}
                                                                         type="button"
@@ -497,26 +630,30 @@ export function CityPage() {
                                                                         onClick={() => { setBuildChoice(opt.id); setConstructError(null); setConstructOk(null); }}
                                                                         className={`rounded-lg px-2 py-1 text-[11px] font-semibold transition ${buildChoice === opt.id
                                                                             ? 'bg-orange-600 text-white'
-                                                                            : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
+                                                                            : 'bg-white text-orange-700 border border-orange-200 hover:bg-orange-100'
                                                                           }`}
-                                                                        title={`Chi phí xây dựng ~${formatMoney(cost)} (20% tổng giá trị cụm)`}
+                                                                        title={`Yêu cầu tối thiểu ${opt.minTiles} ô • Hệ số giá trị x${opt.valueMultiplier}`}
                                                                       >
                                                                         {opt.label}
                                                                       </button>
-                                                                    );
-                                                                  })}
-                                                                  {buildChoice && (
+                                                                    ))}
+                                                                    {buildOptions.length === 0 && (
+                                                                      <span className="text-[11px] text-slate-500">Chọn số ô hợp lệ để xem phương án xây dựng.</span>
+                                                                    )}
+                                                                  </div>
+
+                                                                  <div className="flex flex-wrap items-center gap-2">
                                                                     <button
                                                                       type="button"
-                                                                      disabled={constructing}
+                                                                      disabled={constructing || !buildChoice || !effectiveMergeConnected || effectiveMergeIds.length === 0}
                                                                       onClick={() => void handleConstruct()}
-                                                                      className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                                                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
                                                                     >
-                                                                      {constructing ? 'Đang xây dựng…' : 'Xác nhận xây dựng (trả phí)'}
+                                                                      {constructing ? 'Đang xây dựng…' : `Xác nhận xây dựng (${effectiveMergeIds.length} ô)`}
                                                                     </button>
-                                                                  )}
-                                                                  {constructError && <span className="text-[11px] text-rose-600">{constructError}</span>}
-                                                                  {constructOk && <span className="text-[11px] font-semibold text-emerald-600">{constructOk}</span>}
+                                                                    {constructError && <span className="text-[11px] text-rose-600">{constructError}</span>}
+                                                                    {constructOk && <span className="text-[11px] font-semibold text-emerald-600">{constructOk}</span>}
+                                                                  </div>
                                                                 </div>
                                                               )}
 

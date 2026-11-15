@@ -101,11 +101,18 @@ export class ProvinceLandService {
     return remaining.size === 0;
   }
 
-  async construct(userId: string, propertyId: string, optionId: string, memberPropertyIds: string[] = []): Promise<PropertyDto[]> {
+  async construct(
+    userId: string,
+    propertyId: string,
+    optionId: string,
+    memberPropertyIds: string[] = [],
+    constructionName?: string,
+  ): Promise<PropertyDto[]> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
       const option = this.getConstructionOption(optionId);
       if (!option) throw AppError.badRequest('Phương án xây dựng không hợp lệ.');
+      const label = constructionName?.trim() || option.label;
 
       const uniqueIds = Array.from(new Set([propertyId, ...memberPropertyIds]));
       const rows = await this.repo.findByIds(client, uniqueIds);
@@ -147,7 +154,7 @@ export class ProvinceLandService {
           to: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
           amountMinor: costMinor,
           kind: 'property_construction',
-          description: `Xây dựng ${option.label} (${size} ô) - ${provinceCode}`,
+          description: `Xây dựng ${label} (${size} ô) - ${provinceCode}`,
           referenceType: 'province_land_property',
           referenceId: primary.id,
         });
@@ -162,7 +169,7 @@ export class ProvinceLandService {
         memberIds: members.map((m) => m.id),
         mergeGroupId,
         optionId: option.id,
-        label: option.label,
+        label,
         tier,
         multiplier: option.valueMultiplier,
         costMinor,

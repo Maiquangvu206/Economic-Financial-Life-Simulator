@@ -88,11 +88,11 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
         useSessionStore.getState().clearSession();
       }
     }
-    throw new ApiError(
-      response.status,
-      problem,
-      problem?.title ?? `Request failed with status ${response.status}`,
-    );
+    const message =
+      problem?.detail?.trim() ||
+      problem?.title?.trim() ||
+      `Request failed with status ${response.status}`;
+    throw new ApiError(response.status, problem, message);
   }
 
   if (response.status === 204) {

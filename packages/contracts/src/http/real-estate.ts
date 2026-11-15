@@ -164,5 +164,7 @@ export const ConstructPropertyRequestSchema = z.object({
   optionId: z.string().min(1),
   /** Các BĐS khác trong cụm hợp thửa (cùng chủ, liền kề). Không gồm propertyId. */
   memberPropertyIds: z.array(IdSchema).optional(),
+  /** Tên công trình do người chơi đặt (tuỳ chọn). */
+  constructionName: z.string().trim().min(1).max(80).optional(),
 });
 export type ConstructPropertyRequest = z.infer<typeof ConstructPropertyRequestSchema>;

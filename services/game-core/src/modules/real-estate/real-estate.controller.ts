@@ -67,8 +67,8 @@ export class RealEstateController {
   };
 
   constructProperty = async (req: Request, res: Response): Promise<void> => {
-    const { propertyId, optionId, memberPropertyIds } = req.body as ConstructPropertyRequest;
-    const overview = await this.service.constructProperty(req.actorId!, propertyId, optionId, memberPropertyIds ?? []);
+    const { propertyId, optionId, memberPropertyIds, constructionName } = req.body as ConstructPropertyRequest;
+    const overview = await this.service.constructProperty(req.actorId!, propertyId, optionId, memberPropertyIds ?? [], constructionName);
     res.status(200).json(overview);
   };
 }
