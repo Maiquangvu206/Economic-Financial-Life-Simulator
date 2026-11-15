@@ -266,6 +266,25 @@ export class RealEstateService {
     });
   }
 
+  async unlistProperty(userId: string, propertyId: string): Promise<PropertyDto> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const property = await this.repository.findById(propertyId);
+      if (!property) throw AppError.notFound('Property');
+      if (property.ownerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ sở hữu mới được ngưng bán.');
+      }
+      if (property.status !== 'listed') {
+        throw AppError.badRequest('Bất động sản này hiện không ở trạng thái đang bán.');
+      }
+
+      await this.repository.unlist(client, propertyId);
+      const updated = await this.repository.findById(propertyId, client);
+      if (!updated) throw new Error('Bất động sản biến mất trong khi ngưng bán');
+      return toPropertyDto(updated, character.id);
+    });
+  }
+
   async updateRentTerms(
     userId: string,
     propertyId: string,

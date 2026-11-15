@@ -11,6 +11,7 @@ import {
   MakePropertyOfferRequestSchema,
   RentPropertyRequestSchema,
   RespondPropertyOfferRequestSchema,
+  UnlistPropertyRequestSchema,
   UpdateRentTermsRequestSchema,
 } from '@efls/contracts';
 
@@ -38,6 +39,12 @@ realEstateRouter.post(
   '/list',
   validateBody(ListPropertyRequestSchema),
   asyncHandler(controller.listProperty),
+);
+
+realEstateRouter.post(
+  '/unlist',
+  validateBody(UnlistPropertyRequestSchema),
+  asyncHandler(controller.unlistProperty),
 );
 
 realEstateRouter.post(

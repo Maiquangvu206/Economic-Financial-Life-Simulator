@@ -234,6 +234,15 @@ export class RealEstateRepository {
     );
   }
 
+  async unlist(client: Db, propertyId: string): Promise<void> {
+    await client.query(
+      `UPDATE properties
+       SET asking_price_minor = NULL, sale_notes = NULL, status = 'owned', updated_at = now()
+       WHERE id = $1 AND status = 'listed'`,
+      [propertyId],
+    );
+  }
+
   async updateRentTerms(
     client: Db,
     propertyId: string,

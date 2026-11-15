@@ -605,7 +605,10 @@ export function CityPage() {
                                                               {selectedTileAuctioning && activeAuction && (
                                                                 <button
                                                                   type="button"
-                                                                  onClick={() => handlePlaceBid(Math.round(activeAuction.currentBid.amount * 1.05))}
+                                                                  onClick={() => {
+                                                                    setBidInput(String(Math.round(activeAuction.currentBid.amount * 1.05)));
+                                                                    setBidError(null);
+                                                                  }}
                                                                   className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-rose-500"
                                                                 >
                                                                   🔨 Đặt giá nhanh (+5%)
@@ -921,7 +924,10 @@ export function CityPage() {
                                                                               <button
                                                                                 type="button"
                                                                                 disabled={bidding}
-                                                                                onClick={() => handlePlaceBid(Math.round(activeAuction.currentBid.amount * 1.05))}
+                                                                                onClick={() => {
+                                                                                  setBidInput(String(Math.round(activeAuction.currentBid.amount * 1.05)));
+                                                                                  setBidError(null);
+                                                                                }}
                                                                                 className="rounded-xl border border-rose-200 bg-rose-50 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
                                                                               >
                                                                                 +5% ({formatMoney(Math.round(activeAuction.currentBid.amount * 1.05))})
@@ -929,7 +935,10 @@ export function CityPage() {
                                                                               <button
                                                                                 type="button"
                                                                                 disabled={bidding}
-                                                                                onClick={() => handlePlaceBid(Math.round(activeAuction.currentBid.amount * 1.1))}
+                                                                                onClick={() => {
+                                                                                  setBidInput(String(Math.round(activeAuction.currentBid.amount * 1.1)));
+                                                                                  setBidError(null);
+                                                                                }}
                                                                                 className="rounded-xl border border-rose-300 bg-rose-50 py-1.5 text-xs font-bold text-rose-800 transition hover:bg-rose-100 disabled:opacity-60"
                                                                               >
                                                                                 +10% ({formatMoney(Math.round(activeAuction.currentBid.amount * 1.1))})

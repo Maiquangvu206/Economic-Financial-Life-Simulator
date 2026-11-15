@@ -128,6 +128,11 @@ export const ListPropertyRequestSchema = z.object({
 });
 export type ListPropertyRequest = z.infer<typeof ListPropertyRequestSchema>;
 
+export const UnlistPropertyRequestSchema = z.object({
+  propertyId: IdSchema,
+});
+export type UnlistPropertyRequest = z.infer<typeof UnlistPropertyRequestSchema>;
+
 /** Cập nhật bảng giá/điều khoản cho thuê (chủ sở hữu). */
 export const UpdateRentTermsRequestSchema = z.object({
   propertyId: IdSchema,

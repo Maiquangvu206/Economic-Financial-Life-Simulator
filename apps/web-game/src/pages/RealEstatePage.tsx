@@ -228,6 +228,26 @@ export function RealEstatePage() {
                         {p.status === 'listed' ? 'Cập nhật đăng bán' : 'Đặt bán/rao giá'}
                       </GameButton>
                     )}
+                    {p.status === 'listed' && (
+                      <GameButton
+                        variant="danger"
+                        size="sm"
+                        disabled={isBusy(p.id)}
+                        onClick={() =>
+                          runAction(
+                            p.id,
+                            () =>
+                              apiRequest('/api/v1/real-estate/unlist', {
+                                method: 'POST',
+                                body: JSON.stringify({ propertyId: p.id }),
+                              }).then(() => {}),
+                            'Đã ngưng bán bất động sản.',
+                          )
+                        }
+                      >
+                        Ngưng bán
+                      </GameButton>
+                    )}
                   </div>
                 </div>
                 {(p.offers ?? []).length > 0 && (

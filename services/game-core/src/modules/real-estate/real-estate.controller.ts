@@ -7,6 +7,7 @@ import type {
   MakePropertyOfferRequest,
   RentPropertyRequest,
   RespondPropertyOfferRequest,
+  UnlistPropertyRequest,
   UpdateRentTermsRequest,
 } from '@efls/contracts';
 import { RealEstateService } from './real-estate.service.js';
@@ -34,6 +35,12 @@ export class RealEstateController {
   listProperty = async (req: Request, res: Response): Promise<void> => {
     const { propertyId, askingPrice, saleNotes } = req.body as ListPropertyRequest;
     const property = await this.service.listProperty(req.actorId!, propertyId, askingPrice.amount, saleNotes);
+    res.status(200).json(property);
+  };
+
+  unlistProperty = async (req: Request, res: Response): Promise<void> => {
+    const { propertyId } = req.body as { propertyId: string };
+    const property = await this.service.unlistProperty(req.actorId!, propertyId);
     res.status(200).json(property);
   };
 
