@@ -33,7 +33,7 @@ export const TriggerMacroEventRequestSchema = z.object({
 export type TriggerMacroEventRequest = z.infer<typeof TriggerMacroEventRequestSchema>;
 
 export const AdminPlayerActionRequestSchema = z.object({
-  action: z.enum(['fine', 'ban', 'grant_aid', 'unban', 'force_delete']),
+  action: z.enum(['fine', 'ban', 'unban', 'restrict', 'grant_aid', 'force_delete']),
   characterId: IdSchema,
   amount: MoneySchema.optional(),
   note: z.string().max(500).optional(),
@@ -121,10 +121,25 @@ export const GameConfigDtoSchema = z.object({
 });
 export type GameConfigDto = z.infer<typeof GameConfigDtoSchema>;
 
+export const RestrictionContactConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  title: z.string().max(200).default('Tài khoản đang bị hạn chế'),
+  message: z.string().max(2000).default('Tài khoản của bạn đang bị hạn chế thao tác. Vui lòng liên hệ quản trị viên để được hỗ trợ gỡ hạn chế.'),
+  email: z.string().max(200).default(''),
+  phone: z.string().max(100).default(''),
+  zalo: z.string().max(200).default(''),
+  discord: z.string().max(200).default(''),
+  other: z.string().max(500).default(''),
+  updatedAt: z.string().datetime().optional(),
+});
+export type RestrictionContactConfig = z.infer<typeof RestrictionContactConfigSchema>;
+
 export const UpdateGameConfigRequestSchema = z.object({
   season: z.enum(['spring', 'summer', 'autumn', 'winter']).optional(),
   currentDay: z.number().int().min(0).optional(),
   currentYear: z.number().int().min(1).optional(),
+  otRatePercent: z.number().int().min(100).max(500).optional(),
+  restrictionContact: RestrictionContactConfigSchema.partial().optional(),
 });
 export type UpdateGameConfigRequest = z.infer<typeof UpdateGameConfigRequestSchema>;
 

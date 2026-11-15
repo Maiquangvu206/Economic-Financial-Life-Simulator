@@ -18,7 +18,8 @@ const ACTION_LABELS: Record<string, string> = {
   'player.fine': 'Phạt người chơi',
   'player.grant_aid': 'Cứu trợ người chơi',
   'player.ban': 'Khóa tài khoản',
-  'player.unban': 'Mở khóa tài khoản',
+  'player.restrict': 'Hạn chế tài khoản',
+  'player.unban': 'Gỡ khóa/gỡ hạn chế',
   'player.force_delete': 'Cưỡng chế xóa tài khoản',
   'gift_code.create': 'Tạo mã quà tặng',
   'gift_code.update': 'Cập nhật mã quà tặng',
@@ -66,8 +67,10 @@ function summarize(action: string, detail: Record<string, unknown> | null | unde
       return `Cứu trợ ${d.characterName ?? shortId(d.characterId as string)}${d.amountMinor != null ? ` · ${Number(d.amountMinor).toLocaleString('vi-VN')} ₫` : ''}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
     case 'player.ban':
       return `Khóa tài khoản ${d.characterName ?? shortId(d.characterId as string)}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
+    case 'player.restrict':
+      return `Hạn chế ${d.characterName ?? shortId(d.characterId as string)}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
     case 'player.unban':
-      return `Mở khóa ${d.characterName ?? shortId(d.characterId as string)}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
+      return `Gỡ khóa/gỡ hạn chế ${d.characterName ?? shortId(d.characterId as string)}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
     case 'player.force_delete':
       return `Cưỡng chế xóa ${d.characterName ?? shortId(d.characterId as string)}${d.username || d.email ? ` · ${fmtValue(d.username ?? d.email)}` : ''}${d.note ? ` · Lý do: ${fmtValue(d.note)}` : ''}`;
     case 'broadcast.create':

@@ -22,11 +22,16 @@ export const RefreshRequestSchema = z.object({
 });
 export type RefreshRequest = z.infer<typeof RefreshRequestSchema>;
 
+export const AccountStatusSchema = z.enum(['active', 'banned', 'restricted']);
+export type AccountStatus = z.infer<typeof AccountStatusSchema>;
+
 export const SessionUserSchema = z.object({
   id: IdSchema,
   email: z.string().email(),
   username: z.string(),
   role: UserRoleSchema,
+  status: AccountStatusSchema.default('active'),
+  restrictionReason: z.string().nullable().optional(),
 });
 export type SessionUser = z.infer<typeof SessionUserSchema>;
 

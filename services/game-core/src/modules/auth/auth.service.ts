@@ -42,30 +42,29 @@ function pruneExpiredTickets(): void {
 }
 
 function toSessionUser(user: UserRow): SessionUser {
+  const status = (user.status ?? 'active') as SessionUser['status'];
   return {
     id: user.id,
     email: user.email,
     username: user.username,
     role: user.role,
+    status,
+    restrictionReason: status === 'restricted' ? (user.ban_reason ?? null) : null,
   };
 }
 
-function ensureAccountActive(user: UserRow): void {
+/** Bị khóa (banned) không được đăng nhập; bị hạn chế (restricted) vẫn đăng nhập nhưng sẽ bị chặn thao tác trong game. */
+function ensureCanAuthenticate(user: UserRow): void {
   const status = user.status ?? 'active';
-  if (status === 'active') return;
   if (status === 'banned') {
     const until = user.banned_until ? ` đến ${new Date(user.banned_until).toLocaleString('vi-VN')}` : '';
     const reason = user.ban_reason ? ` Lý do: ${user.ban_reason}` : '';
     throw AppError.forbidden(`Tài khoản đã bị khóa${until}.${reason}`.trim());
   }
-  if (status === 'restricted') {
-    const reason = user.ban_reason ? ` Lý do: ${user.ban_reason}` : '';
-    throw AppError.forbidden(`Tài khoản đang bị hạn chế truy cập.${reason}`.trim());
-  }
 }
 
 function issueTokens(user: UserRow): TokenPair {
-  ensureAccountActive(user);
+  ensureCanAuthenticate(user);
   const accessToken = jwt.sign(
     { sub: user.id, role: user.role, type: 'access' },
     env.JWT_ACCESS_SECRET,
@@ -115,7 +114,7 @@ export class AuthService {
       throw AppError.unauthorized('Invalid email or password');
     }
 
-    ensureAccountActive(user);
+    ensureCanAuthenticate(user);
     return issueTokens(user);
   }
 
@@ -125,7 +124,7 @@ export class AuthService {
     if (!user) {
       throw AppError.unauthorized('User no longer exists');
     }
-    ensureAccountActive(user);
+    ensureCanAuthenticate(user);
     return issueTokens(user);
   }
 
@@ -139,6 +138,7 @@ export class AuthService {
     if (!user) {
       throw AppError.unauthorized('User no longer exists');
     }
+    ensureCanAuthenticate(user);
 
     pruneExpiredTickets();
     const code = randomBytes(32).toString('hex');
@@ -163,14 +163,14 @@ export class AuthService {
     if (!user) {
       throw AppError.unauthorized('User no longer exists');
     }
-    ensureAccountActive(user);
+    ensureCanAuthenticate(user);
     return issueTokens(user);
   }
 
   async changePassword(userId: string, input: ChangePasswordRequest): Promise<{ ok: true; message: string }> {
     const user = await this.repository.findById(userId);
     if (!user) throw AppError.unauthorized('User no longer exists');
-    ensureAccountActive(user);
+    ensureCanAuthenticate(user);
 
     const matches = await bcrypt.compare(input.currentPassword, user.password_hash);
     if (!matches) {
@@ -188,7 +188,7 @@ export class AuthService {
   async updateProfile(userId: string, input: UpdateAccountProfileRequest): Promise<AccountProfileResponse> {
     const current = await this.repository.findById(userId);
     if (!current) throw AppError.unauthorized('User no longer exists');
-    ensureAccountActive(current);
+    ensureCanAuthenticate(current);
 
     try {
       const updated = await this.repository.updateAccountProfile({

@@ -141,7 +141,7 @@ export async function adminPlayerAction(req: Request, res: Response): Promise<vo
   const characterId = req.params.id as string;
   const body = req.body as { action?: string; amount?: { amount: number }; note?: string };
   const action = body?.action;
-  if (!action || !['fine', 'ban', 'grant_aid', 'unban', 'force_delete'].includes(action)) {
+  if (!action || !['fine', 'ban', 'grant_aid', 'unban', 'restrict', 'force_delete'].includes(action)) {
     throw AppError.badRequest('Hành động không hợp lệ.');
   }
 
@@ -273,13 +273,19 @@ export async function adminPlayerAction(req: Request, res: Response): Promise<vo
     }
   }
 
-  if (ch.user_id && (action === 'ban' || action === 'unban')) {
+  if (ch.user_id && (action === 'ban' || action === 'unban' || action === 'restrict')) {
     if (action === 'ban') {
       await pool.query(
         `UPDATE users SET status = 'banned', ban_reason = $2, banned_until = NULL, status_updated_at = now(), updated_at = now() WHERE id = $1`,
         [ch.user_id, body?.note ?? 'Bị khóa bởi quản trị viên'],
       );
+    } else if (action === 'restrict') {
+      await pool.query(
+        `UPDATE users SET status = 'restricted', ban_reason = $2, banned_until = NULL, status_updated_at = now(), updated_at = now() WHERE id = $1`,
+        [ch.user_id, body?.note ?? 'Tài khoản bị hạn chế thao tác do phát hiện bất thường.'],
+      );
     } else {
+      // unban: gỡ khóa/gỡ hạn chế -> active
       await pool.query(
         `UPDATE users SET status = 'active', ban_reason = NULL, banned_until = NULL, status_updated_at = now(), updated_at = now() WHERE id = $1`,
         [ch.user_id],
@@ -296,24 +302,34 @@ export async function adminPlayerAction(req: Request, res: Response): Promise<vo
 
   if (ch.user_id) {
     try {
+      const notifBody =
+        action === 'fine'
+          ? `Tài khoản của bạn đã bị phạt ${Number(body?.amount?.amount ?? 0).toLocaleString('vi-VN')} ₫.`
+          : action === 'grant_aid'
+            ? `Bạn đã nhận hỗ trợ ${Number(body?.amount?.amount ?? 0).toLocaleString('vi-VN')} ₫ từ quản trị.`
+            : action === 'ban'
+              ? 'Tài khoản của bạn đã bị khóa. Bạn sẽ không thể đăng nhập cho tới khi được gỡ khóa.'
+              : action === 'restrict'
+                ? 'Tài khoản của bạn đã bị hạn chế thao tác. Các chức năng game sẽ bị khóa cho đến khi quản trị viên gỡ hạn chế. Vui lòng xem thông tin liên hệ hỗ trợ trong ứng dụng.'
+                : 'Tài khoản của bạn đã được gỡ khóa/gỡ hạn chế bởi quản trị.';
       await notify(pool as any, {
         userId: ch.user_id,
         kind: 'admin_action',
         title: 'Thông báo từ quản trị hệ thống',
-        body:
-          action === 'fine'
-            ? `Tài khoản của bạn đã bị phạt ${Number(body?.amount?.amount ?? 0).toLocaleString('vi-VN')} ₫.`
-            : action === 'grant_aid'
-              ? `Bạn đã nhận hỗ trợ ${Number(body?.amount?.amount ?? 0).toLocaleString('vi-VN')} ₫ từ quản trị.`
-              : action === 'ban'
-                ? 'Tài khoản của bạn đã bị khóa theo quyết định quản trị. Bạn sẽ không thể đăng nhập/tiếp tục phiên cho tới khi được gỡ khóa.'
-                : 'Tài khoản của bạn đã được gỡ khóa bởi quản trị.',
+        body: notifBody,
         payload: { action, characterId, note: body?.note ?? null },
       });
       await publishToUser(ch.user_id, 'notification', {
         kind: 'admin_action',
         title: 'Thông báo từ quản trị hệ thống',
-        body: action === 'ban' ? 'Tài khoản của bạn đã bị khóa. Vui lòng đăng xuất.' : action === 'unban' ? 'Tài khoản của bạn đã được gỡ khóa.' : 'Bạn có thông báo mới từ quản trị.',
+        body:
+          action === 'ban'
+            ? 'Tài khoản của bạn đã bị khóa. Vui lòng đăng xuất.'
+            : action === 'restrict'
+              ? 'Tài khoản của bạn đã bị hạn chế thao tác. Vui lòng liên hệ admin để gỡ.'
+              : action === 'unban'
+                ? 'Tài khoản của bạn đã được gỡ khóa/gỡ hạn chế.'
+                : 'Bạn có thông báo mới từ quản trị.',
         at: Date.now(),
       });
     } catch {
@@ -334,20 +350,37 @@ export async function getGameConfig(req: Request, res: Response): Promise<void> 
     currentYear: Number(row.current_year ?? 1),
     season: row.season ?? 'spring',
     otRatePercent: Number((macro as any).otRatePercent ?? 300),
+    restrictionContact: normalizeRestrictionContact((macro as any).restrictionContact),
     macro,
   });
 }
 
 export async function updateGameConfig(req: Request, res: Response): Promise<void> {
   ensureAdmin(req);
-  const body = req.body as { season?: string; currentDay?: number; currentYear?: number; otRatePercent?: number; macro?: Record<string, unknown> };
+  const body = req.body as {
+    season?: string;
+    currentDay?: number;
+    currentYear?: number;
+    otRatePercent?: number;
+    macro?: Record<string, unknown>;
+    restrictionContact?: Record<string, unknown>;
+  };
   const existing = await pool.query(`SELECT macro FROM game_state WHERE id = 1`);
-  const prevMacro = (existing.rows[0]?.macro && typeof existing.rows[0].macro === 'object') ? existing.rows[0].macro : {};
-  const nextMacro = {
+  const prevMacro = (existing.rows[0]?.macro && typeof existing.rows[0].macro === 'object') ? (existing.rows[0].macro as any) : {};
+  const nextMacro: Record<string, unknown> = {
     ...prevMacro,
     ...(body.macro ?? {}),
-    ...(body.otRatePercent != null ? { otRatePercent: Math.max(100, Math.min(500, Math.round(Number(body.otRatePercent)))) } : {}),
   };
+  if (body.otRatePercent != null) {
+    nextMacro.otRatePercent = Math.max(100, Math.min(500, Math.round(Number(body.otRatePercent))));
+  }
+  if (body.restrictionContact != null) {
+    nextMacro.restrictionContact = {
+      ...normalizeRestrictionContact(prevMacro.restrictionContact),
+      ...body.restrictionContact,
+      updatedAt: new Date().toISOString(),
+    };
+  }
   await pool.query(
     `INSERT INTO game_state (id, current_day, current_year, season, macro)
      VALUES (1, COALESCE($1,0), COALESCE($2,1), COALESCE($3,'spring'), $4::jsonb)
@@ -364,9 +397,24 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
     currentDay: body.currentDay ?? null,
     currentYear: body.currentYear ?? null,
     otRatePercent: (nextMacro as any).otRatePercent ?? null,
+    restrictionContact: body.restrictionContact ? true : null,
   });
-  await publishToAllUsers('notification', { kind: 'info', title: 'Cấu hình hệ thống đã cập nhật', body: 'Mùa hoặc cấu hình game đã được thay đổi bởi quản trị.', at: Date.now() });
+  await publishToAllUsers('notification', { kind: 'info', title: 'Cấu hình hệ thống đã cập nhật', body: 'Cấu hình hệ thống/liên hệ hỗ trợ đã được cập nhật bởi quản trị.', at: Date.now() });
   await getGameConfig(req, res);
+}
+
+function normalizeRestrictionContact(raw: any) {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  return {
+    enabled: d.enabled !== false,
+    title: String(d.title ?? 'Tài khoản đang bị hạn chế').slice(0, 200),
+    message: String(d.message ?? 'Tài khoản của bạn đang bị hạn chế thao tác. Vui lòng liên hệ quản trị viên để được hỗ trợ gỡ hạn chế.').slice(0, 2000),
+    email: String(d.email ?? '').slice(0, 200),
+    phone: String(d.phone ?? '').slice(0, 100),
+    zalo: String(d.zalo ?? '').slice(0, 200),
+    discord: String(d.discord ?? '').slice(0, 200),
+    other: String(d.other ?? '').slice(0, 500),
+  };
 }
 
 export async function getGameConfigPublic(_req: Request, res: Response): Promise<void> {
@@ -378,6 +426,7 @@ export async function getGameConfigPublic(_req: Request, res: Response): Promise
     currentYear: Number(row.current_year ?? 1),
     season: row.season ?? 'spring',
     otRatePercent: Number((macro as any).otRatePercent ?? 300),
+    restrictionContact: normalizeRestrictionContact((macro as any).restrictionContact),
   });
 }
 

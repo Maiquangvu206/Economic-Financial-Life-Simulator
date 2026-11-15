@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import type { UserRole } from '@efls/contracts';
 import { env } from '../../config/env.js';
 import { AppError } from './errors.js';
+import { enforceNotRestricted } from './restrictions.js';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -24,7 +25,7 @@ export function requireInternalToken(req: Request, _res: Response, next: NextFun
 }
 
 /** Actor identity is asserted by the gateway after JWT verification. */
-export function attachActor(req: Request, _res: Response, next: NextFunction): void {
+export function attachActor(req: Request, res: Response, next: NextFunction): void {
   const actorId = req.header('x-actor-id');
   if (!actorId) {
     next(AppError.unauthorized('Missing actor identity'));
@@ -33,7 +34,7 @@ export function attachActor(req: Request, _res: Response, next: NextFunction): v
   const role = req.header('x-actor-role');
   req.actorId = actorId;
   req.actorRole = role === 'admin' || role === 'moderator' ? role : 'player';
-  next();
+  void enforceNotRestricted(req, res, next);
 }
 
 export function requireActorId(req: Request): string {

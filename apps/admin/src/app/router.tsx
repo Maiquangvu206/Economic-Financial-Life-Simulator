@@ -10,6 +10,7 @@ import { MapEditorPage } from '../pages/MapEditorPage';
 import { OfflinePolicyPage } from '../pages/OfflinePolicyPage';
 import { PlayersPage } from '../pages/PlayersPage';
 import { PoliticsConfigPage } from '../pages/PoliticsConfigPage';
+import { RestrictionSettingsPage } from '../pages/RestrictionSettingsPage';
 import { SeasonCalendarPage } from '../pages/SeasonCalendarPage';
 import { GiftCodesPage } from '../pages/GiftCodesPage';
 import { SsoPage } from '../pages/SsoPage';
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
           { path: 'education-config', element: <EducationConfigPage /> },
           { path: 'politics', element: <PoliticsConfigPage /> },
           { path: 'offline', element: <OfflinePolicyPage /> },
+          { path: 'restriction', element: <RestrictionSettingsPage /> },
           { path: 'audit-logs', element: <AuditLogsPage /> },
           { path: 'players', element: <PlayersPage /> },
           { path: 'map-editor', element: <MapEditorPage /> },

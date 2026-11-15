@@ -87,6 +87,7 @@ export function AppLayout() {
     staleTime: 15000,
   });
   const isDead = me?.isAlive === false;
+  const isRestricted = user?.status === 'restricted';
 
   // Đồng bộ thanh báo cáo (topbar) theo dữ liệu nhân vật thực từ server, tránh hiển thị dữ liệu mẫu
   useEffect(() => {
@@ -114,7 +115,22 @@ export function AppLayout() {
     staleTime: 10000,
   });
 
-  const { data: gameConfig } = useQuery<{ season: 'spring'|'summer'|'autumn'|'winter'; currentDay: number; currentYear: number }>({
+  type RestrictionContact = {
+    enabled?: boolean;
+    title?: string;
+    message?: string;
+    email?: string;
+    phone?: string;
+    zalo?: string;
+    discord?: string;
+    other?: string;
+  };
+  const { data: gameConfig } = useQuery<{
+    season: 'spring' | 'summer' | 'autumn' | 'winter';
+    currentDay: number;
+    currentYear: number;
+    restrictionContact?: RestrictionContact;
+  }>({
     queryKey: ['game-config'],
     queryFn: () => apiRequest('/api/v1/game-config'),
     staleTime: 60000,
@@ -126,6 +142,7 @@ export function AppLayout() {
 
   // Xử lý offline khi quay lại (một lần mỗi phiên tải app): cập nhật mốc/recap và hiển thị nếu được bật
   useEffect(() => {
+    if (isRestricted) return;
     if (!me || offlineChecked) return;
     let cancelled = false;
     (async () => {
@@ -158,7 +175,7 @@ export function AppLayout() {
     return () => {
       cancelled = true;
     };
-  }, [me, offlineChecked, queryClient, navigate, location.pathname]);
+  }, [me, offlineChecked, queryClient, navigate, location.pathname, isRestricted]);
 
   // Nhận thông báo realtime (broadcast/can thiệp admin/sự kiện vĩ mô) -> làm mới dữ liệu và hiển thị toast
   useEffect(() => {
@@ -225,10 +242,79 @@ export function AppLayout() {
     navigate('/login', { replace: true });
   }
 
+  const restrictionContact = gameConfig?.restrictionContact;
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-surface-50 text-slate-900 font-sans">
       <ToastContainer />
       <ChatWidget />
+      {isRestricted && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-3xl border border-rose-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-2xl">🚫</div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-heading font-black text-slate-900">
+                  {restrictionContact?.title || 'Tài khoản đang bị hạn chế'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
+                  {restrictionContact?.message ||
+                    'Tài khoản của bạn đang bị hạn chế thao tác. Toàn bộ chức năng game đã bị khóa cho đến khi được quản trị viên gỡ hạn chế.'}
+                </p>
+                {user?.restrictionReason ? (
+                  <p className="mt-2 text-sm text-rose-700">
+                    <span className="font-semibold">Lý do/Ghi chú:</span> {user.restrictionReason}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            {restrictionContact?.enabled !== false && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Thông tin liên hệ hỗ trợ gỡ hạn chế</div>
+                <div className="space-y-1.5 text-sm text-slate-800">
+                  {restrictionContact?.email ? (
+                    <div><span className="font-semibold text-slate-600">Email:</span> {restrictionContact.email}</div>
+                  ) : null}
+                  {restrictionContact?.phone ? (
+                    <div><span className="font-semibold text-slate-600">Hotline/SĐT:</span> {restrictionContact.phone}</div>
+                  ) : null}
+                  {restrictionContact?.zalo ? (
+                    <div><span className="font-semibold text-slate-600">Zalo/Nhắn tin:</span> {restrictionContact.zalo}</div>
+                  ) : null}
+                  {restrictionContact?.discord ? (
+                    <div><span className="font-semibold text-slate-600">Discord/Cộng đồng:</span> {restrictionContact.discord}</div>
+                  ) : null}
+                  {restrictionContact?.other ? (
+                    <div><span className="font-semibold text-slate-600">Khác:</span> {restrictionContact.other}</div>
+                  ) : null}
+                  {!restrictionContact?.email &&
+                    !restrictionContact?.phone &&
+                    !restrictionContact?.zalo &&
+                    !restrictionContact?.discord &&
+                    !restrictionContact?.other && (
+                      <div className="text-slate-600 text-xs">Quản trị viên chưa cấu hình kênh liên hệ cụ thể. Vui lòng liên hệ đội ngũ hỗ trợ/quản trị của hệ thống để được gỡ hạn chế.</div>
+                    )}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Tài khoản của bạn hiện <b>không thể thao tác bất kỳ chức năng game</b> nào cho đến khi được gỡ hạn chế. Bạn có thể đăng xuất và quay lại sau khi quản trị viên xử lý.
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+              >
+                Đăng xuất
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <DeathSuccessionModal
         open={isDead}
         onCompleted={() => {
@@ -415,7 +501,9 @@ export function AppLayout() {
 
         {/* Main */}
         <main className="flex-1 w-full overflow-y-auto p-6">
-          {isDead ? (
+          {isRestricted ? (
+            <div className="flex h-full items-center justify-center text-slate-500 text-sm">Tài khoản đang bị hạn chế. Vui lòng xem thông báo và liên hệ quản trị viên để được gỡ.</div>
+          ) : isDead ? (
             <div className="flex h-full items-center justify-center text-slate-500">Nhân vật đã qua đời. Vui lòng hoàn tất kế thừa.</div>
           ) : (
             <Outlet />

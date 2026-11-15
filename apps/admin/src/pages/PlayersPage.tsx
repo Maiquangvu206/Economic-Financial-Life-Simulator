@@ -68,7 +68,7 @@ export function PlayersPage() {
     setSubmitted(query.trim());
   }
 
-  async function doAction(id: string, action: 'fine' | 'ban' | 'grant_aid' | 'unban' | 'force_delete', label?: string) {
+  async function doAction(id: string, action: 'fine' | 'ban' | 'restrict' | 'grant_aid' | 'unban' | 'force_delete', label?: string) {
     let amount: number | undefined;
     let note = '';
 
@@ -92,7 +92,14 @@ export function PlayersPage() {
         amount = Math.max(0, Math.round(Number(raw)));
         if (!amount) return;
       }
-      note = prompt('Ghi chú (tuỳ chọn):', '') ?? '';
+      if (action === 'restrict') {
+        note = (prompt('Nhập lý do/ghi chú hạn chế (sẽ hiển thị cho người dùng):', 'Tài khoản có dấu hiệu bất thường, vui lòng liên hệ quản trị viên.') ?? '').trim();
+        if (note === '') return;
+      } else if (action === 'ban') {
+        note = (prompt('Nhập lý do khóa tài khoản (tuỳ chọn):', 'Bị khóa bởi quản trị viên') ?? '').trim();
+      } else {
+        note = prompt('Ghi chú (tuỳ chọn):', '') ?? '';
+      }
     }
 
     setBusy(`${action}-${id}`);
@@ -110,7 +117,13 @@ export function PlayersPage() {
       setMsg(
         action === 'force_delete'
           ? 'Đã cưỡng chế xóa tài khoản và ghi audit log.'
-          : 'Đã thực hiện hành động và ghi nhật ký. Người chơi (nếu có tài khoản) sẽ nhận thông báo trong hộp thư.',
+          : action === 'restrict'
+            ? 'Đã hạn chế tài khoản: người dùng sẽ bị chặn toàn bộ chức năng game và thấy thông báo liên hệ admin để gỡ.'
+            : action === 'ban'
+              ? 'Đã khóa tài khoản: người dùng sẽ không thể đăng nhập cho tới khi được gỡ.'
+              : action === 'unban'
+                ? 'Đã gỡ khóa/gỡ hạn chế tài khoản.'
+                : 'Đã thực hiện hành động và ghi nhật ký. Người chơi (nếu có tài khoản) sẽ nhận thông báo trong hộp thư.',
       );
       await refetch();
     } catch (err: any) {
@@ -295,8 +308,9 @@ export function PlayersPage() {
                       <div className="flex flex-wrap gap-1">
                         <button disabled={busy!=null} onClick={() => doAction(p.id,'grant_aid', p.fullName)} className="rounded-lg bg-emerald-50 border border-emerald-200 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">Cứu trợ</button>
                         <button disabled={busy!=null} onClick={() => doAction(p.id,'fine', p.fullName)} className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50">Phạt</button>
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'ban', p.fullName)} className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50">Hạn chế</button>
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'unban', p.fullName)} className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">Gỡ</button>
+                        <button disabled={busy!=null} onClick={() => doAction(p.id,'restrict', p.fullName)} className="rounded-lg bg-orange-50 border border-orange-200 px-2 py-1 text-[11px] font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-50" title="Hạn chế thao tác trong game, hiển thị thông báo liên hệ admin để gỡ">Hạn chế</button>
+                        <button disabled={busy!=null} onClick={() => doAction(p.id,'ban', p.fullName)} className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50" title="Khóa tài khoản (không cho đăng nhập)">Khóa</button>
+                        <button disabled={busy!=null} onClick={() => doAction(p.id,'unban', p.fullName)} className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50" title="Gỡ khóa/gỡ hạn chế (trả về trạng thái hoạt động)">Gỡ</button>
                         {isSuperAdmin && (
                           <button
                             disabled={busy!=null}
