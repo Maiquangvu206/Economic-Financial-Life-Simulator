@@ -602,7 +602,7 @@ export function BusinessPage() {
         </div>
       </div>
 
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Thành lập công ty" size="lg">
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Thành lập công ty" size="2xl">
         <form
           className="space-y-3"
           onSubmit={(e) => {
