@@ -190,15 +190,24 @@ export class AuthService {
     if (!current) throw AppError.unauthorized('User no longer exists');
     ensureCanAuthenticate(current);
 
+    // Email là định danh tài khoản, không cho phép thay đổi.
+    if (input.email != null && input.email.trim().toLowerCase() !== current.email.toLowerCase()) {
+      throw AppError.badRequest('Email tài khoản không thể thay đổi.');
+    }
+
+    const username = input.username?.trim();
+    if (!username || username === current.username) {
+      throw AppError.badRequest('Bạn chưa thay đổi tên đăng nhập.');
+    }
+
     try {
       const updated = await this.repository.updateAccountProfile({
         userId,
-        email: input.email?.trim(),
-        username: input.username?.trim(),
+        username,
       });
       return {
         user: toSessionUser(updated),
-        message: 'Đã cập nhật thông tin tài khoản (tên nhân vật là định danh cố định, không thể thay đổi).',
+        message: 'Đã cập nhật tên đăng nhập tài khoản.',
       };
     } catch (e: any) {
       if (e?.code === 'conflict_email' || e?.message === 'email_taken') {

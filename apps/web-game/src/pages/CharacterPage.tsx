@@ -48,7 +48,6 @@ export function CharacterPage() {
 
   const [profileForm, setProfileForm] = useState({
     username: '',
-    email: '',
   });
   const [pwForm, setPwForm] = useState({
     currentPassword: '',
@@ -59,9 +58,8 @@ export function CharacterPage() {
   useEffect(() => {
     setProfileForm({
       username: sessionUser?.username ?? '',
-      email: sessionUser?.email ?? '',
     });
-  }, [sessionUser?.username, sessionUser?.email]);
+  }, [sessionUser?.username]);
 
   async function copyCccd() {
     if (!character?.cccd) return;
@@ -82,27 +80,26 @@ export function CharacterPage() {
 
   const updateProfile = useMutation({
     mutationFn: async () => {
-      const body: { username?: string; email?: string } = {};
       const username = profileForm.username.trim();
-      const email = profileForm.email.trim().toLowerCase();
 
-      if (username && username !== sessionUser?.username) body.username = username;
-      if (email && email !== sessionUser?.email) body.email = email;
-
-      if (!body.username && !body.email) {
-        throw new Error('Bạn chưa thay đổi thông tin tài khoản nào.');
+      if (!username) {
+        throw new Error('Tên đăng nhập không được để trống.');
+      }
+      if (username === (sessionUser?.username ?? '')) {
+        throw new Error('Bạn chưa thay đổi tên đăng nhập.');
       }
       return apiRequest<AccountProfileResponse>('/api/v1/auth/profile', {
         method: 'PATCH',
-        body: JSON.stringify(body),
+        body: JSON.stringify({ username }),
       });
     },
     onSuccess: async (res) => {
       applyUpdatedUser(res.user);
+      setProfileForm({ username: res.user.username });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['characters', 'me'] }),
       ]);
-      toast({ title: 'Cập nhật thành công', description: res.message || 'Đã đổi thông tin tài khoản.', variant: 'success' });
+      toast({ title: 'Cập nhật thành công', description: res.message || 'Đã đổi tên đăng nhập.', variant: 'success' });
     },
     onError: (err: any) => {
       toast({
@@ -140,9 +137,8 @@ export function CharacterPage() {
 
   const profileChanged = useMemo(() => {
     const u = profileForm.username.trim();
-    const e = profileForm.email.trim().toLowerCase();
-    return (u && u !== (sessionUser?.username ?? '')) || (e && e !== (sessionUser?.email ?? ''));
-  }, [profileForm, sessionUser?.username, sessionUser?.email]);
+    return !!u && u !== (sessionUser?.username ?? '');
+  }, [profileForm.username, sessionUser?.username]);
 
   if (isLoading) {
     return (
@@ -256,7 +252,7 @@ export function CharacterPage() {
         <section className="rounded-3xl border border-slate-200 bg-white/80 p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-900">Thông tin tài khoản</h2>
           <p className="mt-1 text-[11px] text-slate-600">
-            Cập nhật tên đăng nhập hoặc email. <b>Họ tên nhân vật, CCCD và nơi sinh là định danh cố định</b> và không thể thay đổi; tên nhân vật chỉ được
+            Bạn có thể đổi <b>tên đăng nhập (username)</b>. <b>Email tài khoản không thể thay đổi</b>. Họ tên nhân vật, CCCD và nơi sinh là định danh cố định; tên nhân vật chỉ được
             xác định khi nhân vật được sinh ra/tạo mới hoặc khi bạn chọn/kế thừa sang nhân vật tiếp theo (cuộc đời mới).
           </p>
           <form onSubmit={onSubmitProfile} className="mt-4 space-y-3 text-sm">
@@ -273,7 +269,7 @@ export function CharacterPage() {
               <label className="mb-1 block text-xs font-medium text-slate-700">Tên đăng nhập (username)</label>
               <input
                 value={profileForm.username}
-                onChange={(e) => setProfileForm((s) => ({ ...s, username: e.target.value }))}
+                onChange={(e) => setProfileForm({ username: e.target.value })}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 minLength={3}
                 maxLength={32}
@@ -281,12 +277,13 @@ export function CharacterPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-700">Email</label>
+              <label className="mb-1 block text-xs font-medium text-slate-700">Email (cố định, không thể thay đổi)</label>
               <input
                 type="email"
-                value={profileForm.email}
-                onChange={(e) => setProfileForm((s) => ({ ...s, email: e.target.value }))}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                value={sessionUser?.email ?? ''}
+                disabled
+                readOnly
+                className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700"
                 autoComplete="email"
               />
             </div>
