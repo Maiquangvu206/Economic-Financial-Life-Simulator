@@ -464,8 +464,8 @@ export function UnderworldPage() {
           <Panel title="Đại án Công an" borderColor="rose">
             <div className="space-y-3">
               <div className="rounded-xl border border-rose-200/70 bg-rose-50/60 p-3 text-xs text-slate-700 leading-relaxed">
-                <p><b>Heat hiện tại:</b> <strong>{heat}</strong>. Khi Heat <b>≥ 80</b>, hệ thống có thể <b>tự động</b> kích hoạt Đại án Công an (phạt 10% tiền mặt, ghi án tích, hạ Heat về 40).</p>
-                <p className="mt-1">Việc <b>chủ động kích hoạt/quét Đại án</b> (một người hoặc toàn hệ thống) do <b>quản trị viên</b> thực hiện từ cổng admin. Người chơi không thể tự bấm kích hoạt.</p>
+                <p><b>Heat hiện tại:</b> <strong>{heat}</strong>. <b>AI hệ thống</b> sẽ tự động đánh giá và kích hoạt Đại án khi rủi ro cao (đặc biệt khi Heat <b>≥ 80</b>) hoặc theo chu kỳ (có thể theo mục tiêu hoặc toàn hệ thống, core áp dụng an toàn/fallback). Hậu quả: phạt 10% tiền mặt, ghi án tích, hạ Heat về 40.</p>
+                <p className="mt-1"><b>Quản trị viên</b> vẫn có thể can thiệp thủ công (kích hoạt/quét theo người hoặc toàn hệ thống) từ cổng admin. Người chơi không thể tự bấm kích hoạt.</p>
               </div>
               {sweeps.map((s) => (
                 <div

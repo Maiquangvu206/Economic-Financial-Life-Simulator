@@ -4,7 +4,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from app.domain.enums import AiTask, GmAction
-from app.domain.policies import guard_gm, guard_judge, guard_news, guard_npc, guard_recruitment
+from app.domain.policies import guard_gm, guard_judge, guard_news, guard_npc, guard_recruitment, guard_sweep
 from app.domain.schemas import (
     EducationQuizProposal,
     EducationQuizRequest,
@@ -19,6 +19,8 @@ from app.domain.schemas import (
     ProposalMeta,
     RecruitmentProposal,
     RecruitmentRequest,
+    SweepProposal,
+    SweepProposeRequest,
 )
 from app.providers.base import LLMProvider, ProviderError
 from app.services.prompt_loader import dump_request, load_prompt
@@ -29,6 +31,7 @@ NPC_PROMPT_VERSION = "npc_merchant@v1"
 GM_PROMPT_VERSION = "gm_economy@v1"
 RECRUITMENT_PROMPT_VERSION = "recruitment@v1"
 EDUCATION_QUIZ_PROMPT_VERSION = "education_quiz@v1"
+UNDERWORLD_SWEEP_PROMPT_VERSION = "underworld_sweep@v1"
 
 
 def make_meta(task: AiTask, model: str, version: str) -> ProposalMeta:
@@ -180,3 +183,25 @@ class EducationQuizService:
             raise _invalid_output(ValueError("expected 5 questions"))
         proposal.questions = fixed
         return proposal
+
+
+class UnderworldSweepService:
+    def __init__(self, provider: LLMProvider) -> None:
+        self._provider = provider
+
+    async def propose(self, request: SweepProposeRequest) -> SweepProposal:
+        raw = await self._provider.complete_json(
+            task=AiTask.UNDERWORLD_SWEEP.value,
+            system_prompt=load_prompt("underworld_sweep"),
+            user_prompt=dump_request(request),
+        )
+        try:
+            proposal = SweepProposal(
+                meta=make_meta(AiTask.UNDERWORLD_SWEEP, self._provider.name, UNDERWORLD_SWEEP_PROMPT_VERSION),
+                **raw,
+            )
+        except (ValidationError, TypeError) as error:
+            raise _invalid_output(error) from error
+        if not request.allow_all and proposal.action == "sweep_all":
+            proposal.action = "sweep_targets" if proposal.character_ids else "none"
+        return guard_sweep(proposal)

@@ -457,3 +457,9 @@ export async function adminTriggerSweep(req: Request, res: Response): Promise<vo
   });
   res.json({ ok: true, scope: 'character', ...r });
 }
+
+export async function adminAiEvaluateSweeps(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const result = await underworldService.evaluateSweepsWithAI({ actorId: req.actorId ?? null, trigger: 'manual_ai' });
+  res.json({ ok: true, ...result });
+}

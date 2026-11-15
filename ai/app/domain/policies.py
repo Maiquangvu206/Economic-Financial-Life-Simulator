@@ -49,3 +49,22 @@ def guard_recruitment(proposal: RecruitmentProposal) -> RecruitmentProposal:
         c.proposed_salary_minor = max(0, int(c.proposed_salary_minor))
         c.fit_score = int(clamp(c.fit_score, 0, 100))
     return proposal
+
+
+def guard_sweep(proposal):
+    # Normalize/dedupe targets; core will validate existence and apply safety rules.
+    try:
+        seen = []
+        for cid in list(getattr(proposal, "character_ids", []) or []):
+            if cid not in seen:
+                seen.append(cid)
+        proposal.character_ids = seen[:500]
+        if proposal.action not in ("none", "sweep_targets", "sweep_all"):
+            proposal.action = "none"
+        if proposal.action == "sweep_targets" and not proposal.character_ids:
+            proposal.action = "none"
+    except Exception:
+        proposal.action = "none"
+        proposal.character_ids = []
+        proposal.rationale = getattr(proposal, "rationale", "") or "Invalid proposal; fallback to none."
+    return proposal

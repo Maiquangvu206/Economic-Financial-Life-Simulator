@@ -1,4 +1,4 @@
-﻿import type { PoolClient } from 'pg';
+import type { PoolClient } from 'pg';
 import { applyHeat, shouldTriggerSweep } from '@efls/domain';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
@@ -12,6 +12,8 @@ import {
 } from '../../shared/ledger/ledger.service.js';
 import { enqueueDomainEvent } from '../../shared/events/eventBus.js';
 import { notify } from '../notifications/notification.service.js';
+import { callAiService } from '../../shared/ai/aiClient.js';
+import { writeActionLog } from '../../shared/audit/actionLog.js';
 import {
   type CrimeType,
   type CrimeResultDto,
@@ -284,9 +286,9 @@ export class UnderworldService {
         payload: { crimeType, payout, caught, heatDelta, fine },
       });
 
-      // Đại án tự động khi heat chạm manhunt
+      // Heat chạm ngưỡng manhunt: chuyển cho AI quyết định kích hoạt Đại án (thay auto tức thời)
       if (shouldTriggerSweep(newHeat)) {
-        await this.runSweep(client, character.id, character.user_id, newHeat, { auto: true });
+        await this.aiHandleCrimeSweepTrigger(client, character.id, character.user_id, newHeat);
       }
 
       return {
@@ -745,8 +747,127 @@ export class UnderworldService {
     }
     return { affected: results.length, totalFineMinor, results };
   }
+
+  /** Danh sách ứng viên cho AI đề xuất Đại án (ưu tiên heat cao). */
+  async listSweepCandidates(limit = 200): Promise<Array<{ character_id: string; heat_level: number; cash_minor: number }>> {
+    const r = await pool.query<{ id: string; heat_level: number; cash_minor: string }>(
+      `SELECT id, heat_level, cash_minor
+       FROM characters
+       ORDER BY heat_level DESC, updated_at DESC NULLS LAST, id ASC
+       LIMIT $1`,
+      [Math.max(1, Math.min(500, limit))],
+    );
+    return r.rows.map((row) => ({
+      character_id: row.id,
+      heat_level: Number(row.heat_level ?? 0),
+      cash_minor: Math.max(0, Number(row.cash_minor ?? 0)),
+    }));
+  }
+
+  /**
+   * AI xử lý kích hoạt Đại án khi phạm tội làm vượt ngưỡng.
+   * - Gọi AI đề xuất (có thể targets/all/none). Core áp dụng an toàn.
+   * - Fallback: nếu AI không đưa ra hành động khả thi, quét nhân vật gây kích hoạt.
+   */
+  private async aiHandleCrimeSweepTrigger(client: PoolClient, triggerCharacterId: string, triggerUserId: string | null, triggerHeat: number): Promise<void> {
+    const candidates = await this.listSweepCandidates(100);
+    const { data } = await callAiService<any>('/v1/underworld/sweep/propose', {
+      trigger: 'crime_threshold',
+      allow_all: true,
+      reason: `Nhân vật ${triggerCharacterId} đạt Heat ${triggerHeat} sau hành vi phạm tội.`,
+      candidates,
+    });
+    const applied = await this.applyAiSweepProposal(data, {
+      trigger: 'crime_threshold',
+    });
+    if (!applied.executed) {
+      await this.runSweep(client, triggerCharacterId, triggerUserId, triggerHeat, { auto: true });
+    }
+  }
+
+  /** Áp dụng đề xuất AI Đại án (core kiểm soát an toàn). */
+  async applyAiSweepProposal(
+    proposal: any,
+    opts?: { trigger?: string; actorId?: string | null; writeAudit?: boolean },
+  ): Promise<{ executed: boolean; scope: 'none' | 'targets' | 'all'; affected: number; totalFineMinor: number; rationale: string | null }> {
+    const action = proposal?.action;
+    const rationale = typeof proposal?.rationale === 'string' ? proposal.rationale : null;
+    const trigger = opts?.trigger ?? 'periodic';
+    let scope: 'none' | 'targets' | 'all' = 'none';
+    let affected = 0;
+    let totalFineMinor = 0;
+
+    if (action === 'sweep_all') {
+      const result = await this.adminSweepAll();
+      scope = 'all';
+      affected = result.affected;
+      totalFineMinor = result.totalFineMinor;
+    } else if (action === 'sweep_targets') {
+      const idsIn = Array.isArray(proposal?.character_ids) ? proposal.character_ids : [];
+      const ids = Array.from(new Set(idsIn.map((x: any) => String(x)).filter((x: string) => /^[0-9a-fA-F-]{36}$/.test(x)))).slice(0, 200);
+      if (ids.length > 0) {
+        const rows = await pool.query<{ id: string; user_id: string | null; heat_level: number }>(
+          `SELECT id, user_id, heat_level FROM characters WHERE id = ANY($1::uuid[])`,
+          [ids],
+        );
+        for (const ch of rows.rows) {
+          try {
+            const r = await withTransaction((tx) => this.runSweep(tx, ch.id, ch.user_id, Number(ch.heat_level ?? 0), { auto: trigger !== 'manual_ai' }));
+            affected += 1;
+            totalFineMinor += r.fineMinor;
+          } catch { /* skip */ }
+        }
+        if (affected > 0) scope = 'targets';
+      }
+    }
+
+    if (opts?.writeAudit) {
+      try {
+        await writeActionLog(pool as any, opts.actorId ?? null, 'ai.sweep.evaluate', { trigger, action: action ?? null, scope, affected, totalFineMinor, rationale });
+      } catch { /* ignore */ }
+    }
+
+    return { executed: affected > 0, scope, affected, totalFineMinor, rationale };
+  }
+
+  /** AI tự động đánh giá định kỳ và áp dụng đề xuất Đại án. */
+  async evaluateSweepsWithAI(opts?: { actorId?: string | null; trigger?: 'periodic' | 'manual_ai' }): Promise<{ executed: boolean; scope: 'none' | 'targets' | 'all'; affected: number; totalFineMinor: number; rationale: string | null; source: 'ai' | 'fallback' }> {
+    const trigger = opts?.trigger ?? 'periodic';
+    const candidates = await this.listSweepCandidates(200);
+    const highHeat = candidates.filter((c) => c.heat_level >= 80).length;
+    const { data } = await callAiService<any>('/v1/underworld/sweep/propose', {
+      trigger,
+      allow_all: true,
+      reason: `Đánh giá ${trigger}. Ứng viên=${candidates.length}, Heat>=80=${highHeat}.`,
+      candidates,
+    });
+
+    const result = await this.applyAiSweepProposal(data, { trigger, actorId: opts?.actorId ?? null, writeAudit: true });
+
+    // Fallback an toàn cho tự động định kỳ: nếu AI không hành động nhưng có Heat>=80, quét các mục tiêu đủ ngưỡng
+    if (!result.executed && trigger === 'periodic') {
+      const risky = await pool.query<{ id: string; user_id: string | null; heat_level: number }>(
+        `SELECT id, user_id, heat_level FROM characters WHERE heat_level >= 80`,
+      );
+      if (risky.rows.length > 0) {
+        let affected = 0;
+        let totalFineMinor = 0;
+        for (const ch of risky.rows) {
+          try {
+            const r = await withTransaction((tx) => this.runSweep(tx, ch.id, ch.user_id, Number(ch.heat_level ?? 0), { auto: true }));
+            affected += 1;
+            totalFineMinor += r.fineMinor;
+          } catch { /* skip */ }
+        }
+        try {
+          await writeActionLog(pool as any, opts?.actorId ?? null, 'ai.sweep.evaluate', { trigger: 'periodic', action: 'fallback_heat_threshold', scope: 'targets', affected, totalFineMinor, rationale: 'Fallback: AI không hành động, quét nhân vật Heat>=80.' });
+        } catch { /* ignore */ }
+        return { executed: affected > 0, scope: affected > 0 ? 'targets' : 'none', affected, totalFineMinor, rationale: 'Fallback: quét các nhân vật Heat ≥ 80.', source: 'fallback' };
+      }
+    }
+
+    return { ...result, source: 'ai' };
+  }
 }
 
 export const underworldService = new UnderworldService();
-
-

@@ -24,6 +24,7 @@ import {
   adminCreateAccount,
   adminSetUserRole,
   adminTriggerSweep,
+  adminAiEvaluateSweeps,
   getGameConfig,
   updateGameConfig,
   triggerMacroEvent,
@@ -39,6 +40,7 @@ adminRouter.post('/players/:id/actions', validateBody(AdminPlayerActionRequestSc
 adminRouter.post('/accounts/create', validateBody(CreateAdminAccountRequestSchema), asyncHandler(adminCreateAccount));
 adminRouter.post('/accounts/role', validateBody(SetUserRoleRequestSchema), asyncHandler(adminSetUserRole));
 adminRouter.post('/sweeps/trigger', validateBody(AdminTriggerSweepRequestSchema), asyncHandler(adminTriggerSweep));
+adminRouter.post('/sweeps/ai-evaluate', asyncHandler(adminAiEvaluateSweeps));
 adminRouter.get('/game-config', asyncHandler(getGameConfig));
 adminRouter.put('/game-config', validateBody(UpdateGameConfigRequestSchema), asyncHandler(updateGameConfig));
 

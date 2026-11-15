@@ -105,6 +105,20 @@ export function AiEventConsolePage() {
     }
   }
 
+  async function handleAiEvaluateSweep() {
+    setSweepBusy(true);
+    setSweepResult(null);
+    try {
+      const res = await adminRequest<any>('/api/v1/admin/sweeps/ai-evaluate', { method: 'POST' });
+      const scopeLabel = res.scope === 'all' ? 'toàn hệ thống' : res.scope === 'targets' ? 'theo mục tiêu' : 'không thực thi';
+      setSweepResult(`AI đánh giá xong (${res.source || 'ai'}): ${scopeLabel}, ảnh hưởng ${res.affected ?? 0} nhân vật, tổng phạt ${(res.totalFineMinor ?? 0).toLocaleString('vi-VN')} ₫.${res.rationale ? ` Lý do: ${res.rationale}` : ''}`);
+    } catch (err: any) {
+      setSweepResult(err?.problem?.detail || err?.message || 'AI đánh giá Đại án thất bại.');
+    } finally {
+      setSweepBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -323,8 +337,8 @@ export function AiEventConsolePage() {
       <section className="panel space-y-3 border-rose-200 bg-rose-50/30">
         <h2 className="panel-title text-rose-800">Đại án Công an (do quản trị viên kích hoạt)</h2>
         <p className="text-xs text-slate-700 leading-relaxed">
-          Đại án do <b>admin/moderator</b> ra lệnh. Chế độ tự động khi Heat ≥ 80 vẫn hoạt động; người chơi không còn nút tự kích hoạt.
-          Hệ thống vẫn áp dụng quy tắc xử lý: phạt <b>10% tiền mặt</b>, ghi <b>án tích</b> (30 ngày tù), hạ Heat về <b>40</b>.
+          Đại án được <b>AI tự động xử lý</b>: khi Heat đạt ngưỡng trong lúc phạm tội và theo đánh giá định kỳ, AI đề xuất (mục tiêu/toàn hệ thống/không hành động) và core kiểm tra, áp dụng an toàn (có fallback). <b>Admin/moderator</b> vẫn có thể can thiệp thủ công hoặc chạy AI đánh giá ngay.
+          Quy tắc xử lý: phạt <b>10% tiền mặt</b>, ghi <b>án tích</b> (30 ngày tù), hạ Heat về <b>40</b>.
         </p>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
@@ -373,6 +387,18 @@ export function AiEventConsolePage() {
               {sweepBusy ? 'Đang quét…' : 'Kích hoạt Đại án toàn hệ thống'}
             </button>
           </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+          <div className="text-sm font-semibold text-slate-900">AI tự động đánh giá & xử lý</div>
+          <div className="text-[11px] text-slate-600">AI sẽ phân tích tình hình (Heat/ứng viên) và đề xuất kích hoạt theo mục tiêu hoặc toàn hệ thống; core kiểm tra và áp dụng an toàn (có fallback). Admin vẫn có thể can thiệp thủ công như trên.</div>
+          <button
+            type="button"
+            disabled={sweepBusy}
+            onClick={() => void handleAiEvaluateSweep()}
+            className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+          >
+            {sweepBusy ? 'Đang đánh giá…' : 'Chạy AI đánh giá Đại án ngay'}
+          </button>
         </div>
         {sweepResult ? <p className="text-xs font-medium text-rose-800">{sweepResult}</p> : null}
       </section>

@@ -8,6 +8,7 @@ class AiTask(StrEnum):
     GM_ECONOMY = "gm_economy"
     RECRUITMENT = "recruitment"
     EDUCATION_QUIZ = "education_quiz"
+    UNDERWORLD_SWEEP = "underworld_sweep"
 
 
 class Verdict(StrEnum):

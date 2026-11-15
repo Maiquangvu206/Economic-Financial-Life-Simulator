@@ -135,3 +135,23 @@ class EducationQuizProposal(BaseModel):
     meta: ProposalMeta
     title: str = Field(min_length=1, max_length=200)
     questions: list[EducationQuizQuestion] = Field(min_length=5, max_length=5)
+
+
+class SweepCandidate(BaseModel):
+    character_id: UUID
+    heat_level: int = Field(ge=0, le=100)
+    cash_minor: int = Field(ge=0)
+
+
+class SweepProposeRequest(BaseModel):
+    trigger: Literal["crime_threshold", "periodic", "manual_ai"] = "periodic"
+    candidates: list[SweepCandidate] = Field(default_factory=list, max_length=500)
+    allow_all: bool = True
+    reason: str = Field(default="", max_length=500)
+
+
+class SweepProposal(BaseModel):
+    meta: ProposalMeta
+    action: Literal["none", "sweep_targets", "sweep_all"]
+    character_ids: list[UUID] = Field(default_factory=list, max_length=500)
+    rationale: str = Field(default="", max_length=1000)
