@@ -81,6 +81,13 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 
   if (!response.ok) {
     const problem = await readProblem(response);
+    // Tài khoản bị khóa: buộc đăng xuất (hỗ trợ trường hợp mất realtime/đang thao tác)
+    if (response.status === 403) {
+      const text = `${problem?.title ?? ''} ${problem?.detail ?? ''}`.toLowerCase();
+      if (text.includes('bị khóa') || text.includes('da bi khoa') || text.includes('banned')) {
+        useSessionStore.getState().clearSession();
+      }
+    }
     throw new ApiError(
       response.status,
       problem,

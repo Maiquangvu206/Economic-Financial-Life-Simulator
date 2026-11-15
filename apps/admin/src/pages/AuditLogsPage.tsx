@@ -19,7 +19,7 @@ const ACTION_LABELS: Record<string, string> = {
   'player.grant_aid': 'Cứu trợ người chơi',
   'player.ban': 'Khóa tài khoản',
   'player.restrict': 'Hạn chế tài khoản',
-  'player.unban': 'Gỡ khóa/gỡ hạn chế',
+  'player.unban': 'Mở khóa tài khoản',
   'player.force_delete': 'Cưỡng chế xóa tài khoản',
   'gift_code.create': 'Tạo mã quà tặng',
   'gift_code.update': 'Cập nhật mã quà tặng',
@@ -70,7 +70,7 @@ function summarize(action: string, detail: Record<string, unknown> | null | unde
     case 'player.restrict':
       return `Hạn chế ${d.characterName ?? shortId(d.characterId as string)}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
     case 'player.unban':
-      return `Gỡ khóa/gỡ hạn chế ${d.characterName ?? shortId(d.characterId as string)}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
+      return `Mở khóa ${d.characterName ?? shortId(d.characterId as string)}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
     case 'player.force_delete':
       return `Cưỡng chế xóa ${d.characterName ?? shortId(d.characterId as string)}${d.username || d.email ? ` · ${fmtValue(d.username ?? d.email)}` : ''}${d.note ? ` · Lý do: ${fmtValue(d.note)}` : ''}`;
     case 'broadcast.create':

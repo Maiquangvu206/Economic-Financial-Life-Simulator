@@ -19,9 +19,12 @@ const authLimiter = rateLimit({
 export function mountRoutes(app: Express): void {
   const authProxy = coreProxy('/api/v1/auth');
   const adminProxy = coreProxy('/api/v1/admin');
+  const publicBroadcastLoginProxy = coreProxy('/api/v1/broadcasts/login');
   const apiProxy = coreProxy('/api');
 
   app.use('/api/v1/auth', authLimiter, authProxy);
+  // Thông báo hệ thống hiển thị trên trang đăng nhập là công khai (không cần access token)
+  app.use('/api/v1/broadcasts/login', publicBroadcastLoginProxy);
   app.use('/api/v1/admin', requireAccessToken, requireRole('admin', 'moderator'), adminProxy);
   app.use('/api', requireAccessToken, apiProxy);
 }

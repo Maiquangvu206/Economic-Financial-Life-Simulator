@@ -184,6 +184,23 @@ export function AppLayout() {
       void queryClient.invalidateQueries({ queryKey: ['notifications'] });
       void queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
       void queryClient.invalidateQueries({ queryKey: ['game-config'] });
+
+      const bodyText = String(payload?.body || '');
+      // Khi tài khoản bị khóa: tự động đăng xuất theo thời gian thực
+      if (
+        payload?.kind === 'admin_action' &&
+        (bodyText.includes('bị khóa') || bodyText.includes('đã bị khóa') || bodyText.includes('khóa tài khoản'))
+      ) {
+        toast({
+          title: payload.title || 'Thông báo từ quản trị hệ thống',
+          description: payload.body || 'Tài khoản của bạn đã bị khóa.',
+          variant: 'error',
+        });
+        clearSession();
+        navigate('/login', { replace: true });
+        return;
+      }
+
       if (payload?.title || payload?.body) {
         toast({
           title: payload.title || 'Thông báo hệ thống',
@@ -191,16 +208,12 @@ export function AppLayout() {
           variant: payload?.kind === 'error' ? 'error' : payload?.pinned || payload?.kind === 'urgent' ? 'warning' : 'info',
         });
       }
-      if (payload?.kind === 'admin_action' && String(payload?.body || '').includes('khóa')) {
-        // tài khoản bị khóa: buộc làm mới phiên/đăng xuất ở lần gọi API tiếp theo
-        void queryClient.invalidateQueries({ queryKey: ['characters'] });
-      }
     };
     socket.on('notification', onNotification as never);
     return () => {
       socket.off('notification', onNotification as never);
     };
-  }, [queryClient]);
+  }, [queryClient, clearSession, navigate]);
 
   const unreadCount = notifications.filter((n) => !n.readAt).length;
   const hudBroadcasts = useMemo(
