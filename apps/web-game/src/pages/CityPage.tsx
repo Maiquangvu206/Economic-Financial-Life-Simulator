@@ -69,10 +69,13 @@ export function CityPage() {
     queryFn: () => apiRequest<RealEstateOverviewDto>('/api/v1/real-estate/overview'),
   });
 
-  // Phiên đấu giá đang mở (AI Game Master)
+  // Phiên đấu giá đang mở theo từng tỉnh/thành (server-authoritative)
   const { data: auctionOverview, refetch: refetchAuctions } = useQuery<AuctionOverviewDto>({
-    queryKey: ['auctions', 'overview'],
-    queryFn: () => apiRequest<AuctionOverviewDto>('/api/v1/auctions/overview'),
+    queryKey: ['auctions', 'overview', activeProvince],
+    queryFn: () =>
+      apiRequest<AuctionOverviewDto>(
+        `/api/v1/auctions/overview?province=${encodeURIComponent(activeProvince)}`,
+      ),
     refetchInterval: 10_000,
   });
 
@@ -148,74 +151,17 @@ export function CityPage() {
     });
   };
 
-  const auctioningTile = useMemo(() => {
-    if (!auctionOverview || !realEstate || activeProvince !== '001') return null;
-    for (const auction of auctionOverview.auctions) {
-      const property = realEstate.properties.find((p) => p.id === auction.propertyId);
+  const activeAuction = auctionOverview?.auctions[0] ?? null;
+
+  const auctionTilePos = useMemo(() => {
+    if (!activeAuction) return null;
+    if (activeAuction.location) return { x: activeAuction.location.x, y: activeAuction.location.y };
+    if (activeAuction.propertyId && realEstate && activeProvince === '001') {
+      const property = realEstate.properties.find((p) => p.id === activeAuction.propertyId);
       if (property) return { x: property.location.x, y: property.location.y };
     }
     return null;
-  }, [auctionOverview, realEstate, activeProvince]);
-
-  const realAuction = auctionOverview?.auctions[0] ?? null;
-
-  const [mockAuction, setMockAuction] = useState<{
-    id: string;
-    x: number;
-    y: number;
-    endsAt: string;
-    startingPriceMinor: number;
-  } | null>(null);
-  const [mockBid, setMockBid] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (realAuction) {
-      setMockAuction(null);
-      setMockBid(null);
-      return;
-    }
-    if (mockAuction && new Date(mockAuction.endsAt).getTime() > Date.now()) return;
-    const priced =
-      mapData?.nodes.filter((n) => n.landPriceMinor > 0 && n.zoneType !== 'water') ?? [];
-    const pick = priced[Math.floor(Math.random() * priced.length)];
-    setMockAuction({
-      id: 'mock-auction',
-      x: pick?.x ?? 5,
-      y: pick?.y ?? 5,
-      endsAt: new Date(Date.now() + 105_000).toISOString(),
-      startingPriceMinor: pick?.landPriceMinor ?? 50_000_000,
-    });
-    setMockBid(null);
-  }, [realAuction, mapData]);
-
-  const activeAuction =
-    realAuction ??
-    (mockAuction
-      ? {
-        id: mockAuction.id,
-        propertyId: 'mock',
-        propertyName: 'Đất hoang',
-        sellerCharacterId: 'gm',
-        sellerName: 'AI Game Master',
-        startingPrice: { amount: mockAuction.startingPriceMinor, currency: 'VND' },
-        currentBid: {
-          amount: mockBid ?? mockAuction.startingPriceMinor,
-          currency: 'VND',
-        },
-        highestBidderId: null,
-        highestBidderName: null,
-        endsAt: mockAuction.endsAt,
-        status: 'open',
-        createdAt: new Date().toISOString(),
-        isMine: false,
-        isHighestBidder: false,
-      }
-      : null);
-
-  const isMockAuction = !!mockAuction && !realAuction;
-  const auctionTilePos =
-    auctioningTile ??
-    (isMockAuction && mockAuction ? { x: mockAuction.x, y: mockAuction.y } : null);
+  }, [activeAuction, realEstate, activeProvince]);
 
   const selectedTileAuctioning =
     !!auctionTilePos &&
@@ -244,18 +190,12 @@ export function CityPage() {
         setBidError('Nhập số tiền đặt giá hợp lệ.');
         return;
       }
-      if (isMockAuction) {
-        setMockBid(amount);
-        setBidInput('');
-        setBidError(null);
-        return;
-      }
       setBidding(true);
       setBidError(null);
       try {
         await apiRequest(`/api/v1/auctions/${activeAuction.id}/bid`, {
           method: 'POST',
-          body: JSON.stringify({ amount: { amount, currency: 'VND' } }),
+          body: JSON.stringify({ auctionId: activeAuction.id, amount: { amount, currency: 'VND' } }),
         });
         setBidInput('');
         await refetchAuctions();
@@ -618,7 +558,7 @@ export function CityPage() {
               </div>
                                                                           ) : (
                                                                           <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-                                                                            Hiện chưa có phiên đấu giá nào đang diễn ra. AI Game Master sẽ định kỳ mở phiên dựa trên quy hoạch đô thị.
+                                                                            Hiện chưa có phiên đấu giá nào đang mở cho tỉnh/thành này. Hãy cấu hình giá đất (admin) và thử tải lại sau ít phút.
                                                                           </p>
             )}
                                                                         </Panel>

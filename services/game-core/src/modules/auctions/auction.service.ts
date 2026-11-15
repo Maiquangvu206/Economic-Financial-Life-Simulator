@@ -5,6 +5,7 @@ import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js'
 import { notify } from '../notifications/notification.service.js';
 import { type AuctionDto, type AuctionOverviewDto, MoneySchema } from '@efls/contracts';
 import { auctionRepository } from './auction.repository.js';
+import { provinceLandAuctionService } from './provinceLandAuction.service.js';
 
 function money(amount: number) {
   return MoneySchema.parse({ amount, currency: 'VND' });
@@ -29,18 +30,43 @@ function toAuctionDto(
     createdAt: row.createdAt.toISOString(),
     isMine: row.sellerCharacterId === viewerCharacterId,
     isHighestBidder: row.highestBidderId === viewerCharacterId,
+    source: 'property',
   };
 }
 
-/** Dịch vụ đấu giá tài sản phát mại. */
+/** Dịch vụ đấu giá (tài sản & phiên đấu giá đất theo tỉnh). */
 export class AuctionService {
   constructor(private readonly repository = auctionRepository) {}
 
-  async getOverview(userId: string): Promise<AuctionOverviewDto> {
+  async getOverview(userId: string, provinceCode?: string): Promise<AuctionOverviewDto> {
     const db = this.repository.db;
     const character = await requireCharacterByUserId(db, userId);
-    const auctions = await this.repository.listOpenAuctions();
 
+    if (provinceCode && provinceCode.trim()) {
+      const code = provinceCode.trim();
+      // Ensure there is an active per-province GM land auction (best-effort) so each map has real data.
+      try {
+        await provinceLandAuctionService.ensureOpenAuction(code);
+      } catch {
+        // ignore ensure failures; still return what exists
+      }
+      const landAuctions = await provinceLandAuctionService.listOpenForProvince(userId, code);
+      // For 001, also include property auctions (legacy/real-estate) to preserve existing behavior.
+      let auctions: AuctionDto[] = landAuctions;
+      if (code === '001') {
+        const propertyAuctions = (await this.repository.listOpenAuctions()).map((a) =>
+          toAuctionDto(a, character.id),
+        );
+        auctions = [...landAuctions, ...propertyAuctions];
+      }
+      return {
+        auctions,
+        openCount: auctions.length,
+        provinceCode: code,
+      };
+    }
+
+    const auctions = await this.repository.listOpenAuctions();
     return {
       auctions: auctions.map((a) => toAuctionDto(a, character.id)),
       openCount: auctions.length,
@@ -48,6 +74,8 @@ export class AuctionService {
   }
 
   async getAuction(userId: string, auctionId: string): Promise<AuctionDto> {
+    const land = await provinceLandAuctionService.get(userId, auctionId);
+    if (land) return land;
     const db = this.repository.db;
     const character = await requireCharacterByUserId(db, userId);
     const auction = await this.repository.getAuction(auctionId);
@@ -57,6 +85,11 @@ export class AuctionService {
 
   /** Đặt giá vào phiên đấu giá. Tiền được giữ trong escrow cho đến khi phiên kết thúc. */
   async placeBid(userId: string, auctionId: string, amountMinor: number): Promise<AuctionDto> {
+    const land = await provinceLandAuctionService.get(userId, auctionId);
+    if (land) {
+      return provinceLandAuctionService.placeBid(userId, auctionId, amountMinor);
+    }
+
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
       const auction = await this.repository.getAuction(auctionId);

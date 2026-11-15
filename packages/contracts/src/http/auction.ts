@@ -7,9 +7,11 @@ export type AuctionStatus = z.infer<typeof AuctionStatusSchema>;
 
 export const AuctionDtoSchema = z.object({
   id: IdSchema,
-  propertyId: IdSchema,
+  /** Null for province/system land auctions. */
+  propertyId: IdSchema.nullable(),
   propertyName: z.string(),
-  sellerCharacterId: IdSchema,
+  /** Seller character id (null for system/GM auctions). */
+  sellerCharacterId: IdSchema.nullable(),
   sellerName: z.string(),
   startingPrice: MoneySchema,
   currentBid: MoneySchema,
@@ -22,12 +24,21 @@ export const AuctionDtoSchema = z.object({
   isMine: z.boolean(),
   /** Người xem hiện tại là người giữ giá cao nhất hay không. */
   isHighestBidder: z.boolean(),
+  /** Province land auction (per-map). When present, this is a GM land auction for a specific tile. */
+  provinceCode: z.string().optional(),
+  location: z
+    .object({ x: z.number().int().nonnegative(), y: z.number().int().nonnegative() })
+    .optional(),
+  zoneType: z.string().optional(),
+  source: z.enum(['property', 'province_land']).optional(),
 });
 export type AuctionDto = z.infer<typeof AuctionDtoSchema>;
 
 export const AuctionOverviewDtoSchema = z.object({
   auctions: z.array(AuctionDtoSchema),
   openCount: z.number().int().nonnegative(),
+  /** Province context when requested. */
+  provinceCode: z.string().optional(),
 });
 export type AuctionOverviewDto = z.infer<typeof AuctionOverviewDtoSchema>;
 

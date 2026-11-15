@@ -8,7 +8,8 @@ export class AuctionController {
 
   getOverview = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
-    const overview = await this.service.getOverview(userId);
+    const province = typeof req.query.province === 'string' ? req.query.province : undefined;
+    const overview = await this.service.getOverview(userId, province);
     res.status(200).json(overview);
   };
 
