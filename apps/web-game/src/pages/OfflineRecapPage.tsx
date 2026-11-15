@@ -1,32 +1,96 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { OfflinePlayerSettingsDto, OfflineProcessResponse, OfflineRecapDto, UpdateOfflinePlayerSettingsRequest } from '@efls/contracts';
 import { PageHeader } from '@efls/ui';
 import { Panel } from '../shared/ui/Panel';
 import { StatCard } from '../shared/ui/StatCard';
 import { Badge } from '../shared/ui/Badge';
 import { formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
-import { type TickerDto } from '@efls/contracts';
+
+function fmtDate(iso?: string | null) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('vi-VN');
+  } catch {
+    return iso;
+  }
+}
 
 export function OfflineRecapPage() {
-  const { data: tickers, isLoading } = useQuery<TickerDto[]>({
-    queryKey: ['offline-recap', 'tickers'],
-    queryFn: () => apiRequest<TickerDto[]>('/api/v1/stock-market/tickers'),
+  const qc = useQueryClient();
+  const [form, setForm] = useState<UpdateOfflinePlayerSettingsRequest>({});
+  const [message, setMessage] = useState<string | null>(null);
+
+  const settingsQ = useQuery<OfflinePlayerSettingsDto>({
+    queryKey: ['offline', 'settings'],
+    queryFn: () => apiRequest<OfflinePlayerSettingsDto>('/api/v1/offline/settings'),
   });
 
-  // Dữ liệu mẫu để minh họa báo cáo offline (sẽ kết nối action_log/tick worker sau này).
-  const income = 3_500_000;
-  const expense = 1_200_000;
-  const offlineTicks = 42;
+  const recapQ = useQuery<OfflineRecapDto | null>({
+    queryKey: ['offline', 'recap'],
+    queryFn: () => apiRequest<OfflineRecapDto | null>('/api/v1/offline/recap'),
+  });
 
-  if (isLoading) {
+  useEffect(() => {
+    if (settingsQ.data) {
+      setForm({
+        offlineProcessingEnabled: settingsQ.data.offlineProcessingEnabled,
+        autoClaimWelfare: settingsQ.data.autoClaimWelfare,
+        autoPay: settingsQ.data.autoPay,
+        catchupEnabled: settingsQ.data.catchupEnabled,
+        showRecapOnLogin: settingsQ.data.showRecapOnLogin,
+      });
+    }
+  }, [settingsQ.data]);
+
+  const saveSettings = useMutation({
+    mutationFn: (body: UpdateOfflinePlayerSettingsRequest) =>
+      apiRequest<OfflinePlayerSettingsDto>('/api/v1/offline/settings', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(['offline', 'settings'], data);
+      setMessage('Đã lưu cài đặt offline.');
+    },
+    onError: () => setMessage('Không thể lưu cài đặt offline.'),
+  });
+
+  const process = useMutation({
+    mutationFn: () => apiRequest<OfflineProcessResponse>('/api/v1/offline/process', { method: 'POST' }),
+    onSuccess: (res) => {
+      setMessage(res.message || (res.processed ? 'Đã xử lý offline.' : 'Không có thay đổi mới.'));
+      void qc.invalidateQueries({ queryKey: ['offline', 'recap'] });
+      void qc.invalidateQueries({ queryKey: ['offline', 'settings'] });
+      void qc.invalidateQueries({ queryKey: ['me'] });
+    },
+    onError: () => setMessage('Xử lý offline thất bại. Vui lòng thử lại.'),
+  });
+
+  const recap = recapQ.data;
+  const events = recap?.events ?? [];
+  const income = recap?.income?.amount ?? 0;
+  const expense = recap?.expenses?.amount ?? 0;
+  const net = recap?.netCashFlow?.amount ?? (income - expense);
+
+  const summaryBadges = useMemo(() => {
+    const s = (recap?.summary ?? {}) as Record<string, any>;
+    return [
+      { label: 'Phút đã xử lý', value: String(recap?.processedMinutes ?? s.processedMinutes ?? 0) },
+      { label: 'Phúc lợi đã nhận', value: String(s.welfareClaimedCount ?? 0) },
+      { label: 'Thuế đã tự nộp', value: String(s.taxesPaid ?? 0) },
+      { label: 'Khoản vay đã trả', value: String(s.loansPaid ?? 0) },
+    ];
+  }, [recap]);
+
+  if (settingsQ.isLoading || recapQ.isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <PageHeader
-          title="Báo cáo Offline Recap"
-          description="Tóm tắt thu nhập, chi phí và sự kiện trong thời gian bạn offline."
-        />
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
-        <p className="mt-4 text-sm text-slate-600">Đang tổng hợp báo cáo...</p>
+      <div className="space-y-5">
+        <PageHeader title="Offline & Báo cáo" description="Cấu hình xử lý khi vắng mặt và xem tóm tắt sau khi quay lại." />
+        <Panel title="Đang tải" borderColor="default">
+          <div className="text-sm text-slate-600">Đang tải dữ liệu offline...</div>
+        </Panel>
       </div>
     );
   }
@@ -34,102 +98,140 @@ export function OfflineRecapPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Báo cáo Offline Recap"
-        description="Tóm tắt thu nhập, chi phí, biến động cổ phiếu và sự kiện trong thời gian bạn offline."
+        title="Offline & Báo cáo"
+        description="Cấu hình xử lý khi bạn vắng mặt (bù tiến trình có giới hạn, tự nhận phúc lợi, tự trả hóa đơn/nợ) và xem recap khi quay lại."
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Thu nhập" value={formatMoney(income)} tone="positive" />
-        <StatCard label="Chi phí" value={formatMoney(expense)} tone="negative" />
-        <StatCard
-          label="Dòng tiền ròng"
-          value={formatMoney(income - expense)}
-          tone={income >= expense ? 'positive' : 'negative'}
-        />
-        <StatCard label="Số tick offline" value={offlineTicks} />
-      </div>
+      {message ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">{message}</div>
+      ) : null}
 
-      <div className="grid gap-4">
-        {/* Biến động giá trong khi offline */}
-        <Panel title="Biến động giá chứng khoán" borderColor="emerald">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200 text-[10px] uppercase text-slate-500">
-                  <th className="text-left pb-2">Mã</th>
-                  <th className="text-left pb-2">Công ty</th>
-                  <th className="text-right pb-2">Giá hiện tại</th>
-                  <th className="text-right pb-2">Thay đổi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {(tickers ?? []).map((ticker) => (
-                  <tr key={ticker.id} className="hover:bg-slate-50/50">
-                    <td className="pb-2 font-mono font-semibold">{ticker.symbol}</td>
-                    <td className="pb-2 text-slate-600">{ticker.companyName}</td>
-                    <td className="pb-2 text-right font-mono text-emerald-700">
-                      {formatMoney(ticker.currentPrice.amount)}
-                    </td>
-                    <td className="pb-2 text-right font-mono">
-                      <span
-                        className={`${ticker.change24hPct >= 0 ? 'text-emerald-600' : 'text-rose-600'} font-semibold`}
-                      >
-                        {ticker.change24hPct >= 0 ? '+' : ''}
-                        {ticker.change24hPct.toFixed(2)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Panel title="Cài đặt offline của bạn" borderColor="emerald">
+          <div className="space-y-3 text-sm">
+            <p className="text-xs text-slate-600">Các tùy chọn này áp dụng theo chính sách hệ thống do admin cấu hình (giới hạn thời gian bù, cho phép tác vụ tự động).</p>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!form.offlineProcessingEnabled}
+                onChange={(e) => setForm((f) => ({ ...f, offlineProcessingEnabled: e.target.checked }))}
+              />
+              Bật xử lý khi tôi offline
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!form.catchupEnabled}
+                onChange={(e) => setForm((f) => ({ ...f, catchupEnabled: e.target.checked }))}
+              />
+              Bù tiến trình/mô phỏng thời gian offline (trong giới hạn)
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!form.autoClaimWelfare}
+                onChange={(e) => setForm((f) => ({ ...f, autoClaimWelfare: e.target.checked }))}
+              />
+              Tự nhận phúc lợi/lợi ích định kỳ đủ điều kiện
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!form.autoPay}
+                onChange={(e) => setForm((f) => ({ ...f, autoPay: e.target.checked }))}
+              />
+              Tự trả hóa đơn/thuế/khoản vay đến hạn (khi đủ tiền)
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!form.showRecapOnLogin}
+                onChange={(e) => setForm((f) => ({ ...f, showRecapOnLogin: e.target.checked }))}
+              />
+              Hiển thị/ghi nhận recap khi quay lại
+            </label>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600 space-y-1">
+              <div>Mốc xử lý gần nhất: <b>{fmtDate(settingsQ.data?.lastOfflineProcessedAt)}</b></div>
+              <div>Một số tác vụ có thể bị bỏ qua nếu chính sách admin tắt hoặc không đủ điều kiện/tiền.</div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => saveSettings.mutate(form)}
+                disabled={saveSettings.isPending}
+                className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {saveSettings.isPending ? 'Đang lưu...' : 'Lưu cài đặt'}
+              </button>
+              <button
+                type="button"
+                onClick={() => process.mutate()}
+                disabled={process.isPending}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {process.isPending ? 'Đang xử lý...' : 'Xử lý offline ngay & cập nhật recap'}
+              </button>
+            </div>
           </div>
         </Panel>
 
-        {/* Sự kiện trong khi offline */}
-        <Panel title="Sự kiện trong thời gian offline" borderColor="default">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-slate-50/50">
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-slate-800">Không có sự kiện mới</div>
-                <div className="mt-1 text-xs text-slate-500">
-                  Hệ thống sẽ ghi nhận tin tức, cảnh báo nợ và pháp lý tại đây.
-                </div>
+        <Panel title="Tóm tắt lần xử lý gần nhất" borderColor="default">
+          {!recap ? (
+            <div className="text-sm text-slate-600">Chưa có bản recap. Khi bạn quay lại sau thời gian offline, hệ thống sẽ tạo tóm tắt tại đây (hoặc bấm "Xử lý offline ngay").</div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <StatCard label="Thu nhập" value={formatMoney(income)} tone="positive" />
+                <StatCard label="Chi phí" value={formatMoney(expense)} tone="negative" />
+                <StatCard label="Dòng tiền ròng" value={formatMoney(net)} tone={net >= 0 ? 'positive' : 'negative'} />
               </div>
-              <Badge variant="default">Bình thường</Badge>
+              <div className="text-xs text-slate-600 space-y-1">
+                <div>Từ: <b>{fmtDate(recap.from)}</b></div>
+                <div>Đến: <b>{fmtDate(recap.to)}</b></div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {summaryBadges.map((b) => (
+                  <span key={b.label} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700">
+                    <span className="text-slate-500">{b.label}:</span> <b>{b.value}</b>
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
-        </Panel>
-
-        {/* Tóm tắt tài sản */}
-        <Panel title="Tóm tắt tài sản" borderColor="default">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="p-2 rounded-lg border border-slate-200 bg-slate-50/50">
-              <div className="text-[10px] uppercase text-slate-500">Tiền mặt (ví)</div>
-              <div className="font-mono text-slate-800">{formatMoney(500_000)}</div>
-            </div>
-            <div className="p-2 rounded-lg border border-slate-200 bg-slate-50/50">
-              <div className="text-[10px] uppercase text-slate-500">Tiết kiệm</div>
-              <div className="font-mono text-slate-800">{formatMoney(0)}</div>
-            </div>
-            <div className="p-2 rounded-lg border border-slate-200 bg-slate-50/50">
-              <div className="text-[10px] uppercase text-slate-500">Tổng nợ</div>
-              <div className="font-mono text-slate-800 text-rose-600">{formatMoney(0)}</div>
-            </div>
-            <div className="p-2 rounded-lg border border-slate-200 bg-slate-50/50">
-              <div className="text-[10px] uppercase text-slate-500">Tài sản ròng</div>
-              <div className="font-mono text-emerald-700">{formatMoney(500_000)}</div>
-            </div>
-          </div>
-          <p className="mt-2 text-[10px] text-slate-500">
-            Số liệu được tổng hợp từ các tick worker khi bạn offline. Chi tiết chi tiêu và thu nhập
-            sẽ được nối vào nhật ký hành động sau này.
-          </p>
+          )}
         </Panel>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[10px] text-slate-500">
-        <strong>Lưu ý:</strong> Tính năng Offline Recap đang ở bản démontrasi. Dòng tiền, tick
-        worker và nhật ký sự kiện sẽ được kết nối hoàn chỉnh trong đợt phát triển kế tiếp.
+      <Panel title="Sự kiện & thay đổi trong thời gian offline" borderColor="default">
+        {events.length === 0 ? (
+          <div className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-slate-50/50">
+            <div>
+              <div className="font-semibold text-slate-800">Chưa có sự kiện</div>
+              <div className="mt-1 text-xs text-slate-500">Các khoản tự nhận phúc lợi, tự trả hóa đơn/nợ và ghi nhận bù tiến trình sẽ hiển thị tại đây.</div>
+            </div>
+            <Badge variant="default">Bình thường</Badge>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {events.map((ev, i) => (
+              <div key={`${ev.type}-${i}`} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/50 p-2">
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{ev.type}</div>
+                  <div className="text-sm text-slate-800">{ev.message}</div>
+                </div>
+                <Badge variant={ev.type === 'tax' || ev.type === 'loan' ? 'warning' : ev.type === 'welfare' ? 'success' : 'default'}>
+                  {ev.type === 'tax' ? 'Thuế' : ev.type === 'loan' ? 'Khoản vay' : ev.type === 'welfare' ? 'Phúc lợi' : 'Thông tin'}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+        <div><b>Lưu ý:</b> Hệ thống xử lý offline theo <b>chính sách admin</b> và cài đặt cá nhân (giới hạn thời gian bù, cho phép tác vụ tự động).</div>
+        <div>Hiện hỗ trợ: ghi nhận khoảng offline có giới hạn, tự nhận phúc lợi đủ điều kiện (idempotent), và tự trả thuế/khoản vay đến hạn (best-effort, khi đủ tiền). Không mô phỏng lại toàn bộ tick thế giới.</div>
       </div>
     </div>
   );

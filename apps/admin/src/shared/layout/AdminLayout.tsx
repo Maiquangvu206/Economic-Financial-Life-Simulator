@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: '/calendar-seasons', label: 'Mùa & Lịch nghỉ Công nhân', icon: '🗓️' },
   { to: '/education-config', label: 'Giáo dục & Đại học', icon: '🎓' },
   { to: '/politics', label: 'Chính trị & Bầu cử', icon: '🗳️' },
+  { to: '/offline', label: 'Cấu hình Offline', icon: '🌙' },
   { to: '/map-editor', label: 'Map Editor', icon: '🗺️' },
   { to: '/players', label: 'Người chơi', icon: '👥' },
   { to: '/ai-events', label: 'AI & Sự kiện', icon: '🤖' },

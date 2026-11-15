@@ -27,6 +27,7 @@ const ACTION_LABELS: Record<string, string> = {
   'admin.account.set_role': 'Thay đổi quyền tài khoản',
   'admin.sweep.trigger': 'Kích hoạt Đại án Công an',
   'ai.sweep.evaluate': 'AI đánh giá/kích hoạt Đại án',
+  'admin.offline_policy.update': 'Cập nhật chính sách Offline',
 };
 
 function fmtDate(iso: string) {
@@ -90,6 +91,16 @@ function summarize(action: string, detail: Record<string, unknown> | null | unde
         : `Nhân vật ${shortId(d.characterId as string)} · heat ${d.triggerHeat ?? '—'} · phạt ${fmtValue(d.fineMinor)} ₫${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
     case 'ai.sweep.evaluate':
       return `${pick('trigger') ?? 'auto'} · ${pick('action') ?? pick('scope') ?? '—'} · phạm vi ${pick('scope') ?? '—'} · ảnh hưởng ${d.affected ?? 0}${d.rationale ? ` · ${fmtValue(d.rationale)}` : ''}`;
+    case 'admin.offline_policy.update': {
+      const parts = [
+        d.enabled != null ? `hệ thống ${d.enabled ? 'bật' : 'tắt'}` : null,
+        d.maxOfflineMinutes != null ? `giới hạn ${d.maxOfflineMinutes} phút` : null,
+        d.allowCatchup != null ? `bù tiến trình ${d.allowCatchup ? 'cho phép' : 'chặn'}` : null,
+        d.allowAutoClaimWelfare != null ? `tự nhận phúc lợi ${d.allowAutoClaimWelfare ? 'cho phép' : 'chặn'}` : null,
+        d.allowAutoPay != null ? `tự trả nợ/thuế ${d.allowAutoPay ? 'cho phép' : 'chặn'}` : null,
+      ].filter(Boolean);
+      return parts.length ? parts.join(' · ') : 'Cập nhật cấu hình offline toàn hệ thống';
+    }
     default: {
       const entries = Object.entries(d).filter(([, v]) => v != null && v !== '').slice(0, 3);
       if (!entries.length) return '—';

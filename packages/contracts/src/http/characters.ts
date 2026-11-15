@@ -83,20 +83,3 @@ export const UpdateLocationRequestSchema = z.object({
   y: z.number().int().min(0),
 });
 export type UpdateLocationRequest = z.infer<typeof UpdateLocationRequestSchema>;
-
-export const OfflineRecapDtoSchema = z.object({
-  characterId: IdSchema,
-  from: z.string().datetime(),
-  to: z.string().datetime(),
-  income: MoneySchema,
-  expenses: MoneySchema,
-  netCashFlow: MoneySchema,
-  stockMovements: z.array(
-    z.object({
-      ticker: z.string(),
-      changePct: z.number(),
-    }),
-  ),
-  events: z.array(z.object({ type: z.string(), message: z.string() })),
-});
-export type OfflineRecapDto = z.infer<typeof OfflineRecapDtoSchema>;

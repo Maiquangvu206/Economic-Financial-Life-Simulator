@@ -7,6 +7,7 @@ import { AuditLogsPage } from '../pages/AuditLogsPage';
 import { EducationConfigPage } from '../pages/EducationConfigPage';
 import { MacroDashboardPage } from '../pages/MacroDashboardPage';
 import { MapEditorPage } from '../pages/MapEditorPage';
+import { OfflinePolicyPage } from '../pages/OfflinePolicyPage';
 import { PlayersPage } from '../pages/PlayersPage';
 import { PoliticsConfigPage } from '../pages/PoliticsConfigPage';
 import { SeasonCalendarPage } from '../pages/SeasonCalendarPage';
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
           { path: 'calendar-seasons', element: <SeasonCalendarPage /> },
           { path: 'education-config', element: <EducationConfigPage /> },
           { path: 'politics', element: <PoliticsConfigPage /> },
+          { path: 'offline', element: <OfflinePolicyPage /> },
           { path: 'audit-logs', element: <AuditLogsPage /> },
           { path: 'players', element: <PlayersPage /> },
           { path: 'map-editor', element: <MapEditorPage /> },

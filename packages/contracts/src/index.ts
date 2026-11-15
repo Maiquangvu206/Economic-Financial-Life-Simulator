@@ -35,6 +35,7 @@ export * from './http/game.js';
 export * from './http/admin.js';
 export * from './http/welfare.js';
 export * from './http/gift-codes.js';
+export * from './http/offline.js';
 export * from './http/ai.js';
 export * from './realtime/rooms.js';
 export * from './realtime/events.js';
