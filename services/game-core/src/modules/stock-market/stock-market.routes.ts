@@ -20,7 +20,6 @@ stockMarketRouter.post(
   validateBody(PlaceOrderRequestSchema),
   asyncHandler(controller.placeOrder),
 );
-stockMarketRouter.delete('/orders/:orderId', asyncHandler(controller.cancelOrder));
 stockMarketRouter.get('/portfolio', asyncHandler(controller.getPortfolio));
 stockMarketRouter.get('/trades', asyncHandler(controller.getTrades));
 stockMarketRouter.post('/tick-hour', asyncHandler(controller.tickHourly));

@@ -30,8 +30,8 @@ export class StockMarketController {
 
   placeOrder = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
-    const { tickerId, side, price, amount } = req.body as PlaceOrderRequest;
-    const result = await this.service.placeOrder(userId, tickerId, side, price.amount, amount);
+    const { tickerId, side, amount } = req.body as PlaceOrderRequest;
+    const result = await this.service.placeOrder(userId, tickerId, side, amount);
     res.status(201).json(result);
   };
 
@@ -39,13 +39,6 @@ export class StockMarketController {
     const body = (req.body ?? {}) as { gameYear?: number; gameMonth?: number; gameDay?: number; gameHour?: number };
     const result = await this.service.tickHourlyPrices(body);
     res.status(200).json(result);
-  };
-
-  cancelOrder = async (req: Request, res: Response): Promise<void> => {
-    const userId = requireActorId(req);
-    const { orderId } = req.params as { orderId: string };
-    await this.service.cancelOrder(userId, orderId);
-    res.status(204).end();
   };
 
   getPortfolio = async (req: Request, res: Response): Promise<void> => {

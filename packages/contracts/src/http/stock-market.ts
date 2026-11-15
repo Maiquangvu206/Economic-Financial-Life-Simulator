@@ -18,7 +18,7 @@ export type TickerDto = z.infer<typeof TickerDtoSchema>;
 export const PlaceOrderRequestSchema = z.object({
   tickerId: IdSchema,
   side: OrderSideSchema,
-  price: MoneySchema,
+  /** Số lượng cổ phiếu. Giá khớp = giá thị trường hiện tại tại thời điểm thực hiện (mua/bán ngay). */
   amount: z.number().int().positive(),
 });
 export type PlaceOrderRequest = z.infer<typeof PlaceOrderRequestSchema>;
@@ -59,6 +59,7 @@ export type HoldingDto = z.infer<typeof HoldingDtoSchema>;
 
 export const PortfolioDtoSchema = z.object({
   holdings: z.array(HoldingDtoSchema),
+  /** Không còn lệnh mở (mua/bán khớp ngay). Giữ để tương thích, luôn rỗng. */
   openOrders: z.array(OrderDtoSchema),
   totalMarketValue: MoneySchema,
   totalUnrealizedPnl: MoneySchema,
@@ -82,11 +83,21 @@ export const MarketSnapshotDtoSchema = z.object({
 });
 export type MarketSnapshotDto = z.infer<typeof MarketSnapshotDtoSchema>;
 
-export const MatchResultSchema = z.object({
+export const PlaceOrderResponseSchema = z.object({
+  ok: z.literal(true),
+  side: OrderSideSchema,
+  tickerId: IdSchema,
+  symbol: z.string(),
+  amount: z.number().int().positive(),
+  executedPrice: MoneySchema,
+  total: MoneySchema,
   trades: z.array(TradeDtoSchema),
-  filledAmount: z.number().int().nonnegative(),
-  remainingAmount: z.number().int().nonnegative(),
+  message: z.string(),
 });
+export type PlaceOrderResponse = z.infer<typeof PlaceOrderResponseSchema>;
+
+// Legacy alias
+export const MatchResultSchema = PlaceOrderResponseSchema;
 export type MatchResult = z.infer<typeof MatchResultSchema>;
 
 export const TakeoverRequestSchema = z
