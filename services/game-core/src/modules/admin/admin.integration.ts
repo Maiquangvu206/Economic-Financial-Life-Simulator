@@ -141,26 +141,136 @@ export async function adminPlayerAction(req: Request, res: Response): Promise<vo
   const characterId = req.params.id as string;
   const body = req.body as { action?: string; amount?: { amount: number }; note?: string };
   const action = body?.action;
-  if (!action || !['fine', 'ban', 'grant_aid', 'unban'].includes(action)) {
+  if (!action || !['fine', 'ban', 'grant_aid', 'unban', 'force_delete'].includes(action)) {
     throw AppError.badRequest('Hành động không hợp lệ.');
   }
-  const c = await pool.query(`SELECT id, user_id, full_name FROM characters WHERE id = $1`, [characterId]);
-  const ch = c.rows[0];
+
+  const c = await pool.query(
+    `SELECT c.id, c.user_id, c.full_name, u.email, u.username, u.role AS user_role
+     FROM characters c LEFT JOIN users u ON u.id = c.user_id WHERE c.id = $1`,
+    [characterId],
+  );
+  const ch = c.rows[0] as
+    | { id: string; user_id: string | null; full_name: string; email: string | null; username: string | null; user_role: string | null }
+    | undefined;
   if (!ch) throw AppError.notFound('Nhân vật');
+
+  if (action === 'force_delete') {
+    ensureSuperAdmin(req);
+    const note = (body?.note ?? '').trim();
+    if (!note) {
+      throw AppError.badRequest('Vui lòng cung cấp lý do/ghi chú khi cưỡng chế xóa tài khoản.');
+    }
+    if (ch.user_id && ch.user_id === req.actorId) {
+      throw AppError.badRequest('Bạn không thể cưỡng chế xóa tài khoản của chính mình.');
+    }
+    if (!ch.user_id) {
+      throw AppError.badRequest('Không thể xóa: nhân vật không gắn với tài khoản người dùng.');
+    }
+
+    await writeActionLog(pool as any, req.actorId, 'player.force_delete', {
+      characterId,
+      characterName: ch.full_name,
+      targetUserId: ch.user_id,
+      email: ch.email ?? null,
+      username: ch.username ?? null,
+      targetRole: ch.user_role ?? null,
+      note,
+    });
+
+    try {
+      await notify(pool as any, {
+        userId: ch.user_id,
+        kind: 'admin_action',
+        title: 'Tài khoản bị cưỡng chế xử lý',
+        body: 'Tài khoản của bạn đã bị quản trị viên cưỡng chế xóa do phát hiện bất thường. Phiên đăng nhập sẽ bị chấm dứt.',
+        payload: { action: 'force_delete', characterId, note },
+      });
+      await publishToUser(ch.user_id, 'notification', {
+        kind: 'admin_action',
+        title: 'Tài khoản bị cưỡng chế xử lý',
+        body: 'Tài khoản của bạn đã bị cưỡng chế xóa bởi quản trị viên.',
+        at: Date.now(),
+      });
+    } catch {
+      /* ignore */
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Gỡ tham chiếu chặn xóa (NO ACTION) nhưng giữ lịch sử giao dịch
+      await client.query(
+        `UPDATE stock_trades SET buyer_character_id = NULL WHERE buyer_character_id = $1`,
+        [characterId],
+      );
+      await client.query(
+        `UPDATE stock_trades SET seller_character_id = NULL WHERE seller_character_id = $1`,
+        [characterId],
+      );
+      // Xóa tài khoản người dùng (cascade: characters và các dữ liệu liên kết theo ràng buộc FK)
+      const del = await client.query(`DELETE FROM users WHERE id = $1 RETURNING id`, [ch.user_id]);
+      if (!del.rows[0]) {
+        throw AppError.notFound('Tài khoản người dùng');
+      }
+      await client.query('COMMIT');
+    } catch (e: any) {
+      await client.query('ROLLBACK');
+      if (e?.code === '23503') {
+        throw AppError.conflict(
+          'account_delete_blocked',
+          'Không thể xóa cưỡng chế do còn dữ liệu/ràng buộc liên kết chưa thể gỡ tự động. Vui lòng khóa (ban) tài khoản hoặc xử lý thủ công dữ liệu liên quan.',
+        );
+      }
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    res.json({ ok: true, action, characterId, userId: ch.user_id, deleted: true });
+    return;
+  }
 
   if (action === 'fine' || action === 'grant_aid') {
     const amountMinor = Number(body?.amount?.amount ?? 0);
     if (!Number.isFinite(amountMinor) || amountMinor <= 0) throw AppError.badRequest('Số tiền không hợp lệ.');
     const delta = action === 'fine' ? -amountMinor : amountMinor;
-    await pool.query(
-      `UPDATE characters SET cash_minor = GREATEST(0, cash_minor + $2), updated_at = now() WHERE id = $1`,
-      [characterId, delta],
-    );
-    await pool.query(
-      `UPDATE ledger_accounts SET balance_minor = balance_minor + $2, updated_at = now()
-       WHERE owner_type='character' AND owner_id=$1 AND kind='cash' AND currency='VND'`,
-      [characterId, delta],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const cur = await client.query<{ cash_minor: string }>(
+        `SELECT cash_minor FROM characters WHERE id = $1 FOR UPDATE`,
+        [characterId],
+      );
+      if (!cur.rows[0]) throw AppError.notFound('Nhân vật');
+      const before = Number(cur.rows[0].cash_minor ?? 0);
+      const after = Math.max(0, before + delta);
+      const actualDelta = after - before;
+
+      await client.query(
+        `INSERT INTO ledger_accounts (id, owner_type, owner_id, kind, balance_minor, is_system)
+         VALUES (gen_random_uuid(), 'character', $1, 'cash', $2, false)
+         ON CONFLICT (owner_type, owner_id, kind, currency) DO NOTHING`,
+        [characterId, before],
+      );
+      await client.query(
+        `UPDATE characters SET cash_minor = $2, updated_at = now() WHERE id = $1`,
+        [characterId, after],
+      );
+      await client.query(
+        `UPDATE ledger_accounts SET balance_minor = $2, updated_at = now()
+         WHERE owner_type='character' AND owner_id=$1 AND kind='cash' AND currency='VND'`,
+        [characterId, after],
+      );
+      await client.query('COMMIT');
+
+      body.amount = body.amount ? { amount: Math.abs(actualDelta) } : body.amount;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   if (ch.user_id && (action === 'ban' || action === 'unban')) {

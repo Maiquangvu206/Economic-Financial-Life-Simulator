@@ -52,6 +52,7 @@ export function PlayersPage() {
   const { data: players = [], isLoading, error, refetch } = useQuery<PlayerRow[]>({
     queryKey: ['admin', 'players', submitted],
     queryFn: () => adminRequest<PlayerRow[]>(`/api/v1/admin/players?q=${encodeURIComponent(submitted)}&limit=50`),
+    refetchInterval: 30000,
   });
 
   useEffect(() => {
@@ -67,23 +68,50 @@ export function PlayersPage() {
     setSubmitted(query.trim());
   }
 
-  async function doAction(id: string, action: 'fine' | 'ban' | 'grant_aid' | 'unban') {
+  async function doAction(id: string, action: 'fine' | 'ban' | 'grant_aid' | 'unban' | 'force_delete', label?: string) {
     let amount: number | undefined;
-    if (action === 'fine' || action === 'grant_aid') {
-      const raw = prompt('Nhập số tiền (₫):', '1000000');
-      if (raw == null) return;
-      amount = Math.max(0, Math.round(Number(raw)));
-      if (!amount) return;
+    let note = '';
+
+    if (action === 'force_delete') {
+      if (!isSuperAdmin) return;
+      const ok = confirm(
+        `CƯỠNG CHẾ XÓA tài khoản${label ? ` "${label}"` : ''}?\n\n` +
+          'Hành động này sẽ xóa vĩnh viễn tài khoản/người dùng và nhân vật liên quan (dữ liệu liên kết có thể bị xóa theo ràng buộc). ' +
+          'Chỉ dùng khi phát hiện bất thường nghiêm trọng. Không thể hoàn tác.\n\nBấm OK để tiếp tục.',
+      );
+      if (!ok) return;
+      note = (prompt('Nhập LÝ DO bắt buộc (ghi vào audit log):', '') ?? '').trim();
+      if (!note) {
+        setMsg('Đã hủy: cần nhập lý do để cưỡng chế xóa tài khoản.');
+        return;
+      }
+    } else {
+      if (action === 'fine' || action === 'grant_aid') {
+        const raw = prompt('Nhập số tiền (₫):', '1000000');
+        if (raw == null) return;
+        amount = Math.max(0, Math.round(Number(raw)));
+        if (!amount) return;
+      }
+      note = prompt('Ghi chú (tuỳ chọn):', '') ?? '';
     }
-    const note = prompt('Ghi chú (tuỳ chọn):', '') ?? '';
+
     setBusy(`${action}-${id}`);
     setMsg(null);
     try {
       await adminRequest(`/api/v1/admin/players/${id}/actions`, {
         method: 'POST',
-        body: JSON.stringify({ action, characterId: id, amount: amount != null ? { amount, currency: 'VND' } : undefined, note: note || undefined }),
+        body: JSON.stringify({
+          action,
+          characterId: id,
+          amount: amount != null ? { amount, currency: 'VND' } : undefined,
+          note: note || undefined,
+        }),
       });
-      setMsg('Đã thực hiện hành động và ghi nhật ký. Người chơi (nếu có tài khoản) sẽ nhận thông báo trong hộp thư.');
+      setMsg(
+        action === 'force_delete'
+          ? 'Đã cưỡng chế xóa tài khoản và ghi audit log.'
+          : 'Đã thực hiện hành động và ghi nhật ký. Người chơi (nếu có tài khoản) sẽ nhận thông báo trong hộp thư.',
+      );
       await refetch();
     } catch (err: any) {
       setMsg(err?.problem?.detail || err?.message || 'Thao tác thất bại.');

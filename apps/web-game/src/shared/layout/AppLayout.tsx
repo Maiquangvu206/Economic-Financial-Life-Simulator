@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CharacterDto, NotificationDto } from '@efls/contracts';
+import type { CharacterDto, NotificationDto, OfflinePlayerSettingsDto, OfflineProcessResponse } from '@efls/contracts';
 import { useSessionStore } from '../../features/auth/sessionStore';
 import { ChatWidget } from '../../features/chat/ChatWidget';
 import { useGameStore } from '../../store/game';
@@ -67,6 +67,7 @@ function fmtDate(iso: string) {
 
 export function AppLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useSessionStore((state) => state.user);
   const clearSession = useSessionStore((state) => state.clearSession);
   const {
@@ -77,6 +78,7 @@ export function AppLayout() {
   const queryClient = useQueryClient();
   const [notifOpen, setNotifOpen] = useState(false);
   const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<string[]>([]);
+  const [offlineChecked, setOfflineChecked] = useState(false);
 
   const { data: me } = useQuery<CharacterDto>({
     queryKey: ['characters', 'me'],
@@ -121,6 +123,42 @@ export function AppLayout() {
   useEffect(() => {
     if (gameConfig?.season) setSeason(gameConfig.season);
   }, [gameConfig?.season, setSeason]);
+
+  // Xử lý offline khi quay lại (một lần mỗi phiên tải app): cập nhật mốc/recap và hiển thị nếu được bật
+  useEffect(() => {
+    if (!me || offlineChecked) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [settings, result] = await Promise.all([
+          apiRequest<OfflinePlayerSettingsDto>('/api/v1/offline/settings'),
+          apiRequest<OfflineProcessResponse>('/api/v1/offline/process', { method: 'POST' }),
+        ]);
+        if (cancelled) return;
+        void queryClient.invalidateQueries({ queryKey: ['offline'] });
+        void queryClient.invalidateQueries({ queryKey: ['characters', 'me'] });
+        const hasRecap = !!result.recap;
+        const meaningful = !!result.processed || (result.recap?.events ?? []).some((e) => e.type !== 'info');
+        if (settings.showRecapOnLogin && hasRecap && meaningful && location.pathname !== '/recap') {
+          toast({
+            title: 'Báo cáo offline',
+            description: result.message || 'Đã xử lý thời gian bạn vắng mặt. Mở trang Recap để xem chi tiết.',
+            variant: 'info',
+          });
+          navigate('/recap');
+        } else if (meaningful && result.message) {
+          toast({ title: 'Đã xử lý offline', description: result.message, variant: 'info' });
+        }
+      } catch {
+        // best-effort: không chặn trải nghiệm nếu offline API chưa sẵn sàng
+      } finally {
+        if (!cancelled) setOfflineChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [me, offlineChecked, queryClient, navigate, location.pathname]);
 
   // Nhận thông báo realtime (broadcast/can thiệp admin/sự kiện vĩ mô) -> làm mới dữ liệu và hiển thị toast
   useEffect(() => {

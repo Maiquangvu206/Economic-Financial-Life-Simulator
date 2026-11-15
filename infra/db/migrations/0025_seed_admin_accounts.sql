@@ -1,8 +1,7 @@
 -- Seed default Admin and Moderator accounts for development and testing.
+-- Idempotent and safe for migrate.sh (tracking handled by runner).
 -- Password for both accounts is: Admin1234!
 -- Hash generated with bcryptjs cost 12.
-
-BEGIN;
 
 -- Admin account
 INSERT INTO users (id, email, username, password_hash, role)
@@ -13,12 +12,16 @@ VALUES (
   '$2a$12$jUwJe/AR/Qk0D8MuhsCq.OXBSyCC3tEMgSiFYkx0ZHgz.cU5zyJCq',
   'admin'
 )
-ON CONFLICT (lower(email)) DO UPDATE
-  SET role = 'admin', password_hash = EXCLUDED.password_hash;
+ON CONFLICT (id) DO UPDATE
+  SET email = EXCLUDED.email,
+      username = EXCLUDED.username,
+      role = 'admin',
+      password_hash = EXCLUDED.password_hash,
+      updated_at = now();
 
 INSERT INTO characters (
   id, user_id, full_name, age, health_energy, cash_minor, credit_score, heat_level,
-  marital_status, location_x, location_y, cccd, birthplace
+  marital_status, location_x, location_y, cccd, birthplace, account_number, is_alive
 )
 VALUES (
   '00000000-0000-4000-8000-0000000000c2',
@@ -33,9 +36,18 @@ VALUES (
   10,
   5,
   '001000000001',
-  '001'
+  '001',
+  '900000000001',
+  true
 )
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO UPDATE
+  SET user_id = EXCLUDED.user_id,
+      full_name = EXCLUDED.full_name,
+      cccd = EXCLUDED.cccd,
+      birthplace = EXCLUDED.birthplace,
+      account_number = EXCLUDED.account_number,
+      is_alive = true,
+      updated_at = now();
 
 -- Moderator account
 INSERT INTO users (id, email, username, password_hash, role)
@@ -46,12 +58,16 @@ VALUES (
   '$2a$12$jUwJe/AR/Qk0D8MuhsCq.OXBSyCC3tEMgSiFYkx0ZHgz.cU5zyJCq',
   'moderator'
 )
-ON CONFLICT (lower(email)) DO UPDATE
-  SET role = 'moderator', password_hash = EXCLUDED.password_hash;
+ON CONFLICT (id) DO UPDATE
+  SET email = EXCLUDED.email,
+      username = EXCLUDED.username,
+      role = 'moderator',
+      password_hash = EXCLUDED.password_hash,
+      updated_at = now();
 
 INSERT INTO characters (
   id, user_id, full_name, age, health_energy, cash_minor, credit_score, heat_level,
-  marital_status, location_x, location_y, cccd, birthplace
+  marital_status, location_x, location_y, cccd, birthplace, account_number, is_alive
 )
 VALUES (
   '00000000-0000-4000-8000-0000000000c3',
@@ -66,12 +82,16 @@ VALUES (
   10,
   5,
   '001000000002',
-  '001'
+  '001',
+  '900000000002',
+  true
 )
-ON CONFLICT DO NOTHING;
-
-INSERT INTO schema_migrations (filename) VALUES ('0025_seed_admin_accounts.sql')
-ON CONFLICT (filename) DO NOTHING;
-
-COMMIT;
+ON CONFLICT (id) DO UPDATE
+  SET user_id = EXCLUDED.user_id,
+      full_name = EXCLUDED.full_name,
+      cccd = EXCLUDED.cccd,
+      birthplace = EXCLUDED.birthplace,
+      account_number = EXCLUDED.account_number,
+      is_alive = true,
+      updated_at = now();
 

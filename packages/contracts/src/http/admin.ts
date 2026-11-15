@@ -33,7 +33,7 @@ export const TriggerMacroEventRequestSchema = z.object({
 export type TriggerMacroEventRequest = z.infer<typeof TriggerMacroEventRequestSchema>;
 
 export const AdminPlayerActionRequestSchema = z.object({
-  action: z.enum(['fine', 'ban', 'grant_aid', 'unban']),
+  action: z.enum(['fine', 'ban', 'grant_aid', 'unban', 'force_delete']),
   characterId: IdSchema,
   amount: MoneySchema.optional(),
   note: z.string().max(500).optional(),

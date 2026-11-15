@@ -19,6 +19,7 @@ const ACTION_LABELS: Record<string, string> = {
   'player.grant_aid': 'Cứu trợ người chơi',
   'player.ban': 'Khóa tài khoản',
   'player.unban': 'Mở khóa tài khoản',
+  'player.force_delete': 'Cưỡng chế xóa tài khoản',
   'gift_code.create': 'Tạo mã quà tặng',
   'gift_code.update': 'Cập nhật mã quà tặng',
   'gift_code.delete': 'Xóa mã quà tặng',
@@ -67,6 +68,8 @@ function summarize(action: string, detail: Record<string, unknown> | null | unde
       return `Khóa tài khoản ${d.characterName ?? shortId(d.characterId as string)}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
     case 'player.unban':
       return `Mở khóa ${d.characterName ?? shortId(d.characterId as string)}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
+    case 'player.force_delete':
+      return `Cưỡng chế xóa ${d.characterName ?? shortId(d.characterId as string)}${d.username || d.email ? ` · ${fmtValue(d.username ?? d.email)}` : ''}${d.note ? ` · Lý do: ${fmtValue(d.note)}` : ''}`;
     case 'broadcast.create':
       return `${pick('title') ?? 'Thông báo'}${d.type ? ` · ${fmtValue(d.type)}` : ''}${d.scope ? ` · ${fmtValue(d.scope)}` : ''}${d.pinned ? ' · ghim' : ''}`;
     case 'broadcast.delete':
@@ -117,6 +120,7 @@ export function AuditLogsPage() {
   const { data: logs = [], isLoading, error, refetch } = useQuery<AuditLogItem[]>({
     queryKey: ['admin', 'audit-logs'],
     queryFn: () => adminRequest<AuditLogItem[]>('/api/v1/admin/audit-logs?limit=200'),
+    refetchInterval: 30000,
   });
 
   const actions = useMemo(() => Array.from(new Set(logs.map((l) => l.action))).sort(), [logs]);
