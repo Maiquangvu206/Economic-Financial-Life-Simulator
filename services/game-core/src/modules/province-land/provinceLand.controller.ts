@@ -21,6 +21,21 @@ export class ProvinceLandController {
     );
     res.status(200).json({ provinceCode, properties });
   };
+
+  makeOffer = async (req: Request, res: Response): Promise<void> => {
+    const provinceCode = String(req.query.province ?? req.body?.provinceCode ?? '001');
+    const body = req.body as { propertyId: string; amount?: { amount?: number } | number; message?: string };
+    const amountMinor = typeof body.amount === 'number' ? body.amount : Number(body.amount?.amount ?? 0);
+    const offer = await provinceLandService.makeOffer(req.actorId!, provinceCode, body.propertyId, Math.round(amountMinor), body.message);
+    res.status(201).json(offer);
+  };
+
+  respondOffer = async (req: Request, res: Response): Promise<void> => {
+    const provinceCode = String(req.query.province ?? req.body?.provinceCode ?? '001');
+    const body = req.body as { offerId: string; action: 'accept' | 'reject' | 'cancel' };
+    const properties = await provinceLandService.respondOffer(req.actorId!, provinceCode, body.offerId, body.action);
+    res.status(200).json({ provinceCode, properties });
+  };
 }
 
 export const provinceLandController = new ProvinceLandController();

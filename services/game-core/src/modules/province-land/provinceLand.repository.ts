@@ -26,6 +26,21 @@ export interface ProvinceLandPropertyRow {
   updatedAt: Date;
 }
 
+export interface ProvinceLandPurchaseOfferRow {
+  id: string;
+  propertyId: string;
+  provinceCode: string;
+  buyerCharacterId: string;
+  buyerName: string | null;
+  sellerCharacterId: string;
+  amountMinor: string;
+  status: string;
+  message: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  resolvedAt: Date | null;
+}
+
 export class ProvinceLandRepository {
   constructor(readonly db: Db = pool) {}
 
@@ -146,6 +161,114 @@ export class ProvinceLandRepository {
         [input.primaryId, input.mergeGroupId, input.optionId, input.label, input.tier, input.memberIds],
       );
     }
+  }
+
+  async listOffersByPropertyIds(db: Db, propertyIds: string[]): Promise<ProvinceLandPurchaseOfferRow[]> {
+    if (propertyIds.length === 0) return [];
+    const r = await db.query<ProvinceLandPurchaseOfferRow>(
+      `SELECT o.id, o.property_id AS "propertyId", o.province_code AS "provinceCode",
+              o.buyer_character_id AS "buyerCharacterId", c.full_name AS "buyerName",
+              o.seller_character_id AS "sellerCharacterId",
+              o.amount_minor AS "amountMinor", o.status, o.message,
+              o.created_at AS "createdAt", o.updated_at AS "updatedAt", o.resolved_at AS "resolvedAt"
+       FROM province_land_purchase_offers o
+       LEFT JOIN characters c ON c.id = o.buyer_character_id
+       WHERE o.property_id = ANY($1::uuid[]) AND o.status = 'pending'
+       ORDER BY o.created_at DESC`,
+      [propertyIds],
+    );
+    return r.rows;
+  }
+
+  async createOffer(db: Db, input: {
+    propertyId: string;
+    provinceCode: string;
+    buyerCharacterId: string;
+    sellerCharacterId: string;
+    amountMinor: number;
+    message: string | null;
+  }): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO province_land_purchase_offers (property_id, province_code, buyer_character_id, seller_character_id, amount_minor, status, message)
+       VALUES ($1,$2,$3,$4,$5,'pending',$6) RETURNING id`,
+      [input.propertyId, input.provinceCode, input.buyerCharacterId, input.sellerCharacterId, input.amountMinor, input.message],
+    );
+    return r.rows[0]!.id;
+  }
+
+  async findOfferById(db: Db, offerId: string): Promise<ProvinceLandPurchaseOfferRow | null> {
+    const r = await db.query<ProvinceLandPurchaseOfferRow>(
+      `SELECT o.id, o.property_id AS "propertyId", o.province_code AS "provinceCode",
+              o.buyer_character_id AS "buyerCharacterId", c.full_name AS "buyerName",
+              o.seller_character_id AS "sellerCharacterId",
+              o.amount_minor AS "amountMinor", o.status, o.message,
+              o.created_at AS "createdAt", o.updated_at AS "updatedAt", o.resolved_at AS "resolvedAt"
+       FROM province_land_purchase_offers o
+       LEFT JOIN characters c ON c.id = o.buyer_character_id
+       WHERE o.id = $1`,
+      [offerId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async resolveOffer(db: Db, offerId: string, status: 'accepted'|'rejected'|'cancelled'|'expired'): Promise<void> {
+    await db.query(
+      `UPDATE province_land_purchase_offers SET status = $2, resolved_at = now(), updated_at = now() WHERE id = $1`,
+      [offerId, status],
+    );
+  }
+
+  async rejectOtherPendingOffers(db: Db, propertyId: string, exceptOfferId: string): Promise<void> {
+    await db.query(
+      `UPDATE province_land_purchase_offers SET status = 'rejected', resolved_at = now(), updated_at = now()
+       WHERE property_id = $1 AND id <> $2 AND status = 'pending'`,
+      [propertyId, exceptOfferId],
+    );
+  }
+
+  async getTransferGroupPropertyIds(db: Db, propertyId: string): Promise<string[]> {
+    const info = await db.query<{ id: string; mergeGroupId: string | null; mergedIntoPropertyId: string | null }>(
+      `SELECT id, merge_group_id AS "mergeGroupId", merged_into_property_id AS "mergedIntoPropertyId"
+       FROM province_land_properties WHERE id = $1`,
+      [propertyId],
+    );
+    const row = info.rows[0];
+    if (!row) return [];
+    let groupId: string | null = row.mergeGroupId;
+    if (!groupId && row.mergedIntoPropertyId) {
+      const parent = await db.query<{ mergeGroupId: string | null }>(
+        `SELECT merge_group_id AS "mergeGroupId" FROM province_land_properties WHERE id = $1`,
+        [row.mergedIntoPropertyId],
+      );
+      groupId = parent.rows[0]?.mergeGroupId ?? null;
+    }
+    if (!groupId) return [propertyId];
+    const r = await db.query<{ id: string }>(
+      `SELECT id FROM province_land_properties WHERE merge_group_id = $1`,
+      [groupId],
+    );
+    return r.rows.map((x) => x.id);
+  }
+
+  async transferOwnership(db: Db, propertyId: string, buyerCharacterId: string): Promise<string[]> {
+    const ids = await this.getTransferGroupPropertyIds(db, propertyId);
+    if (ids.length === 0) return [];
+    await db.query(
+      `UPDATE province_land_properties
+       SET owner_character_id = $2, status = 'owned', updated_at = now()
+       WHERE id = ANY($1::uuid[])`,
+      [ids, buyerCharacterId],
+    );
+    return ids;
+  }
+
+  async rejectPendingOffersForProperties(db: Db, propertyIds: string[], exceptOfferId: string): Promise<void> {
+    if (propertyIds.length === 0) return;
+    await db.query(
+      `UPDATE province_land_purchase_offers SET status = 'rejected', resolved_at = now(), updated_at = now()
+       WHERE property_id = ANY($1::uuid[]) AND id <> $2 AND status = 'pending'`,
+      [propertyIds, exceptOfferId],
+    );
   }
 }
 

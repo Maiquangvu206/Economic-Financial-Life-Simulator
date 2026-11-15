@@ -443,7 +443,7 @@ export class RealEstateService {
         referenceId: offer.propertyId,
       });
 
-      await this.repository.buy(client, offer.propertyId, offer.buyerCharacterId);
+      await this.repository.transferOwnership(client, offer.propertyId, offer.buyerCharacterId);
       await this.repository.resolveOffer(client, offerId, 'accepted');
       await this.repository.rejectOtherPendingOffers(client, offer.propertyId, offerId);
 

@@ -110,6 +110,19 @@ export function RealEstatePage() {
     [overview],
   );
 
+  // Thửa đất/công trình đã có chủ và đã xây dựng: cho phép đề xuất mua (không cần chờ rao bán/đấu giá)
+  const builtOfferable = useMemo(
+    () =>
+      overview?.properties.filter(
+        (p) =>
+          !p.isMine &&
+          !!p.ownerCharacterId &&
+          p.status !== 'auction' &&
+          !!(p.constructionOption || p.constructionBuiltAt),
+      ) ?? [],
+    [overview],
+  );
+
   const isBusy = (id: string) => loadingAction === id;
 
   async function runAction(id: string, fn: () => Promise<void>, success?: string) {
@@ -266,14 +279,54 @@ export function RealEstatePage() {
               </div>
               <div className="flex flex-col gap-2 shrink-0">
                 <GameButton variant="primary" size="sm" disabled={isBusy(p.id)} onClick={() => setBuyTarget(p)}>Mua</GameButton>
-                {p.status === 'listed' && p.ownerCharacterId && (
-                  <GameButton variant="outline" size="sm" onClick={() => openOffer(p)}>Gửi đề nghị giá</GameButton>
+                {p.ownerCharacterId && p.status !== 'auction' && (
+                  <GameButton variant="outline" size="sm" onClick={() => openOffer(p)}>
+                    {p.status === 'listed' ? 'Gửi đề nghị giá' : 'Đề xuất mua'}
+                  </GameButton>
                 )}
               </div>
             </div>
           )) : <div className="text-center py-4 text-xs text-slate-500">Không có bất động sản nào đang sẵn sàng mua.</div>}
         </div>
       </Panel>
+
+      {builtOfferable.length > 0 && (
+        <Panel title="Công trình đã xây dựng (có thể đề xuất mua)" borderColor="emerald">
+          <div className="space-y-3">
+            {builtOfferable.map((p) => (
+              <div key={`built-${p.id}`} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-800">{p.name}</span>
+                    <Badge variant="default">{propertyTypeLabel(p.propertyType)}</Badge>
+                    {statusBadge(p.status)}
+                    <Badge variant="success">Đã có công trình</Badge>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-600">Lô: {p.lotNumber || '—'} · Tỉnh/TP: {p.province || '—'} · ({p.location.x},{p.location.y}) · {p.zoneType}</div>
+                  <div className="mt-1 text-xs text-slate-600">Công trình: <span className="font-medium">{p.constructionLabel || p.constructionOption || '—'}</span></div>
+                  <div className="mt-2 flex flex-wrap items-baseline gap-2">
+                    <span className="font-mono text-lg font-bold text-emerald-700">{formatMoney(p.currentValue.amount)}</span>
+                    <span className="text-xs text-slate-500">Giá trị hiện tại (tham chiếu)</span>
+                  </div>
+                  {(p.offers ?? []).some((o) => o.isMine && o.status === 'pending') && (
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs items-center">
+                      <span className="text-amber-700">Bạn đã gửi đề xuất mua, chờ chủ sở hữu phản hồi.</span>
+                      {(p.offers ?? []).filter((o) => o.isMine && o.status === 'pending').map((o) => (
+                        <GameButton key={o.id} size="sm" variant="outline" disabled={isBusy(o.id)} onClick={() => runAction(o.id, () => apiRequest(`/api/v1/real-estate/offers/respond`, { method: 'POST', body: JSON.stringify({ offerId: o.id, action: 'cancel' }) }).then(()=>{}), 'Đã hủy đề xuất mua.')}>Hủy đề xuất</GameButton>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 shrink-0">
+                  {p.ownerCharacterId && p.status !== 'auction' && (
+                    <GameButton variant="outline" size="sm" onClick={() => openOffer(p)}>Đề xuất mua</GameButton>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
 
       <Panel title="Bảng giá cho thuê" borderColor="emerald">
         <div className="space-y-3">

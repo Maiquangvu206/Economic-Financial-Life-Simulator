@@ -1,18 +1,44 @@
 import crypto from 'node:crypto';
 import { CONSTRUCTION_OPTIONS, type OwnedCluster } from '@efls/domain';
-import { MoneySchema, type PropertyDto } from '@efls/contracts';
+import { MoneySchema, type PropertyDto, type PropertySaleOfferDto } from '@efls/contracts';
+import type { PoolClient } from 'pg';
 import { AppError } from '../../shared/http/errors.js';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_MARKET_ID } from '../../shared/ledger/ledger.service.js';
+import { notify } from '../notifications/notification.service.js';
 import { pool } from '../../shared/db/pool.js';
-import { provinceLandRepository, type ProvinceLandPropertyRow } from './provinceLand.repository.js';
+import { provinceLandRepository, type ProvinceLandPropertyRow, type ProvinceLandPurchaseOfferRow } from './provinceLand.repository.js';
 
 function money(amount: number) {
   return MoneySchema.parse({ amount, currency: 'VND' });
 }
 
-function toDto(row: ProvinceLandPropertyRow, viewerCharacterId: string): PropertyDto {
+async function notifyCharacter(db: PoolClient, characterId: string, input: { kind: string; title: string; body: string; payload?: Record<string, unknown> }) {
+  const user = await db.query<{ user_id: string }>(`SELECT user_id FROM characters WHERE id = $1`, [characterId]);
+  const userId = user.rows[0]?.user_id;
+  if (!userId) return;
+  await notify(db, { userId, kind: input.kind, title: input.title, body: input.body, payload: input.payload });
+}
+
+function offerDto(row: ProvinceLandPurchaseOfferRow, viewerCharacterId: string): PropertySaleOfferDto {
+  return {
+    id: row.id,
+    propertyId: row.propertyId,
+    buyerCharacterId: row.buyerCharacterId,
+    buyerName: row.buyerName,
+    sellerCharacterId: row.sellerCharacterId,
+    amount: money(Number(row.amountMinor)),
+    status: row.status as PropertySaleOfferDto['status'],
+    message: row.message,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
+    isMine: row.buyerCharacterId === viewerCharacterId || row.sellerCharacterId === viewerCharacterId,
+  };
+}
+
+function toDto(row: ProvinceLandPropertyRow, viewerCharacterId: string, offers: PropertySaleOfferDto[] = []): PropertyDto {
   return {
     id: row.id,
     nodeId: row.id, // synthetic for province tiles
@@ -36,7 +62,7 @@ function toDto(row: ProvinceLandPropertyRow, viewerCharacterId: string): Propert
     isMine: row.ownerCharacterId === viewerCharacterId,
     leasedByMe: false,
     activeLease: null,
-    offers: [],
+    offers,
     constructionOption: row.constructionOption,
     constructionLabel: row.constructionLabel,
     constructionTier: row.constructionTier as PropertyDto['constructionTier'],
@@ -54,7 +80,16 @@ export class ProvinceLandService {
   async listByProvince(userId: string, provinceCode: string): Promise<PropertyDto[]> {
     const character = await requireCharacterByUserId(pool, userId);
     const rows = await this.repo.listByProvince(provinceCode);
-    return rows.map((r) => toDto(r, character.id));
+    const ids = rows.map((r) => r.id);
+    const offers = await this.repo.listOffersByPropertyIds(pool, ids);
+    const offersByProp = new Map<string, PropertySaleOfferDto[]>();
+    for (const o of offers) {
+      if (o.buyerCharacterId !== character.id && o.sellerCharacterId !== character.id) continue;
+      const list = offersByProp.get(o.propertyId) ?? [];
+      list.push(offerDto(o, character.id));
+      offersByProp.set(o.propertyId, list);
+    }
+    return rows.map((r) => toDto(r, character.id, offersByProp.get(r.id) ?? []));
   }
 
   private getConstructionOption(optionId: string) {
@@ -176,6 +211,106 @@ export class ProvinceLandService {
         newPropertyType: this.constructionPropertyType(option.id),
         newCurrentValueMinor,
         newMonthlyRentMinor,
+      });
+
+      return this.listByProvince(userId, provinceCode);
+    });
+  }
+
+  async makeOffer(userId: string, provinceCode: string, propertyId: string, amountMinor: number, message?: string): Promise<PropertySaleOfferDto> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const rows = await this.repo.findByIds(client, [propertyId]);
+      const property = rows[0];
+      if (!property || property.provinceCode !== provinceCode) throw AppError.notFound('Property');
+      if (!property.ownerCharacterId) throw AppError.badRequest('Lô đất chưa có chủ sở hữu.');
+      if (property.ownerCharacterId === character.id) throw AppError.badRequest('Bạn không thể gửi đề nghị cho tài sản của mình.');
+      if (property.status === 'auction') throw AppError.badRequest('Lô đất đang đấu giá, không thể gửi đề nghị mua trực tiếp.');
+      if (!(property.constructionOption || property.constructionBuiltAt || property.mergedIntoPropertyId)) {
+        throw AppError.badRequest('Chỉ có thể đề xuất mua thửa đất/công trình đã được xây dựng.');
+      }
+      if (amountMinor <= 0) throw AppError.badRequest('Số tiền đề nghị không hợp lệ.');
+
+      const id = await this.repo.createOffer(client, {
+        propertyId,
+        provinceCode,
+        buyerCharacterId: character.id,
+        sellerCharacterId: property.ownerCharacterId,
+        amountMinor,
+        message: message?.trim() || null,
+      });
+      const offer = await this.repo.findOfferById(client, id);
+      if (!offer) throw new Error('Không tạo được đề nghị');
+
+      await notifyCharacter(client, property.ownerCharacterId, {
+        kind: 'real_estate',
+        title: 'Đề xuất mua đất/công trình',
+        body: `Có đề xuất ${amountMinor.toLocaleString('vi-VN')} ₫ cho ${property.constructionLabel || property.nodeName} (${provinceCode}).`,
+        payload: { propertyId, offerId: id, provinceCode, amountMinor },
+      });
+
+      return offerDto(offer, character.id);
+    });
+  }
+
+  async respondOffer(userId: string, provinceCode: string, offerId: string, action: 'accept' | 'reject' | 'cancel'): Promise<PropertyDto[]> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const offer = await this.repo.findOfferById(client, offerId);
+      if (!offer || offer.provinceCode !== provinceCode) throw AppError.notFound('Offer');
+      if (offer.status !== 'pending') throw AppError.badRequest('Đề nghị này đã được xử lý.');
+
+      const rows = await this.repo.findByIds(client, [offer.propertyId]);
+      const property = rows[0];
+      if (!property) throw AppError.notFound('Property');
+
+      if (action === 'cancel') {
+        if (offer.buyerCharacterId !== character.id) throw AppError.forbidden('Chỉ người mua mới có thể hủy đề nghị.');
+        await this.repo.resolveOffer(client, offerId, 'cancelled');
+        return this.listByProvince(userId, provinceCode);
+      }
+
+      if (offer.sellerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ sở hữu mới có thể chấp nhận hoặc từ chối đề nghị.');
+      }
+
+      if (action === 'reject') {
+        await this.repo.resolveOffer(client, offerId, 'rejected');
+        return this.listByProvince(userId, provinceCode);
+      }
+
+      // accept
+      const amount = Number(offer.amountMinor);
+      const buyerRow = await client.query<{ cash_minor: string }>(
+        `SELECT cash_minor FROM characters WHERE id = $1`,
+        [offer.buyerCharacterId],
+      );
+      const buyer = buyerRow.rows[0];
+      if (!buyer) throw AppError.notFound('Buyer');
+      const buyerCash = toMinor(buyer.cash_minor);
+      if (buyerCash < amount) {
+        throw AppError.conflict('insufficient_funds', `Người mua không đủ số dư để hoàn tất giao dịch (${amount.toLocaleString('vi-VN')} ₫).`);
+      }
+
+      await ledger.transfer(client, {
+        from: { ownerType: 'character', ownerId: offer.buyerCharacterId },
+        to: { ownerType: 'character', ownerId: offer.sellerCharacterId },
+        amountMinor: amount,
+        kind: 'property_sale',
+        description: `Mua đất/công trình ${property.constructionLabel || property.nodeName} (${provinceCode})`,
+        referenceType: 'province_land_property',
+        referenceId: offer.propertyId,
+      });
+
+      const transferredIds = await this.repo.transferOwnership(client, offer.propertyId, offer.buyerCharacterId);
+      await this.repo.resolveOffer(client, offerId, 'accepted');
+      await this.repo.rejectPendingOffersForProperties(client, transferredIds.length ? transferredIds : [offer.propertyId], offerId);
+
+      await notifyCharacter(client, offer.buyerCharacterId, {
+        kind: 'real_estate',
+        title: 'Đề xuất mua được chấp nhận',
+        body: `Bạn đã mua ${property.constructionLabel || property.nodeName} (${provinceCode}) với giá ${amount.toLocaleString('vi-VN')} ₫.`,
+        payload: { propertyId: offer.propertyId, offerId, provinceCode, amountMinor: amount },
       });
 
       return this.listByProvince(userId, provinceCode);

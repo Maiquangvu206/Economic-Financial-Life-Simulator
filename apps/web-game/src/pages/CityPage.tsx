@@ -180,6 +180,8 @@ export function CityPage() {
     setPurchaseOk(null);
     setConstructError(null);
     setConstructOk(null);
+    setOfferError(null);
+    setOfferOk(null);
     if (!mapData) return;
     const node = mapData.nodes.find((n) => n.x === col && n.y === row);
     let property = node ? mapData.properties.find((p: any) => p.nodeId === node.id) : undefined;
@@ -224,6 +226,12 @@ export function CityPage() {
   const [constructError, setConstructError] = useState<string | null>(null);
   const [constructOk, setConstructOk] = useState<string | null>(null);
 
+  const [offerAmount, setOfferAmount] = useState('');
+  const [offerMsg, setOfferMsg] = useState('');
+  const [offerLoading, setOfferLoading] = useState(false);
+  const [offerError, setOfferError] = useState<string | null>(null);
+  const [offerOk, setOfferOk] = useState<string | null>(null);
+
   function isConnectedCells(cells: Array<{ x: number; y: number }>): boolean {
     if (cells.length <= 1) return true;
     const remaining = new Set(cells.map((c) => `${c.x}-${c.y}`));
@@ -250,6 +258,58 @@ export function CityPage() {
   const [bidInput, setBidInput] = useState('');
   const [bidding, setBidding] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
+
+  async function handleProvinceLandOffer() {
+    if (!selected?.property) return;
+    const p = selected.property as any;
+    const isProvinceLand = p.provinceSource === 'province-land' || activeProvince !== '001';
+    if (!isProvinceLand) return;
+    const amount = Math.round(Number(offerAmount) || 0);
+    if (amount <= 0) {
+      setOfferError('Nhập số tiền đề xuất hợp lệ.');
+      return;
+    }
+    setOfferLoading(true);
+    setOfferError(null);
+    setOfferOk(null);
+    try {
+      await apiRequest(`/api/v1/province-land/offers?province=${encodeURIComponent(activeProvince)}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          propertyId: p.id,
+          amount: { amount, currency: 'VND' },
+          message: offerMsg.trim() || undefined,
+          provinceCode: activeProvince,
+        }),
+      });
+      setOfferOk('Đã gửi đề xuất mua. Chờ chủ sở hữu phản hồi.');
+      setOfferAmount('');
+      setOfferMsg('');
+      await refetchProvinceLand();
+    } catch (caught) {
+      setOfferError(caught instanceof Error ? caught.message : 'Không thể gửi đề xuất mua.');
+    } finally {
+      setOfferLoading(false);
+    }
+  }
+
+  async function handleProvinceLandOfferRespond(offerId: string, action: 'accept' | 'reject' | 'cancel') {
+    setOfferLoading(true);
+    setOfferError(null);
+    setOfferOk(null);
+    try {
+      await apiRequest(`/api/v1/province-land/offers/respond?province=${encodeURIComponent(activeProvince)}`, {
+        method: 'POST',
+        body: JSON.stringify({ offerId, action, provinceCode: activeProvince }),
+      });
+      setOfferOk(action === 'accept' ? 'Đã chấp nhận đề xuất mua.' : action === 'reject' ? 'Đã từ chối đề xuất.' : 'Đã hủy đề xuất.');
+      await Promise.all([refetchProvinceLand(), refetchCharacter(), refetchRealEstate(), refetchMap()]);
+    } catch (caught) {
+      setOfferError(caught instanceof Error ? caught.message : 'Không thể xử lý đề xuất mua.');
+    } finally {
+      setOfferLoading(false);
+    }
+  }
 
   async function handleConstruct() {
     if (!selected?.property || !buildChoice || !selectedCluster) return;
@@ -656,6 +716,95 @@ export function CityPage() {
                                                                   </div>
                                                                 </div>
                                                               )}
+
+                                                              {(() => {
+                                                                const p: any = selected?.property;
+                                                                if (!p) return null;
+                                                                const isProvinceLand = p.provinceSource === 'province-land' || activeProvince !== '001';
+                                                                if (!isProvinceLand) return null;
+                                                                const isBuilt = !!(p.constructionOption || p.constructionBuiltAt || p.mergedIntoPropertyId);
+                                                                const myPendingOffers = (p.offers ?? []).filter((o: any) => o.isMine && o.status === 'pending');
+                                                                const incomingPendingOffers = (p.offers ?? []).filter((o: any) => !o.isMine && o.status === 'pending' && p.isMine);
+                                                                const canPropose = !p.isMine && !!p.ownerCharacterId && p.status !== 'auction' && isBuilt;
+                                                                if (!canPropose && incomingPendingOffers.length === 0 && myPendingOffers.length === 0) return null;
+                                                                return (
+                                                                  <div className="flex w-full flex-col gap-2 rounded-lg border border-sky-200 bg-sky-50/70 p-2">
+                                                                    <div className="text-[11px] font-semibold text-sky-800">Đề xuất mua (đất/công trình tỉnh)</div>
+                                                                    {canPropose && (
+                                                                      <div className="flex flex-wrap items-center gap-2">
+                                                                        <input
+                                                                          type="number"
+                                                                          value={offerAmount}
+                                                                          onChange={(e) => setOfferAmount(e.target.value)}
+                                                                          placeholder="Số tiền đề xuất (VND)"
+                                                                          className="w-44 rounded-lg border border-sky-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-sky-400"
+                                                                        />
+                                                                        <input
+                                                                          type="text"
+                                                                          value={offerMsg}
+                                                                          onChange={(e) => setOfferMsg(e.target.value)}
+                                                                          maxLength={500}
+                                                                          placeholder="Lời nhắn (tuỳ chọn)"
+                                                                          className="min-w-[220px] flex-1 rounded-lg border border-sky-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-sky-400"
+                                                                        />
+                                                                        <button
+                                                                          type="button"
+                                                                          disabled={offerLoading}
+                                                                          onClick={() => void handleProvinceLandOffer()}
+                                                                          className="rounded-lg bg-sky-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-sky-700 disabled:opacity-60"
+                                                                        >
+                                                                          {offerLoading ? 'Đang gửi…' : 'Đề xuất mua'}
+                                                                        </button>
+                                                                      </div>
+                                                                    )}
+                                                                    {myPendingOffers.length > 0 && (
+                                                                      <div className="space-y-1 text-[11px] text-slate-700">
+                                                                        {myPendingOffers.map((o: any) => (
+                                                                          <div key={o.id} className="flex flex-wrap items-center gap-2">
+                                                                            <span>Bạn đã đề xuất <b>{formatMoney(o.amount?.amount ?? 0)}</b> (đang chờ).</span>
+                                                                            <button
+                                                                              type="button"
+                                                                              disabled={offerLoading}
+                                                                              onClick={() => void handleProvinceLandOfferRespond(o.id, 'cancel')}
+                                                                              className="rounded-md border border-slate-300 bg-white px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                                                            >
+                                                                              Hủy đề xuất
+                                                                            </button>
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    )}
+                                                                    {incomingPendingOffers.length > 0 && (
+                                                                      <div className="space-y-1 text-[11px] text-slate-700">
+                                                                        <div className="font-semibold text-slate-800">Đề xuất đang chờ bạn xử lý:</div>
+                                                                        {incomingPendingOffers.map((o: any) => (
+                                                                          <div key={o.id} className="flex flex-wrap items-center gap-2">
+                                                                            <span>{o.buyerName || 'Người mua'} đề xuất <b>{formatMoney(o.amount?.amount ?? 0)}</b>{o.message ? ` — "${o.message}"` : ''}</span>
+                                                                            <button
+                                                                              type="button"
+                                                                              disabled={offerLoading}
+                                                                              onClick={() => void handleProvinceLandOfferRespond(o.id, 'accept')}
+                                                                              className="rounded-md bg-emerald-600 px-2 py-0.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                                                            >
+                                                                              Chấp nhận
+                                                                            </button>
+                                                                            <button
+                                                                              type="button"
+                                                                              disabled={offerLoading}
+                                                                              onClick={() => void handleProvinceLandOfferRespond(o.id, 'reject')}
+                                                                              className="rounded-md border border-slate-300 bg-white px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                                                            >
+                                                                              Từ chối
+                                                                            </button>
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    )}
+                                                                    {offerError && <span className="text-[11px] text-rose-600">{offerError}</span>}
+                                                                    {offerOk && <span className="text-[11px] font-semibold text-emerald-700">{offerOk}</span>}
+                                                                  </div>
+                                                                );
+                                                              })()}
 
                                                               <button
                                                                 type="button"

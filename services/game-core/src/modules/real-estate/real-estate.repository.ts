@@ -175,6 +175,51 @@ export class RealEstateRepository {
     );
   }
 
+  /** Chuyển quyền sở hữu khi chốt giao dịch (mua/đề nghị được chấp nhận), kể cả BĐS đang owned.
+   *  Nếu BĐS thuộc cụm hợp thửa/công trình, chuyển toàn bộ cụm. */
+  async transferOwnership(client: Db, propertyId: string, buyerCharacterId: string): Promise<void> {
+    const info = await client.query<{
+      id: string;
+      mergeGroupId: string | null;
+      mergedIntoPropertyId: string | null;
+    }>(
+      `SELECT id, merge_group_id AS "mergeGroupId", merged_into_property_id AS "mergedIntoPropertyId"
+       FROM properties WHERE id = $1`,
+      [propertyId],
+    );
+    const row = info.rows[0];
+    if (!row) return;
+
+    let groupId: string | null = row.mergeGroupId;
+    if (!groupId && row.mergedIntoPropertyId) {
+      const parent = await client.query<{ mergeGroupId: string | null }>(
+        `SELECT merge_group_id AS "mergeGroupId" FROM properties WHERE id = $1`,
+        [row.mergedIntoPropertyId],
+      );
+      groupId = parent.rows[0]?.mergeGroupId ?? null;
+    }
+
+    if (groupId) {
+      await client.query(
+        `UPDATE properties
+         SET owner_character_id = $2, owner_company_id = NULL,
+             status = 'owned', asking_price_minor = NULL, sale_notes = NULL, updated_at = now()
+         WHERE merge_group_id = $1
+           AND status IN ('owned', 'unowned', 'listed')`,
+        [groupId, buyerCharacterId],
+      );
+      return;
+    }
+
+    await client.query(
+      `UPDATE properties
+       SET owner_character_id = $2, owner_company_id = NULL,
+           status = 'owned', asking_price_minor = NULL, sale_notes = NULL, updated_at = now()
+       WHERE id = $1 AND status IN ('owned', 'unowned', 'listed')`,
+      [propertyId, buyerCharacterId],
+    );
+  }
+
   async list(
     client: Db,
     propertyId: string,
