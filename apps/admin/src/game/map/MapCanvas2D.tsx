@@ -142,8 +142,8 @@ export function MapCanvas2D({
   viewRef.current = pan;
   const dragRef = useRef<{ startX: number; startY: number; moved: boolean } | null>(null);
 
-  const cols = mapData?.meta.cols ?? 32;
-  const rows = mapData?.meta.rows ?? 20;
+  const cols = mapData?.meta.cols ?? 40;
+  const rows = mapData?.meta.rows ?? 28;
   const seed = seedFromCode(mapData?.provinceCode ?? '001');
 
   // Chuẩn hóa ô vuông 1:1 — cellWidth == cellHeight (lấy cạnh nhỏ nhất, căn giữa).

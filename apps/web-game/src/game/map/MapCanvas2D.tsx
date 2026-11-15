@@ -111,8 +111,8 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
         moved: boolean;
       } | null>(null);
 
-        const cols = mapData?.meta.cols ?? 32;
-        const rows = mapData?.meta.rows ?? 20;
+    const cols = mapData?.meta.cols ?? 40;
+    const rows = mapData?.meta.rows ?? 28;
 
         // Kích thước chuẩn ô đất trong không gian canvas: KHÔNG CÓ VIỀN THỪA NGOẠI VI
         const CELL_SIZE = 48;

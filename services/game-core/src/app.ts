@@ -31,6 +31,7 @@ import { giftCodesRouter, giftCodesAdminRouter } from './modules/gift-codes/gift
 import { notificationsRouter } from './modules/notifications/notification.routes.js';
 import { broadcastRouter, broadcastAdminRouter } from './modules/broadcast/broadcast.routes.js';
 import { offlineRouter, offlineAdminRouter } from './modules/offline/offline.routes.js';
+import { provinceLandRouter } from './modules/province-land/provinceLand.routes.js';
 import { getGameConfigPublic } from './modules/admin/admin.integration.js';
 import { observabilityService } from './modules/observability/observability.service.js';
 
@@ -114,6 +115,7 @@ export function createApp(): Express {
   app.use('/api/v1/notifications', notificationsRouter);
   app.use('/api/v1/broadcasts', broadcastRouter);
   app.use('/api/v1/offline', offlineRouter);
+  app.use('/api/v1/province-land', provinceLandRouter);
   app.get('/api/v1/game-config', attachActor, asyncHandler(getGameConfigPublic));
   app.use('/api/v1/admin/welfare', attachActor, welfareAdminRouter);
   app.use('/api/v1/admin/gift-codes', attachActor, giftCodesAdminRouter);

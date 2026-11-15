@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import type {
   BuyLandRequest,
   BuyPropertyRequest,
+  ConstructPropertyRequest,
   ListPropertyRequest,
   MakePropertyOfferRequest,
   RentPropertyRequest,
@@ -63,6 +64,12 @@ export class RealEstateController {
     const { offerId, action } = req.body as RespondPropertyOfferRequest;
     const property = await this.service.respondOffer(req.actorId!, offerId, action);
     res.status(200).json(property);
+  };
+
+  constructProperty = async (req: Request, res: Response): Promise<void> => {
+    const { propertyId, optionId, memberPropertyIds } = req.body as ConstructPropertyRequest;
+    const overview = await this.service.constructProperty(req.actorId!, propertyId, optionId, memberPropertyIds ?? []);
+    res.status(200).json(overview);
   };
 }
 

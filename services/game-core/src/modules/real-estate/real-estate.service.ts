@@ -10,8 +10,10 @@ import {
   type RealEstateOverviewDto,
   MoneySchema,
 } from '@efls/contracts';
+import { CONSTRUCTION_OPTIONS, type OwnedCluster } from '@efls/domain';
 import { realEstateRepository, type PropertyRow, type PropertySaleOfferRow } from './real-estate.repository.js';
 import { mapRepository } from '../map/map.repository.js';
+import crypto from 'node:crypto';
 
 function money(amount: number) {
   return MoneySchema.parse({ amount, currency: 'VND' });
@@ -46,7 +48,7 @@ function toPropertyDto(
   return {
     id: row.id,
     nodeId: row.nodeId,
-    name: row.nodeName,
+    name: row.constructionLabel ? `${row.constructionLabel} - ${row.nodeName}` : row.nodeName,
     lotNumber,
     province,
     location: { x: row.nodeX, y: row.nodeY },
@@ -67,6 +69,14 @@ function toPropertyDto(
     leasedByMe,
     activeLease: activeLease ?? null,
     offers,
+    constructionOption: row.constructionOption ?? null,
+    constructionLabel: row.constructionLabel ?? null,
+    constructionTier: (row.constructionTier as PropertyDto['constructionTier']) ?? null,
+    constructionMultiplier: row.constructionMultiplier == null ? 1 : Number(row.constructionMultiplier),
+    constructionCostMinor: row.constructionCostMinor == null ? 0 : Number(row.constructionCostMinor),
+    constructionBuiltAt: row.constructionBuiltAt ? new Date(row.constructionBuiltAt).toISOString() : null,
+    mergedIntoPropertyId: row.mergedIntoPropertyId ?? null,
+    mergeGroupId: row.mergeGroupId ?? null,
   };
 }
 
@@ -448,6 +458,140 @@ export class RealEstateService {
       const updated = await this.repository.findById(offer.propertyId, client);
       if (!updated) throw new Error('Bất động sản biến mất sau khi chốt giá');
       return toPropertyDto(updated, character.id);
+    });
+  }
+
+  private getConstructionOption(optionId: string) {
+    for (const [tier, options] of Object.entries(CONSTRUCTION_OPTIONS) as Array<[OwnedCluster['tier'], Array<{ id: string; label: string; valueMultiplier: number; minTiles: number }> ]>) {
+      const opt = options.find((o) => o.id === optionId);
+      if (opt) return { ...opt, tier };
+    }
+    return null;
+  }
+
+  private constructionPropertyType(optionId: string): string {
+    switch (optionId) {
+      case 'shop': return 'shop';
+      case 'garage': return 'garage';
+      case 'mini-apartment': return 'mini_apartment';
+      case 'boutique-hotel': return 'boutique_hotel';
+      case 'shopping-center': return 'shopping_center';
+      case 'office-tower': return 'office_tower';
+      case 'house4': return 'house';
+      default: return 'house';
+    }
+  }
+
+  private isAdjacent(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+    return (Math.abs(a.x - b.x) + Math.abs(a.y - b.y)) === 1;
+  }
+
+  private validateConnectedCluster(cells: Array<{ x: number; y: number }>): boolean {
+    if (cells.length <= 1) return true;
+    const remaining = new Set(cells.map((c) => `${c.x}-${c.y}`));
+    const queue = [cells[0]!];
+    remaining.delete(`${cells[0]!.x}-${cells[0]!.y}`);
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const n of cells) {
+        const key = `${n.x}-${n.y}`;
+        if (!remaining.has(key)) continue;
+        if (this.isAdjacent(cur, n)) {
+          remaining.delete(key);
+          queue.push(n);
+        }
+      }
+    }
+    return remaining.size === 0;
+  }
+
+  async constructProperty(
+    userId: string,
+    propertyId: string,
+    optionId: string,
+    memberPropertyIds: string[] = [],
+  ): Promise<RealEstateOverviewDto> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const option = this.getConstructionOption(optionId);
+      if (!option) throw AppError.badRequest('Phương án xây dựng không hợp lệ.');
+
+      const uniqueIds = Array.from(new Set([propertyId, ...memberPropertyIds]));
+      const rows = await this.repository.findByIds(client, uniqueIds);
+      if (rows.length !== uniqueIds.length) throw AppError.notFound('Property');
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const primary = byId.get(propertyId);
+      if (!primary) throw AppError.notFound('Property');
+      const members = uniqueIds.filter((id) => id !== propertyId).map((id) => byId.get(id)!);
+
+      if (primary.mergedIntoPropertyId) {
+        throw AppError.badRequest('Bất động sản này đã được hợp nhất vào công trình khác.');
+      }
+      if (primary.constructionOption) {
+        throw AppError.badRequest('Bất động sản này đã có công trình. Không thể xây lại.');
+      }
+
+      for (const p of rows) {
+        if (p.ownerCharacterId !== character.id) throw AppError.forbidden('Bạn không sở hữu toàn bộ lô trong cụm hợp thửa.');
+        if (p.status !== 'owned') throw AppError.badRequest('Chỉ có thể xây dựng trên bất động sản đang sở hữu (không rao bán/đấu giá).');
+        if (p.rentListingActive || (await this.repository.hasActiveLease(client, p.id))) {
+          throw AppError.badRequest('Không thể xây dựng/hợp thửa khi bất động sản đang cho thuê hoặc có hợp đồng thuê hoạt động.');
+        }
+        if (p.mergedIntoPropertyId) throw AppError.badRequest('Một hoặc nhiều lô đã được hợp nhất trước đó.');
+        if (p.constructionOption) throw AppError.badRequest('Một hoặc nhiều lô đã có công trình.');
+      }
+
+      const clusterCells = rows.map((r) => ({ x: r.nodeX, y: r.nodeY }));
+      if (!this.validateConnectedCluster(clusterCells)) {
+        throw AppError.badRequest('Các lô hợp thửa phải liền kề nhau (4 hướng).');
+      }
+      const size = rows.length;
+      const tier = size >= 4 ? 'large' : size >= 2 ? 'small' : 'single';
+      if (option.tier !== tier) {
+        throw AppError.badRequest('Phương án xây dựng không phù hợp với quy mô cụm (số ô).');
+      }
+      if (option.minTiles > size) {
+        throw AppError.badRequest(`Phương án này cần tối thiểu ${option.minTiles} ô liền kề.`);
+      }
+
+      const totalBaseValue = rows.reduce((sum, r) => sum + Number(r.currentValueMinor), 0);
+      const costMinor = Math.max(0, Math.round(totalBaseValue * 0.2)); // 20% tổng giá trị hiện tại
+      const cash = toMinor(character.cash_minor);
+      this.ensureFunds(cash, costMinor);
+
+      if (costMinor > 0) {
+        await ledger.transfer(client, {
+          from: { ownerType: 'character', ownerId: character.id },
+          to: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
+          amountMinor: costMinor,
+          kind: 'property_construction',
+          description: `Xây dựng ${option.label} (${size} ô)`,
+          referenceType: 'property',
+          referenceId: primary.id,
+        });
+      }
+
+      const newCurrentValueMinor = Math.round(totalBaseValue * option.valueMultiplier);
+      // Thu nhập cho thuê ước tính/tháng ~0.5% giá trị sau xây dựng (đơn giản, rõ ràng)
+      const newMonthlyRentMinor = Math.max(0, Math.round(newCurrentValueMinor * 0.005));
+      const mergeGroupId = size > 1 ? crypto.randomUUID() : null;
+
+      await this.repository.applyConstruction(client, {
+        primaryId: primary.id,
+        memberIds: members.map((m) => m.id),
+        mergeGroupId,
+        optionId: option.id,
+        label: option.label,
+        tier,
+        multiplier: option.valueMultiplier,
+        costMinor,
+        newPropertyType: this.constructionPropertyType(option.id),
+        newCurrentValueMinor,
+        newMonthlyRentMinor,
+      });
+
+      const result = await this.getOverview(userId);
+      return result;
     });
   }
 }

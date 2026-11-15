@@ -22,7 +22,19 @@ export interface MapProperty {
   ownerId: string | null;
   ownerCharacterId: string | null;
   name: string;
-  type: 'apartment' | 'house' | 'office' | 'warehouse' | 'port_berth' | 'land';
+  type:
+    | 'apartment'
+    | 'house'
+    | 'office'
+    | 'warehouse'
+    | 'port_berth'
+    | 'land'
+    | 'shop'
+    | 'garage'
+    | 'mini_apartment'
+    | 'boutique_hotel'
+    | 'shopping_center'
+    | 'office_tower';
   status: 'unowned' | 'owned' | 'listed' | 'auction';
   /** Giá mua (VNĐ minor units). */
   purchasePriceMinor: number;
@@ -31,6 +43,14 @@ export interface MapProperty {
   /** Hiện tại người chơi đang xem có sở hữu không. */
   isMine: boolean;
   valueMinor: number;
+  constructionOption?: string | null;
+  constructionLabel?: string | null;
+  constructionTier?: 'single' | 'small' | 'large' | null;
+  constructionMultiplier?: number;
+  constructionCostMinor?: number;
+  constructionBuiltAt?: string | null;
+  mergedIntoPropertyId?: string | null;
+  mergeGroupId?: string | null;
 }
 
 export interface MapMeta {

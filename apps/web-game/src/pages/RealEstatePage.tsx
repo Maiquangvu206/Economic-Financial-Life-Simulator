@@ -39,6 +39,12 @@ function propertyTypeLabel(type: PropertyDto['propertyType']) {
     warehouse: 'Kho hàng',
     port_berth: 'Bến cảng',
     land: 'Đất nền',
+    shop: 'Cửa hàng',
+    garage: 'Gara',
+    mini_apartment: 'Chung cư mini',
+    boutique_hotel: 'Khách sạn boutique',
+    shopping_center: 'Trung tâm thương mại',
+    office_tower: 'Tòa tháp văn phòng',
   };
   return map[type];
 }

@@ -6,6 +6,7 @@ import { RealEstateController } from './real-estate.controller.js';
 import {
   BuyLandRequestSchema,
   BuyPropertyRequestSchema,
+  ConstructPropertyRequestSchema,
   ListPropertyRequestSchema,
   MakePropertyOfferRequestSchema,
   RentPropertyRequestSchema,
@@ -61,4 +62,10 @@ realEstateRouter.post(
   '/offers/respond',
   validateBody(RespondPropertyOfferRequestSchema),
   asyncHandler(controller.respondOffer),
+);
+
+realEstateRouter.post(
+  '/construct',
+  validateBody(ConstructPropertyRequestSchema),
+  asyncHandler(controller.constructProperty),
 );

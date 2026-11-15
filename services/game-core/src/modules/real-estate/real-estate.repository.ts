@@ -24,6 +24,14 @@ export interface PropertyRow {
   rentDepositMinor: string;
   rentNotes: string | null;
   saleNotes: string | null;
+  constructionOption: string | null;
+  constructionLabel: string | null;
+  constructionTier: string | null;
+  constructionMultiplier: string | number | null;
+  constructionCostMinor: string | number | null;
+  constructionBuiltAt: Date | null;
+  mergedIntoPropertyId: string | null;
+  mergeGroupId: string | null;
 }
 
 export interface LeaseRow {
@@ -65,7 +73,15 @@ const PROPERTY_SELECT = `
          p.rent_listing_active AS "rentListingActive",
          p.rent_deposit_minor AS "rentDepositMinor",
          p.rent_notes AS "rentNotes",
-         p.sale_notes AS "saleNotes"
+         p.sale_notes AS "saleNotes",
+         p.construction_option AS "constructionOption",
+         p.construction_label AS "constructionLabel",
+         p.construction_tier AS "constructionTier",
+         p.construction_multiplier AS "constructionMultiplier",
+         p.construction_cost_minor AS "constructionCostMinor",
+         p.construction_built_at AS "constructionBuiltAt",
+         p.merged_into_property_id AS "mergedIntoPropertyId",
+         p.merge_group_id AS "mergeGroupId"
   FROM properties p
   JOIN map_nodes m ON p.node_id = m.id
 `;
@@ -269,6 +285,93 @@ export class RealEstateRepository {
        WHERE property_id = $1 AND id <> $2 AND status = 'pending'`,
       [propertyId, exceptOfferId],
     );
+  }
+
+  async findByIds(db: Db, ids: string[]): Promise<PropertyRow[]> {
+    if (ids.length === 0) return [];
+    const result = await db.query<PropertyRow>(
+      `${PROPERTY_SELECT} WHERE p.id = ANY($1::uuid[])`,
+      [ids],
+    );
+    return result.rows;
+  }
+
+  async applyConstruction(
+    db: Db,
+    input: {
+      primaryId: string;
+      memberIds: string[];
+      mergeGroupId: string | null;
+      optionId: string;
+      label: string;
+      tier: string;
+      multiplier: number;
+      costMinor: number;
+      newPropertyType: string;
+      newCurrentValueMinor: number;
+      newMonthlyRentMinor: number;
+    },
+  ): Promise<void> {
+    await db.query(
+      `UPDATE properties
+       SET construction_option = $2,
+           construction_label = $3,
+           construction_tier = $4,
+           construction_multiplier = $5,
+           construction_cost_minor = $6,
+           construction_built_at = now(),
+           merge_group_id = $7,
+           merged_into_property_id = NULL,
+           property_type = $8,
+           current_value_minor = $9,
+           monthly_rent_minor = $10,
+           asking_price_minor = NULL,
+           sale_notes = NULL,
+           status = 'owned',
+           updated_at = now()
+       WHERE id = $1`,
+      [
+        input.primaryId,
+        input.optionId,
+        input.label,
+        input.tier,
+        input.multiplier,
+        input.costMinor,
+        input.mergeGroupId,
+        input.newPropertyType,
+        input.newCurrentValueMinor,
+        input.newMonthlyRentMinor,
+      ],
+    );
+
+    if (input.memberIds.length > 0 && input.mergeGroupId) {
+      await db.query(
+        `UPDATE properties
+         SET merge_group_id = $2,
+             merged_into_property_id = $1,
+             construction_option = $3,
+             construction_label = $4,
+             construction_tier = $5,
+             construction_multiplier = 1,
+             construction_cost_minor = 0,
+             construction_built_at = now(),
+             monthly_rent_minor = 0,
+             rent_listing_active = false,
+             asking_price_minor = NULL,
+             sale_notes = NULL,
+             status = 'owned',
+             updated_at = now()
+         WHERE id = ANY($6::uuid[])`,
+        [
+          input.primaryId,
+          input.mergeGroupId,
+          input.optionId,
+          input.label,
+          input.tier,
+          input.memberIds,
+        ],
+      );
+    }
   }
 }
 

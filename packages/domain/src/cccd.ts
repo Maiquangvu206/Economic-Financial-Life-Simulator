@@ -122,7 +122,7 @@ export function generateCccd(
 }
 
 export function isValidCccd(value: string): boolean {
-  return /^\d{12}$/.test(value);
+  return /^\d{12}$/.test(value) && PROVINCE_CODES.has(value.slice(0, 3));
 }
 
 export function provinceCodeFromCccd(cccd: string): string | null {

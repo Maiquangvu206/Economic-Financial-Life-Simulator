@@ -78,10 +78,32 @@ export class ProvinceLandAuctionService {
             referenceType: 'province_land_auction',
             referenceId: auction.id,
           });
+          // Grant province land ownership so the winner can build/merge on this map tile.
+          await client.query(
+            `INSERT INTO province_land_properties (
+               id, province_code, node_x, node_y, zone_type, node_name,
+               owner_character_id, status, purchase_price_minor, current_value_minor, monthly_rent_minor, property_type
+             ) VALUES (gen_random_uuid(), $1,$2,$3,$4,$5,$6,'owned',$7,$7,0,'land')
+             ON CONFLICT (province_code, node_x, node_y) DO UPDATE
+             SET owner_character_id = EXCLUDED.owner_character_id,
+                 status = 'owned',
+                 purchase_price_minor = EXCLUDED.purchase_price_minor,
+                 current_value_minor = GREATEST(province_land_properties.current_value_minor, EXCLUDED.current_value_minor),
+                 updated_at = now()`,
+            [
+              auction.provinceCode,
+              auction.nodeX,
+              auction.nodeY,
+              auction.zoneType,
+              auction.nodeName,
+              result.winnerId,
+              result.settledPriceMinor,
+            ],
+          );
           await notifyCharacter(client, result.winnerId, {
             kind: 'auction',
             title: 'Bạn thắng đấu giá đất',
-            body: `Bạn đã thắng phiên đấu giá "${auction.nodeName}" tại ${auction.provinceCode} với giá ${result.settledPriceMinor.toLocaleString('vi-VN')} VND.`,
+            body: `Bạn đã thắng và sở hữu "${auction.nodeName}" tại ${auction.provinceCode} với giá ${result.settledPriceMinor.toLocaleString('vi-VN')} VND.`,
             payload: { auctionId: auction.id, provinceCode: auction.provinceCode, x: auction.nodeX, y: auction.nodeY, priceMinor: result.settledPriceMinor },
           });
         } else if (auction.highestBidderId && Number(auction.currentBidMinor) > 0) {

@@ -11,11 +11,21 @@ export const PropertyTypeSchema = z.enum([
   'port_berth',
   /** Đất nền mua trực tiếp trên ô đất trống (giá do admin đặt). */
   'land',
+  /** Các loại công trình sau xây dựng/hợp thửa */
+  'shop',
+  'garage',
+  'mini_apartment',
+  'boutique_hotel',
+  'shopping_center',
+  'office_tower',
 ]);
 export type PropertyType = z.infer<typeof PropertyTypeSchema>;
 
 export const PropertyStatusSchema = z.enum(['unowned', 'owned', 'listed', 'auction']);
 export type PropertyStatus = z.infer<typeof PropertyStatusSchema>;
+
+export const ConstructionTierSchema = z.enum(['single', 'small', 'large']);
+export type ConstructionTier = z.infer<typeof ConstructionTierSchema>;
 
 export const PropertySaleOfferStatusSchema = z.enum([
   'pending',
@@ -81,6 +91,15 @@ export const PropertyDtoSchema = z.object({
   activeLease: ActiveLeaseInfoDtoSchema.nullable().optional(),
   /** Đề nghị mua/trao đổi giá (cho chủ sở hữu hoặc người mua liên quan). */
   offers: z.array(PropertySaleOfferDtoSchema).optional(),
+  /** Xây dựng công trình / hợp thửa */
+  constructionOption: z.string().nullable().optional(),
+  constructionLabel: z.string().nullable().optional(),
+  constructionTier: ConstructionTierSchema.nullable().optional(),
+  constructionMultiplier: z.number().nonnegative().optional(),
+  constructionCostMinor: z.number().int().nonnegative().optional(),
+  constructionBuiltAt: z.string().datetime().nullable().optional(),
+  mergedIntoPropertyId: IdSchema.nullable().optional(),
+  mergeGroupId: IdSchema.nullable().optional(),
 });
 export type PropertyDto = z.infer<typeof PropertyDtoSchema>;
 
@@ -138,3 +157,12 @@ export const RespondPropertyOfferRequestSchema = z.object({
   action: z.enum(['accept', 'reject', 'cancel']),
 });
 export type RespondPropertyOfferRequest = z.infer<typeof RespondPropertyOfferRequestSchema>;
+
+/** Xây dựng công trình (có thể kèm hợp thửa cụm ô liền kề do người chơi sở hữu). */
+export const ConstructPropertyRequestSchema = z.object({
+  propertyId: IdSchema,
+  optionId: z.string().min(1),
+  /** Các BĐS khác trong cụm hợp thửa (cùng chủ, liền kề). Không gồm propertyId. */
+  memberPropertyIds: z.array(IdSchema).optional(),
+});
+export type ConstructPropertyRequest = z.infer<typeof ConstructPropertyRequestSchema>;

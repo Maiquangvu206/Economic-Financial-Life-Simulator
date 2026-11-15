@@ -35,8 +35,8 @@ export interface ProvinceMap {
   roads: ProvinceMapRoad[];
 }
 
-export const PROVINCE_MAP_COLS = 32;
-export const PROVINCE_MAP_ROWS = 20;
+export const PROVINCE_MAP_COLS = 40;
+export const PROVINCE_MAP_ROWS = 28;
 
 function hashSeed(code: string): number {
   let h = 2166136261;
@@ -105,10 +105,10 @@ export function generateProvinceMap(code: string): ProvinceMap {
   const baseCx = PROVINCE_MAP_COLS / 2;
   const baseCy = PROVINCE_MAP_ROWS / 2;
   // Địa lý riêng từng tỉnh: tâm đô thị lệch, hình dạng & bán kính CBD khác nhau.
-  const cx = baseCx + (rand() - 0.5) * 8;
-  const cy = baseCy + (rand() - 0.5) * 6;
-  const rx = 10 + rand() * 6;
-  const ry = 5.5 + rand() * 3.5;
+  const cx = baseCx + (rand() - 0.5) * 10;
+  const cy = baseCy + (rand() - 0.5) * 8;
+  const rx = 13 + rand() * 7;
+  const ry = 8 + rand() * 5;
   const cbdR = 0.12 + rand() * 0.13;
   const parkT = 0.68 + rand() * 0.18;
   const civicT = 0.45 + rand() * 0.2;
@@ -160,8 +160,10 @@ export function generateProvinceMap(code: string): ProvinceMap {
       if (inLake) {
         zone = 'water';
       } else {
-        // Địa giới thật: đất = trong mặt nạ GADM; ngoài = nước.
-        const inShape = shapeGrid ? shapeGrid[y * PROVINCE_MAP_COLS + x] : null;
+        // Địa giới thật: đất = trong mặt nạ GADM; ngoài = nước (ánh xạ tỷ lệ sang 40x28).
+        const sx = Math.min(31, Math.floor((x / PROVINCE_MAP_COLS) * 32));
+        const sy = Math.min(19, Math.floor((y / PROVINCE_MAP_ROWS) * 20));
+        const inShape = shapeGrid ? shapeGrid[sy * 32 + sx] : null;
         if (shapeGrid) {
           if (!inShape) {
             zone = 'water';

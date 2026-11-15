@@ -17,6 +17,7 @@ auctionRouter.use(attachActor);
 
 /** Danh sách phiên đấu giá đang mở (mọi người chơi). Có thể lọc theo ?province=code. */
 auctionRouter.get('/', asyncHandler(controller.getOverview));
+auctionRouter.get('/overview', asyncHandler(controller.getOverview));
 
 /** Chi tiết một phiên đấu giá. */
 auctionRouter.get('/:auctionId', asyncHandler(controller.getAuction));

@@ -64,9 +64,15 @@ export function CityPage() {
       ),
   });
 
-  const { data: realEstate, isLoading: reLoading } = useQuery<RealEstateOverviewDto>({
+  const { data: realEstate, isLoading: reLoading, refetch: refetchRealEstate } = useQuery<RealEstateOverviewDto>({
     queryKey: ['real-estate', 'overview'],
     queryFn: () => apiRequest<RealEstateOverviewDto>('/api/v1/real-estate/overview'),
+  });
+
+  const { data: provinceLand, isLoading: provinceLandLoading, refetch: refetchProvinceLand } = useQuery<{ provinceCode: string; properties: any[] }>({
+    queryKey: ['province-land', 'properties', activeProvince],
+    queryFn: () => apiRequest<{ provinceCode: string; properties: any[] }>(`/api/v1/province-land/properties?province=${encodeURIComponent(activeProvince)}`),
+    // 001 uses core real-estate; still fetch for province-land auctions/wins if any, but don't block UI on it
   });
 
   // Phiên đấu giá đang mở theo từng tỉnh/thành (server-authoritative)
@@ -74,7 +80,7 @@ export function CityPage() {
     queryKey: ['auctions', 'overview', activeProvince],
     queryFn: () =>
       apiRequest<AuctionOverviewDto>(
-        `/api/v1/auctions/overview?province=${encodeURIComponent(activeProvince)}`,
+        `/api/v1/auctions?province=${encodeURIComponent(activeProvince)}`,
       ),
     refetchInterval: 10_000,
   });
@@ -116,31 +122,71 @@ export function CityPage() {
 
   const mapData = useMemo(() => {
     if (!mapDto) return null;
-    const properties =
-      activeProvince === '001' && realEstate
-        ? realEstate.properties.map((p) => ({
-          id: p.id,
-          nodeId: p.nodeId,
-          ownerId: p.ownerCharacterId,
-          ownerCharacterId: p.ownerCharacterId,
-          name: p.name,
-          type: p.propertyType,
-          status: p.status,
-          purchasePriceMinor: p.purchasePrice.amount,
-          askingPriceMinor: p.askingPrice?.amount ?? null,
-          isMine: p.isMine,
-          valueMinor: p.currentValue.amount,
-        }))
-        : [];
+    let properties: any[] = [];
+    if (activeProvince === '001' && realEstate) {
+      properties = realEstate.properties.map((p) => ({
+        id: p.id,
+        nodeId: p.nodeId,
+        ownerId: p.ownerCharacterId,
+        ownerCharacterId: p.ownerCharacterId,
+        name: p.name,
+        type: p.propertyType,
+        status: p.status,
+        purchasePriceMinor: p.purchasePrice.amount,
+        askingPriceMinor: p.askingPrice?.amount ?? null,
+        isMine: p.isMine,
+        valueMinor: p.currentValue.amount,
+        location: p.location,
+        constructionOption: p.constructionOption ?? null,
+        constructionLabel: p.constructionLabel ?? null,
+        constructionTier: p.constructionTier ?? null,
+        constructionMultiplier: p.constructionMultiplier ?? 1,
+        constructionCostMinor: p.constructionCostMinor ?? 0,
+        constructionBuiltAt: p.constructionBuiltAt ?? null,
+        mergedIntoPropertyId: p.mergedIntoPropertyId ?? null,
+        mergeGroupId: p.mergeGroupId ?? null,
+        provinceSource: 'core',
+      }));
+    } else if (provinceLand?.properties) {
+      properties = provinceLand.properties.map((p: any) => ({
+        id: p.id,
+        nodeId: p.nodeId ?? p.id,
+        ownerId: p.ownerCharacterId,
+        ownerCharacterId: p.ownerCharacterId,
+        name: p.name,
+        type: p.propertyType,
+        status: p.status,
+        purchasePriceMinor: p.purchasePrice?.amount ?? 0,
+        askingPriceMinor: p.askingPrice?.amount ?? null,
+        isMine: !!p.isMine,
+        valueMinor: p.currentValue?.amount ?? 0,
+        constructionOption: p.constructionOption ?? null,
+        constructionLabel: p.constructionLabel ?? null,
+        constructionTier: p.constructionTier ?? null,
+        constructionMultiplier: p.constructionMultiplier ?? 1,
+        constructionCostMinor: p.constructionCostMinor ?? 0,
+        constructionBuiltAt: p.constructionBuiltAt ?? null,
+        mergedIntoPropertyId: p.mergedIntoPropertyId ?? null,
+        mergeGroupId: p.mergeGroupId ?? null,
+        provinceSource: 'province-land',
+        location: p.location,
+      }));
+    }
     return { ...mapDto, properties };
-  }, [mapDto, realEstate, activeProvince]);
+  }, [mapDto, realEstate, provinceLand, activeProvince]);
 
   const handleSelectPlot = (col: number, row: number) => {
     setPurchaseError(null);
     setPurchaseOk(null);
+    setConstructError(null);
+    setConstructOk(null);
     if (!mapData) return;
     const node = mapData.nodes.find((n) => n.x === col && n.y === row);
-    const property = node ? mapData.properties.find((p) => p.nodeId === node.id) : undefined;
+    let property = node ? mapData.properties.find((p: any) => p.nodeId === node.id) : undefined;
+    if (!property) {
+      // province land properties are keyed by tile coords (not map node id)
+      property = (mapData.properties as any[]).find((p: any) => p.location?.x === col && p.location?.y === row);
+    }
     setSelected({
       col,
       row,
@@ -174,6 +220,9 @@ export function CityPage() {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+  const [constructing, setConstructing] = useState(false);
+  const [constructError, setConstructError] = useState<string | null>(null);
+  const [constructOk, setConstructOk] = useState<string | null>(null);
 
   const auctionCountdown = activeAuction
     ? Math.max(0, Math.floor((new Date(activeAuction.endsAt).getTime() - now) / 1000))
@@ -182,6 +231,36 @@ export function CityPage() {
   const [bidInput, setBidInput] = useState('');
   const [bidding, setBidding] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
+
+  async function handleConstruct() {
+    if (!selected?.property || !buildChoice || !selectedCluster) return;
+    const memberIds = selectedClusterMemberIds.filter((id) => id !== selected.property!.id);
+    setConstructing(true);
+    setConstructError(null);
+    setConstructOk(null);
+    try {
+      const isProvinceLand = (selected.property as any).provinceSource === 'province-land' || activeProvince !== '001';
+      const url = isProvinceLand
+        ? `/api/v1/province-land/construct?province=${encodeURIComponent(activeProvince)}`
+        : '/api/v1/real-estate/construct';
+      await apiRequest(url, {
+        method: 'POST',
+        body: JSON.stringify({
+          propertyId: selected.property.id,
+          optionId: buildChoice,
+          memberPropertyIds: memberIds,
+          provinceCode: activeProvince,
+        }),
+      });
+      setConstructOk('Xây dựng/hợp thửa thành công.');
+      setBuildChoice(null);
+      await Promise.all([refetchRealEstate(), refetchProvinceLand(), refetchCharacter(), refetchMap()]);
+    } catch (caught) {
+      setConstructError(caught instanceof Error ? caught.message : 'Không thể xây dựng công trình.');
+    } finally {
+      setConstructing(false);
+    }
+  }
 
     async function handlePlaceBid(customAmount?: number) {
       if (!activeAuction) return;
@@ -218,21 +297,28 @@ export function CityPage() {
       });
     };
 
-    const ownedClusters = useMemo(() => {
-      if (!realEstate || activeProvince !== '001') return [];
-      const ownedKeys = realEstate.properties
-        .filter((p) => p.isMine)
-        .map((p) => `${activeProvince}_${p.location.x}_${p.location.y}`);
-      const ownedCells = ownedKeys.map((key) => {
-        const [, x, y] = key.split('_');
-        return { x: Number(x), y: Number(y) };
+    const ownedClusterData = useMemo(() => {
+      const props = (mapData?.properties ?? []).filter((p: any) => p.isMine && !p.mergedIntoPropertyId);
+      if (props.length === 0) return { clusters: [] as ReturnType<typeof findOwnedClusters>, byCoord: new Map<string, string>() };
+      const byCoord = new Map<string, string>();
+      const cells = props.map((p: any) => {
+        const key = `${p.location?.x ?? -1}-${p.location?.y ?? -1}`;
+        byCoord.set(key, p.id);
+        return { x: p.location?.x ?? -1, y: p.location?.y ?? -1 };
       });
-      return findOwnedClusters(ownedCells);
-    }, [realEstate, activeProvince]);
+      return { clusters: findOwnedClusters(cells), byCoord };
+    }, [mapData]);
 
+    const ownedClusters = ownedClusterData.clusters;
     const selectedCluster = selected
       ? clusterContaining(ownedClusters, selected.col, selected.row)
       : null;
+    const selectedClusterMemberIds = useMemo(() => {
+      if (!selectedCluster) return [] as string[];
+      return selectedCluster.cells
+        .map((c) => ownedClusterData.byCoord.get(`${c.x}-${c.y}`))
+        .filter((id): id is string => !!id);
+    }, [selectedCluster, ownedClusterData.byCoord]);
     const buildOptions = selectedCluster ? constructionOptionsFor(selectedCluster) : [];
     const [buildChoice, setBuildChoice] = useState<string | null>(null);
 
@@ -245,7 +331,7 @@ export function CityPage() {
       });
     }, [provinces, provinceSearch, regionFilter]);
 
-    if (characterLoading || mapLoading || reLoading) {
+    if (characterLoading || mapLoading || reLoading || (activeProvince !== '001' && provinceLandLoading)) {
       return (
           <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500"></div>
@@ -382,24 +468,55 @@ export function CityPage() {
                                                                 </button>
                                                               )}
 
-                                                              {selected.property?.isMine && selectedCluster && (
-                                                                <div className="flex items-center gap-1.5">
+                                                              {selected.property?.isMine && selected.property.mergedIntoPropertyId && (
+                                                                <span className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                                                                  Đã hợp nhất vào công trình (ô thành viên)
+                                                                </span>
+                                                              )}
+                                                              {selected.property?.isMine && selected.property.constructionOption && !selected.property.mergedIntoPropertyId && (
+                                                                <span className="rounded-lg bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-800">
+                                                                  🏗 Công trình: {selected.property.constructionLabel ?? selected.property.constructionOption}
+                                                                </span>
+                                                              )}
+                                                              {selected.property?.isMine && selectedCluster && !selected.property.constructionOption && !selected.property.mergedIntoPropertyId && (
+                                                                <div className="flex flex-wrap items-center gap-1.5">
                                                                   <span className="font-semibold text-orange-700">
                                                                     Hợp thửa {selectedCluster.size} ô:
                                                                   </span>
-                      {buildOptions.map((opt) => (
+                                                                  {buildOptions.map((opt) => {
+                                                                    const clusterValue = selectedClusterMemberIds.reduce((sum, id) => {
+                                                                      const p = (mapData?.properties as any[] | undefined)?.find((x) => x.id === id);
+                                                                      return sum + (p?.valueMinor ?? p?.currentValue?.amount ?? 0);
+                                                                    }, 0);
+                                                                    const cost = Math.round(clusterValue * 0.2);
+                                                                    return (
                                                                       <button
                                                                         key={opt.id}
                                                                         type="button"
-                                                                        onClick={() => setBuildChoice(opt.id)}
+                                                                        disabled={constructing}
+                                                                        onClick={() => { setBuildChoice(opt.id); setConstructError(null); setConstructOk(null); }}
                                                                         className={`rounded-lg px-2 py-1 text-[11px] font-semibold transition ${buildChoice === opt.id
                                                                             ? 'bg-orange-600 text-white'
                                                                             : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
                                                                           }`}
+                                                                        title={`Chi phí xây dựng ~${formatMoney(cost)} (20% tổng giá trị cụm)`}
                                                                       >
                                                                         {opt.label}
                                                                       </button>
-                                                                    ))}
+                                                                    );
+                                                                  })}
+                                                                  {buildChoice && (
+                                                                    <button
+                                                                      type="button"
+                                                                      disabled={constructing}
+                                                                      onClick={() => void handleConstruct()}
+                                                                      className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                                                    >
+                                                                      {constructing ? 'Đang xây dựng…' : 'Xác nhận xây dựng (trả phí)'}
+                                                                    </button>
+                                                                  )}
+                                                                  {constructError && <span className="text-[11px] text-rose-600">{constructError}</span>}
+                                                                  {constructOk && <span className="text-[11px] font-semibold text-emerald-600">{constructOk}</span>}
                                                                 </div>
                                                               )}
 
@@ -422,7 +539,7 @@ export function CityPage() {
                                                           </span>
                                                         </span>
                                                         <span className="text-[11px] font-mono text-slate-400">
-                                                          {mapDto?.provinceName ?? 'Đô thị'} ({mapDto?.meta.cols ?? 32} × {mapDto?.meta.rows ?? 20})
+                  {mapDto?.provinceName ?? 'Đô thị'} ({mapDto?.meta.cols ?? 40} × {mapDto?.meta.rows ?? 28})
                                                         </span>
                                                       </div>
             )}
