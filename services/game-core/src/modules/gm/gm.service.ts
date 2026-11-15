@@ -1,6 +1,6 @@
-import { applyGmAdjustment } from '@efls/domain';
+﻿import { applyGmAdjustment } from '@efls/domain';
 import { withTransaction } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { enqueueDomainEvent } from '../../shared/events/eventBus.js';
 import { callAiService } from '../../shared/ai/aiClient.js';
 import { notify } from '../notifications/notification.service.js';
@@ -41,7 +41,7 @@ export class GmService {
   /** Điều chỉnh vĩ mô thủ công: gọi AI đề xuất rồi core áp biên. */
   async adjust(userId: string): Promise<GmDirectiveDto> {
     return withTransaction(async (client) => {
-      await requireCharacterByUserId(client, userId);
+      await requireLivingCharacterByUserId(client, userId);
       const macro = await this.repository.getMacro(client);
       const [marketCap, moneySupply] = await Promise.all([
         this.repository.marketCap(client),
@@ -144,3 +144,4 @@ export class GmService {
 }
 
 export const gmService = new GmService();
+

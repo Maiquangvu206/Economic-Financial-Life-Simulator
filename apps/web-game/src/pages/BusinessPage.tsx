@@ -14,6 +14,7 @@ import { Panel } from '../shared/ui/Panel';
 import { StatCard } from '../shared/ui/StatCard';
 import { GameButton } from '../shared/ui/GameButton';
 import { GameInput } from '../shared/ui/GameInput';
+import { CCCDLookupInput } from '../shared/identity/CCCDLookupInput';
 import { Modal } from '../shared/ui/Modal';
 import { Badge } from '../shared/ui/Badge';
 import { useToast } from '../shared/ui/Toast';
@@ -72,7 +73,7 @@ export function BusinessPage() {
   const [ipoPrice, setIpoPrice] = useState('10000');
   const [ipoShares, setIpoShares] = useState('1000000');
   const [divPerShare, setDivPerShare] = useState('100');
-  const [takeoverBuyerId, setTakeoverBuyerId] = useState('');
+  const [takeoverBuyerCccd, setTakeoverBuyerCccd] = useState('');
   const [revenueAmount, setRevenueAmount] = useState('5000000');
   const [revenueNote, setRevenueNote] = useState('');
   const [opexAmount, setOpexAmount] = useState('2000000');
@@ -219,7 +220,7 @@ export function BusinessPage() {
     mutationFn: (companyId: string) =>
       apiRequest<CompanyDto>(`/api/v1/corporations/${companyId}/takeover`, {
         method: 'POST',
-        body: JSON.stringify({ buyerCharacterId: takeoverBuyerId.trim() || me?.id }),
+        body: JSON.stringify({ buyerCccd: takeoverBuyerCccd.replace(/\s+/g,'') || (me as any)?.cccd.trim() || me?.id }),
       }),
     onSuccess: async (c) => {
       toast({ title: 'Thâu tóm thành công', description: `Bạn đã kiểm soát "${c.name}".` });
@@ -1201,11 +1202,10 @@ export function BusinessPage() {
             {selectedCompany.status === 'ipo' && (
               <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
                 <p className="text-xs font-semibold text-amber-800">Thâu tóm (&gt;51% cổ phần)</p>
-                <GameInput
-                  label="Character ID người thâu tóm (mặc định: bạn)"
-                  value={takeoverBuyerId}
-                  onChange={(e) => setTakeoverBuyerId(e.target.value)}
-                  placeholder={me?.id ?? 'Character ID'}
+                <CCCDLookupInput
+                  label="CCCD người thâu tóm (để trống nếu là bạn)"
+                  value={takeoverBuyerCccd}
+                  onChange={setTakeoverBuyerCccd}
                 />
                 <GameButton
                   variant="outline"

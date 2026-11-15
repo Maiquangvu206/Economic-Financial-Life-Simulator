@@ -7,6 +7,7 @@ import { GameButton } from '../shared/ui/GameButton';
 import { Modal } from '../shared/ui/Modal';
 import { Badge } from '../shared/ui/Badge';
 import { GameInput } from '../shared/ui/GameInput';
+import { CCCDLookupInput } from '../shared/identity/CCCDLookupInput';
 import { formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
 import {
@@ -53,6 +54,8 @@ export function LawPage() {
   const { data: law, isLoading: lawLoading, refetch: refetchLaw } = useLawOverview();
   const { data: social, refetch: refetchSocial } = useSocialOverview();
   const { data: tax, refetch: refetchTax } = useTaxOverview();
+  const { data: me } = useQuery<{ id: string }>({ queryKey: ['characters', 'me'], queryFn: () => apiRequest('/api/v1/characters/me') });
+  const myCharId = me?.id;
 
   const [activeTab, setActiveTab] = useState<'court' | 'family' | 'tax'>('court');
   const [trialBusy, setTrialBusy] = useState<string | null>(null);
@@ -63,16 +66,44 @@ export function LawPage() {
   const [evidenceStrength, setEvidenceStrength] = useState('20');
   const [evidenceDesc, setEvidenceDesc] = useState('');
   const [marryOpen, setMarryOpen] = useState(false);
-  const [spouseId, setSpouseId] = useState('');
+  const [spouseCccd, setSpouseCccd] = useState('');
   const [prenup, setPrenup] = useState(false);
   const [willOpen, setWillOpen] = useState(false);
-  const [heirId, setHeirId] = useState('');
   const [trustEnabled, setTrustEnabled] = useState(false);
+  const [willHeirs, setWillHeirs] = useState<Array<{ beneficiaryCccd: string; sharePct: string; relationship: string; note: string }>>([]);
   const [depositOpen, setDepositOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState('1000000');
   const [reportOpen, setReportOpen] = useState(false);
-  const [reportTarget, setReportTarget] = useState('');
+  const [reportTargetCccd, setReportTargetCccd] = useState('');
   const [reportReason, setReportReason] = useState('');
+
+  const WILL_RELATIONSHIPS = ['Con ruột', 'Con riêng', 'Con nuôi', 'Vợ/Chồng', 'Cha/Mẹ', 'Anh/Chị/Em', 'Cháu', 'Người chơi khác', 'Người khác'];
+
+  function openWillModal() {
+    const heirs = (social?.will?.heirs ?? []).map((h: any) => ({
+      beneficiaryCccd: h.beneficiaryCccd ?? '',
+      sharePct: String(h.sharePct ?? ''),
+      relationship: h.relationship || 'Người thừa kế',
+      note: h.note ?? '',
+    }));
+    setWillHeirs(heirs.length > 0 ? heirs : [{ beneficiaryCccd: '', sharePct: '100', relationship: 'Con ruột', note: '' }]);
+    setTrustEnabled(Boolean(social?.will?.trustFundEnabled));
+    setWillOpen(true);
+  }
+
+  function updateWillHeir(idx: number, patch: Partial<{ beneficiaryCccd: string; sharePct: string; relationship: string; note: string }>) {
+    setWillHeirs((prev) => prev.map((h, i) => (i === idx ? { ...h, ...patch } : h)));
+  }
+
+  function addWillHeir() {
+    setWillHeirs((prev) => [...prev, { beneficiaryCccd: '', sharePct: '0', relationship: 'Con riêng', note: '' }]);
+  }
+
+  function removeWillHeir(idx: number) {
+    setWillHeirs((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  const willTotalShare = willHeirs.reduce((s, h) => s + (Number(h.sharePct) || 0), 0);
 
   async function handleAction(key: string, fn: () => Promise<unknown>, onDone?: () => void) {
     setActionBusy(key);
@@ -277,55 +308,79 @@ export function LawPage() {
 
       {activeTab === 'family' && (
         <div className="grid gap-4">
-          <Panel title="Hôn nhân" borderColor="amber">
+          <Panel title="Hôn nhân (cần đồng thuận 2 bên)" borderColor="amber">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-600">Tình trạng hôn nhân</span>
                 <span className="font-semibold">
                   {social?.maritalStatus ?? 'single'}
-                  {social?.spouse?.characterName
-                    ? ` · Vợ/chồng: ${social.spouse.characterName}`
-                    : ''}
+                  {social?.spouse?.characterName ? ` · Vợ/chồng: ${social.spouse.characterName}` : ''}
                 </span>
               </div>
+
+              {(social?.marriageProposals ?? []).length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Lời cầu hôn đang chờ</div>
+                  {(social?.marriageProposals ?? []).map((p) => {
+                    const incoming = myCharId != null && p.targetCharacterId === myCharId;
+                    return (
+                      <div key={p.id} className="flex items-center justify-between gap-2 p-3 rounded-xl border border-amber-200 bg-amber-50/50">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-slate-800">{p.proposerName} → {p.targetName}</div>
+                          <div className="text-xs text-slate-500">{p.prenupEnabled ? 'Có prenup' : 'Không prenup'} · {incoming ? 'Bạn được cầu hôn' : 'Đang chờ đối phương đồng ý'}</div>
+                        </div>
+                        {incoming ? (
+                          <div className="flex gap-2 shrink-0">
+                            <GameButton variant="primary" size="sm" disabled={actionBusy === `mp-accept-${p.id}`} onClick={() => void handleAction(`mp-accept-${p.id}`, () => apiRequest('/api/v1/social/marriage/respond', { method: 'POST', body: JSON.stringify({ proposalId: p.id, accept: true }) }))}>Đồng ý</GameButton>
+                            <GameButton variant="outline" size="sm" disabled={actionBusy === `mp-reject-${p.id}`} onClick={() => void handleAction(`mp-reject-${p.id}`, () => apiRequest('/api/v1/social/marriage/respond', { method: 'POST', body: JSON.stringify({ proposalId: p.id, accept: false }) }))}>Từ chối</GameButton>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-amber-700">Chờ phản hồi</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {(social?.marriages ?? []).map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-800">
-                      {m.characterName ?? '—'} ❤ {m.spouseName ?? '—'}
+                <div key={m.id} className="space-y-2 p-3 rounded-xl border border-slate-200 bg-white/50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold text-slate-800">{m.characterName ?? '—'} ❤ {m.spouseName ?? '—'}</div>
+                      <div className="text-xs text-slate-500">{m.prenupEnabled ? 'Prenup (không tự chia tài sản khi ly hôn)' : 'Không prenup (chia 50/50 tiền mặt + bất động sản khi ly hôn)'} · {m.status ?? '—'}</div>
                     </div>
-                    <div className="text-xs text-slate-500">
-                      {m.prenupEnabled
-                        ? 'Prenup (chia tài sản có giới hạn)'
-                        : 'Hôn nhân chung tài sản'}{' '}
-                      · {m.status ?? '—'}
-                    </div>
+                    {m.status === 'active' && !(social?.divorceProposals ?? []).some((d) => d.marriageId === m.id) && (
+                      <GameButton variant="danger" size="sm" disabled={actionBusy === `divorce-${m.id}`} onClick={() => void handleAction(`divorce-${m.id}`, () => apiRequest('/api/v1/social/marriage/divorce/propose', { method: 'POST', body: JSON.stringify({ marriageId: m.id }) }))}>
+                        Gửi yêu cầu ly hôn
+                      </GameButton>
+                    )}
                   </div>
-                  {m.status === 'active' && (
-                    <GameButton
-                      variant="danger"
-                      size="sm"
-                      disabled={actionBusy === `divorce-${m.id}`}
-                      onClick={() =>
-                        void handleAction(`divorce-${m.id}`, () =>
-                          apiRequest('/api/v1/social/marriage/divorce', {
-                            method: 'POST',
-                            body: JSON.stringify({ marriageId: m.id }),
-                          }),
-                        )
-                      }
-                    >
-                      Ly hôn
-                    </GameButton>
-                  )}
+                  {(social?.divorceProposals ?? []).filter((d) => d.marriageId === m.id).map((d) => {
+                    const incoming = myCharId != null && d.otherCharacterId === myCharId;
+                    return (
+                      <div key={d.id} className="flex items-center justify-between gap-2 p-2 rounded-lg border border-rose-200 bg-rose-50/60">
+                        <div className="min-w-0 text-xs">
+                          <div className="font-semibold text-slate-800">Yêu cầu ly hôn: {d.requesterName} → {d.otherName}</div>
+                          <div className="text-slate-500">{incoming ? 'Bạn cần xác nhận đồng ý ly hôn' : 'Đang chờ đối phương đồng ý ly hôn'}</div>
+                        </div>
+                        {incoming ? (
+                          <div className="flex gap-2 shrink-0">
+                            <GameButton variant="danger" size="sm" disabled={actionBusy === `dp-accept-${d.id}`} onClick={() => void handleAction(`dp-accept-${d.id}`, () => apiRequest('/api/v1/social/marriage/divorce/respond', { method: 'POST', body: JSON.stringify({ proposalId: d.id, accept: true }) }))}>Đồng ý ly hôn</GameButton>
+                            <GameButton variant="outline" size="sm" disabled={actionBusy === `dp-reject-${d.id}`} onClick={() => void handleAction(`dp-reject-${d.id}`, () => apiRequest('/api/v1/social/marriage/divorce/respond', { method: 'POST', body: JSON.stringify({ proposalId: d.id, accept: false }) }))}>Từ chối</GameButton>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-rose-700">Chờ phản hồi</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
+
               {social?.maritalStatus !== 'married' && (
                 <GameButton variant="primary" onClick={() => setMarryOpen(true)}>
-                  Kết hôn
+                  Gửi lời cầu hôn
                 </GameButton>
               )}
             </div>
@@ -355,9 +410,24 @@ export function LawPage() {
 
           <Panel title="Di chúc & Quỹ tín thác (Trust Fund)">
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">Người thừa kế chính</span>
-                <span className="font-semibold">{social?.will?.primaryHeirName ?? 'Chưa lập'}</span>
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-slate-700">Người thừa kế & tỉ lệ tài sản</div>
+                {(social?.will?.heirs?.length ?? 0) > 0 ? (
+                  <div className="space-y-1.5">
+                    {(social?.will?.heirs ?? []).map((h: any, i: number) => (
+                      <div key={h.beneficiaryCccd || h.characterId || i} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white/60 px-3 py-2 text-sm">
+                        <div className="min-w-0">
+                          <div className="font-medium text-slate-800 truncate">{h.beneficiaryName || h.characterName || h.beneficiaryCccd || h.characterId}</div>
+                          <div className="text-xs text-slate-500">{h.relationship}{h.note ? ` · ${h.note}` : ''} {h.beneficiaryCccd ? <>· CCCD: <span className="font-mono">{h.beneficiaryCccd}</span></> : null}</div>
+                        </div>
+                        <div className="shrink-0 font-semibold text-emerald-700">{h.sharePct}%</div>
+                      </div>
+                    ))}
+                    <div className="text-xs text-slate-500">Tổng phân chia: <b>{(social?.will?.heirs ?? []).reduce((s, h) => s + Number(h.sharePct || 0), 0).toFixed(2)}%</b> (có thể để lại phần còn lại theo quy định/mặc định). Có thể chỉ định người chơi khác, gồm cả con riêng.</div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500">Chưa lập di chúc hoặc chưa có người thừa kế. Bạn có thể chọn nhiều người thừa kế (kể cả người chơi khác, con riêng), đặt tỉ lệ % tài sản cho từng người.</div>
+                )}
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-600">Tổng quỹ tín thác</span>
@@ -366,7 +436,7 @@ export function LawPage() {
                 </span>
               </div>
               <div className="flex gap-2">
-                <GameButton variant="outline" onClick={() => setWillOpen(true)}>
+                <GameButton variant="outline" onClick={openWillModal}>
                   {social?.will?.id ? 'Chỉnh sửa di chúc' : 'Lập di chúc'}
                 </GameButton>
                 <GameButton variant="primary" onClick={() => setDepositOpen(true)}>
@@ -609,54 +679,72 @@ export function LawPage() {
         </div>
       </Modal>
 
-      {/* Modal: kết hôn */}
-      <Modal open={marryOpen} onClose={() => setMarryOpen(false)} title="Kết hôn">
+      {/* Modal: cầu hôn */}
+      <Modal open={marryOpen} onClose={() => setMarryOpen(false)} title="Gửi lời cầu hôn">
         <div className="space-y-3">
-          <GameInput
-            label="Character ID của vợ/chồng"
-            value={spouseId}
-            onChange={(e) => setSpouseId(e.target.value)}
-            placeholder="UUID nhân vật..."
+          <p className="text-xs text-slate-600">Kết hôn cần <b>sự đồng ý của cả hai bên</b>. Gửi lời cầu hôn và chờ đối phương chấp nhận.</p>
+          <CCCDLookupInput
+            label="CCCD người được cầu hôn"
+            value={spouseCccd}
+            onChange={setSpouseCccd}
           />
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={prenup} onChange={(e) => setPrenup(e.target.checked)} />
-            <span>Hợp đồng prenup (chia tài sản có giới hạn)</span>
+            <span>Có prenup (khi ly hôn sẽ không tự động phân chia tài sản)</span>
           </label>
           <GameButton
             variant="primary"
-            disabled={actionBusy === 'marry'}
+            disabled={actionBusy === 'marry' || spouseCccd.replace(/\s+/g,'').length !== 12}
             onClick={() =>
               void handleAction(
                 'marry',
                 () =>
-                  apiRequest('/api/v1/social/marriage/marry', {
+                  apiRequest('/api/v1/social/marriage/propose', {
                     method: 'POST',
-                    body: JSON.stringify({ spouseCharacterId: spouseId, prenupEnabled: prenup }),
+                    body: JSON.stringify({ spouseCccd: spouseCccd.replace(/\s+/g,''), prenupEnabled: prenup }),
                   }),
-                () => setMarryOpen(false),
+                () => { setMarryOpen(false); setSpouseCccd(''); setPrenup(false); },
               )
             }
           >
-            Kết hôn
+            Gửi lời cầu hôn
           </GameButton>
         </div>
       </Modal>
 
       {/* Modal: di chúc */}
-      <Modal open={willOpen} onClose={() => setWillOpen(false)} title="Di chúc">
-        <div className="space-y-3">
-          <GameInput
-            label="Người thừa kế chính (Character ID, trống nếu bỏ qua)"
-            value={heirId}
-            onChange={(e) => setHeirId(e.target.value)}
-            placeholder="UUID..."
-          />
+      <Modal open={willOpen} onClose={() => setWillOpen(false)} title="Di chúc & phân chia thừa kế">
+        <div className="space-y-3 max-h-[70vh] overflow-auto pr-1">
+          <p className="text-xs text-slate-600">Phân chia tỉ lệ tài sản cho từng người thừa kế (có thể chọn <b>người chơi khác</b> bằng Character ID). Hỗ trợ nhiều tình huống (vd. <b>con riêng</b>, con ruột, vợ/chồng…). Tổng tỉ lệ không vượt quá 100%.</p>
+          <div className="space-y-2">
+            {willHeirs.map((h, idx) => (
+              <div key={idx} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-700">Người thừa kế #{idx + 1}</span>
+                  {willHeirs.length > 1 && (
+                    <button type="button" className="text-xs text-rose-600 hover:underline" onClick={() => removeWillHeir(idx)}>Xóa</button>
+                  )}
+                </div>
+                <CCCDLookupInput label="CCCD người thụ hưởng" value={h.beneficiaryCccd} onChange={(v) => updateWillHeir(idx, { beneficiaryCccd: v })} />
+                <div className="grid grid-cols-2 gap-2">
+                  <GameInput label="Tỉ lệ tài sản (%)" type="number" min={0} max={100} step={0.01} value={h.sharePct} onChange={(e) => updateWillHeir(idx, { sharePct: e.target.value })} />
+                  <div className="space-y-1">
+                    <label className="text-[11px] uppercase tracking-wider text-slate-500">Quan hệ</label>
+                    <select className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" value={h.relationship} onChange={(e) => updateWillHeir(idx, { relationship: e.target.value })}>
+                      {WILL_RELATIONSHIPS.map((r) => (<option key={r} value={r}>{r}</option>))}
+                    </select>
+                  </div>
+                </div>
+                <GameInput label="Ghi chú (tùy chọn, vd. con riêng bên vợ/chồng)" value={h.note} onChange={(e) => updateWillHeir(idx, { note: e.target.value })} placeholder="Ghi chú..." />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between">
+            <button type="button" className="text-xs font-semibold text-emerald-700 hover:underline" onClick={addWillHeir}>+ Thêm người thừa kế</button>
+            <span className={`text-xs font-semibold ${willTotalShare > 100.001 ? 'text-rose-600' : 'text-slate-700'}`}>Tổng: {willTotalShare.toFixed(2)}%</span>
+          </div>
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={trustEnabled}
-              onChange={(e) => setTrustEnabled(e.target.checked)}
-            />
+            <input type="checkbox" checked={trustEnabled} onChange={(e) => setTrustEnabled(e.target.checked)} />
             <span>Bật quỹ tín thác (trust fund)</span>
           </label>
           <GameButton
@@ -669,7 +757,14 @@ export function LawPage() {
                   apiRequest('/api/v1/social/will', {
                     method: 'POST',
                     body: JSON.stringify({
-                      primaryHeirId: heirId.trim() === '' ? null : heirId,
+                      heirs: willHeirs
+                        .filter((h) => h.beneficiaryCccd.replace(/\s+/g,'') !== '')
+                        .map((h) => ({
+                          beneficiaryCccd: h.beneficiaryCccd.replace(/\s+/g,''),
+                          sharePct: Number(h.sharePct) || 0,
+                          relationship: h.relationship || 'Người thừa kế',
+                          note: h.note?.trim() ? h.note.trim() : null,
+                        })),
                       trustFundEnabled: trustEnabled,
                     }),
                   }),
@@ -717,11 +812,10 @@ export function LawPage() {
       {/* Modal: tố giác */}
       <Modal open={reportOpen} onClose={() => setReportOpen(false)} title="Tố giác">
         <div className="space-y-3">
-          <GameInput
-            label="Character ID người bị tố giác"
-            value={reportTarget}
-            onChange={(e) => setReportTarget(e.target.value)}
-            placeholder="UUID..."
+          <CCCDLookupInput
+            label="CCCD người bị tố giác"
+            value={reportTargetCccd}
+            onChange={setReportTargetCccd}
           />
           <GameInput
             label="Lý do"
@@ -738,7 +832,7 @@ export function LawPage() {
                 () =>
                   apiRequest('/api/v1/tax/report', {
                     method: 'POST',
-                    body: JSON.stringify({ targetCharacterId: reportTarget, reason: reportReason }),
+                    body: JSON.stringify({ targetCccd: reportTargetCccd.replace(/\s+/g,''), reason: reportReason }),
                   }),
                 () => setReportOpen(false),
               )

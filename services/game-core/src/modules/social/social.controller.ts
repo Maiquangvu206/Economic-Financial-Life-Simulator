@@ -1,7 +1,9 @@
-import type { Request, Response } from 'express';
+﻿import type { Request, Response } from 'express';
 import {
-  type DivorceRequest,
-  type MarryRequest,
+  type ProposeMarriageRequest,
+  type RespondMarriageProposalRequest,
+  type ProposeDivorceRequest,
+  type RespondDivorceProposalRequest,
   type CreateWillRequest,
   type TrustFundDepositRequest,
 } from '@efls/contracts';
@@ -15,35 +17,51 @@ export class SocialController {
     res.status(200).json(overview);
   };
 
-  marry = async (req: Request, res: Response): Promise<void> => {
-    const { spouseCharacterId, prenupEnabled } = req.body as MarryRequest;
-    const overview = await this.service.marry(
+  proposeMarriage = async (req: Request, res: Response): Promise<void> => {
+    const { spouseCccd, spouseCharacterId, prenupEnabled } = req.body as ProposeMarriageRequest & { spouseCccd?: string };
+    const overview = await this.service.proposeMarriage(
       req.actorId!,
-      spouseCharacterId,
+      { spouseCccd, spouseCharacterId },
       prenupEnabled ?? false,
     );
     res.status(200).json(overview);
   };
 
-  divorce = async (req: Request, res: Response): Promise<void> => {
-    const { marriageId } = req.body as DivorceRequest;
-    const overview = await this.service.divorce(req.actorId!, marriageId);
+  respondMarriageProposal = async (req: Request, res: Response): Promise<void> => {
+    const { proposalId, accept } = req.body as RespondMarriageProposalRequest;
+    const overview = await this.service.respondMarriageProposal(req.actorId!, proposalId, accept);
     res.status(200).json(overview);
   };
 
+  proposeDivorce = async (req: Request, res: Response): Promise<void> => {
+    const { marriageId } = req.body as ProposeDivorceRequest;
+    const overview = await this.service.proposeDivorce(req.actorId!, marriageId);
+    res.status(200).json(overview);
+  };
+
+  respondDivorceProposal = async (req: Request, res: Response): Promise<void> => {
+    const { proposalId, accept } = req.body as RespondDivorceProposalRequest;
+    const overview = await this.service.respondDivorceProposal(req.actorId!, proposalId, accept);
+    res.status(200).json(overview);
+  };
+
+  // Aliases (compat): now create proposals requiring consent
+  marry = this.proposeMarriage;
+  divorce = this.proposeDivorce;
+
   upsertWill = async (req: Request, res: Response): Promise<void> => {
-    const { primaryHeirId, trustFundEnabled } = req.body as CreateWillRequest;
-    const will = await this.service.upsertWill(
-      req.actorId!,
-      primaryHeirId ?? null,
+    const { heirs, primaryHeirId, trustFundEnabled } = req.body as CreateWillRequest;
+    const will = await this.service.upsertWill(req.actorId!, {
+      heirs,
+      primaryHeirId: primaryHeirId ?? null,
       trustFundEnabled,
-    );
+    });
     res.status(200).json(will);
   };
 
   depositTrustFund = async (req: Request, res: Response): Promise<void> => {
-    const { amount } = req.body as TrustFundDepositRequest;
-    const overview = await this.service.depositTrustFund(req.actorId!, amount.amount);
+    const { amount, beneficiaries } = req.body as TrustFundDepositRequest & { beneficiaries?: any[] };
+    const overview = await this.service.depositTrustFund(req.actorId!, amount.amount, beneficiaries);
     res.status(200).json(overview);
   };
 }

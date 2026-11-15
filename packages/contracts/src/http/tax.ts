@@ -76,10 +76,13 @@ export const TaxOverviewExtDtoSchema = TaxOverviewDtoSchema.extend({
 });
 export type TaxOverviewExtDto = z.infer<typeof TaxOverviewExtDtoSchema>;
 
-export const ReportRequestSchema = z.object({
-  targetCharacterId: IdSchema,
-  reason: z.string().min(1).max(500),
-});
+export const ReportRequestSchema = z
+  .object({
+    targetCccd: z.string().optional(),
+    targetCharacterId: IdSchema.optional(),
+    reason: z.string().min(1).max(500),
+  })
+  .refine((v) => !!v.targetCccd || !!v.targetCharacterId, { message: 'Cần targetCccd hoặc targetCharacterId.' });
 export type ReportRequest = z.infer<typeof ReportRequestSchema>;
 
 export const StartAuditRequestSchema = z.object({ taxYear: z.number().int() });

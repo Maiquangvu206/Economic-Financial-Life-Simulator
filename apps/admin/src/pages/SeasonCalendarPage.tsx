@@ -1,152 +1,211 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { adminRequest } from '../shared/api/httpClient';
 
-interface HolidayItem {
+type WelfareBenefitDto = {
   id: string;
-  nameVi: string;
-  dateStr: string;
-  otMultiplier: number;
-  isOff: boolean;
-  workerImpact: string;
+  code: string;
+  name: string;
+  description: string;
+  sender: string;
+  bonus: { amount: number; currency: 'VND' };
+  month: number | null;
+  day: number | null;
+  isActive: boolean;
+};
+
+type BenefitForm = {
+  code: string;
+  name: string;
+  description: string;
+  sender: string;
+  bonusMinor: string;
+  month: string;
+  day: string;
+  isActive: boolean;
+};
+
+const emptyForm: BenefitForm = {
+  code: '',
+  name: '',
+  description: '',
+  sender: 'Hệ thống',
+  bonusMinor: '1000000',
+  month: '',
+  day: '',
+  isActive: true,
+};
+
+function fmtMoney(amount: number) {
+  return `${(amount ?? 0).toLocaleString('vi-VN')} ₫`;
 }
 
 export function SeasonCalendarPage() {
-  const [selectedSeason, setSelectedSeason] = useState<'spring' | 'summer' | 'autumn' | 'winter'>(
-    'spring',
-  );
-  const [currentWeather, setCurrentWeather] = useState('sunny');
-  const [timeSpeedMultiplier, setTimeSpeedMultiplier] = useState(1);
-  const [otRatePercent, setOtRatePercent] = useState(300); // 300% theo Bộ luật Lao động VN
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [selectedSeason, setSelectedSeason] = useState<'spring' | 'summer' | 'autumn' | 'winter'>('spring');
+  const [otRatePercent, setOtRatePercent] = useState(300);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  const [holidays, setHolidays] = useState<HolidayItem[]>([
-    {
-      id: 'tet_nguyen_dan',
-      nameVi: 'Tết Nguyên Đán (Tết Cổ Truyền)',
-      dateStr: '10/02 - 17/02 (7 ngày)',
-      otMultiplier: 3.0,
-      isOff: true,
-      workerImpact: 'Năng suất sản xuất giảm 90%, nhu cầu bán lẻ & chi tiêu tăng 300%',
-    },
-    {
-      id: 'gio_to',
-      nameVi: 'Giỗ Tổ Hùng Vương (10/3 Âm lịch)',
-      dateStr: '18/04 (1 ngày)',
-      otMultiplier: 3.0,
-      isOff: true,
-      workerImpact: 'Công nhân nghỉ lễ có hưởng lương, làm thêm OT x300%',
-    },
-    {
-      id: 'le_30_4',
-      nameVi: 'Giải phóng miền Nam (30/4) & Quốc tế Lao động (1/5)',
-      dateStr: '30/04 - 01/05 (2 ngày)',
-      otMultiplier: 3.0,
-      isOff: true,
-      workerImpact: 'Du lịch và dịch vụ ăn uống bùng nổ',
-    },
-    {
-      id: 'quoc_khanh',
-      nameVi: 'Quốc khánh Việt Nam (2/9)',
-      dateStr: '01/09 - 02/09 (2 ngày)',
-      otMultiplier: 3.0,
-      isOff: true,
-      workerImpact: 'Doanh nghiệp nhà nước & xí nghiệp tư nhân nghỉ lễ',
-    },
-  ]);
+  const [editing, setEditing] = useState<WelfareBenefitDto | null>(null);
+  const [form, setForm] = useState<BenefitForm>(emptyForm);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const [newHolidayName, setNewHolidayName] = useState('');
-  const [newHolidayDate, setNewHolidayDate] = useState('');
+  const { data: benefits = [], isLoading, error, refetch } = useQuery<WelfareBenefitDto[]>({
+    queryKey: ['admin', 'welfare', 'benefits'],
+    queryFn: () => adminRequest<WelfareBenefitDto[]>('/api/v1/admin/welfare'),
+  });
+  const { data: gameConfig, refetch: refetchConfig } = useQuery<{ season: 'spring'|'summer'|'autumn'|'winter'; currentDay: number; currentYear: number; otRatePercent?: number }>({
+    queryKey: ['admin', 'game-config'],
+    queryFn: () => adminRequest('/api/v1/admin/game-config'),
+  });
 
-  const handleAddHoliday = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newHolidayName || !newHolidayDate) return;
+  useEffect(() => {
+    if (gameConfig?.season) setSelectedSeason(gameConfig.season);
+    if (gameConfig && typeof (gameConfig as any).otRatePercent === 'number') {
+      setOtRatePercent(Number((gameConfig as any).otRatePercent));
+    }
+  }, [gameConfig?.season, (gameConfig as any)?.otRatePercent]);
 
-    setHolidays((prev) => [
-      ...prev,
-      {
-        id: `custom_${Date.now()}`,
-        nameVi: newHolidayName,
-        dateStr: newHolidayDate,
-        otMultiplier: otRatePercent / 100,
-        isOff: true,
-        workerImpact: 'Ngày nghỉ đặc biệt do Ban quản trị thiết lập',
-      },
-    ]);
-    setNewHolidayName('');
-    setNewHolidayDate('');
-    setStatusMessage('Đã thêm ngày nghỉ lễ mới thành công!');
-    setTimeout(() => setStatusMessage(null), 3000);
-  };
+  const activeCount = useMemo(() => benefits.filter((b) => b.isActive).length, [benefits]);
 
-  const handleToggleHoliday = (id: string) => {
-    setHolidays((prev) => prev.map((h) => (h.id === id ? { ...h, isOff: !h.isOff } : h)));
-  };
-
-  const handleApplyChanges = () => {
-    setStatusMessage(
-      'Đã cập nhật cấu hình Mùa & Chính sách Lịch nghỉ Công nhân tới toàn bộ cụm Server!',
-    );
+  function notify(type: 'ok' | 'err', text: string) {
+    setStatusMessage({ type, text });
     setTimeout(() => setStatusMessage(null), 3500);
+  }
+
+  function startCreate() {
+    setEditing(null);
+    setForm(emptyForm);
+  }
+
+  function startEdit(b: WelfareBenefitDto) {
+    setEditing(b);
+    setForm({
+      code: b.code ?? '',
+      name: b.name ?? '',
+      description: b.description ?? '',
+      sender: b.sender ?? 'Hệ thống',
+      bonusMinor: String(b.bonus?.amount ?? 0),
+      month: b.month != null ? String(b.month) : '',
+      day: b.day != null ? String(b.day) : '',
+      isActive: !!b.isActive,
+    });
+  }
+
+  async function saveBenefit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy('save');
+    try {
+      const body = {
+        code: form.code.trim() || undefined,
+        name: form.name.trim(),
+        description: form.description.trim(),
+        sender: form.sender.trim() || 'Hệ thống',
+        bonusMinor: Math.max(0, Math.round(Number(form.bonusMinor || 0))),
+        month: form.month.trim() === '' ? null : Math.max(1, Math.min(12, Math.round(Number(form.month)))),
+        day: form.day.trim() === '' ? null : Math.max(1, Math.min(31, Math.round(Number(form.day)))),
+        isActive: form.isActive,
+      };
+      if (!body.name) throw new Error('Tên phúc lợi là bắt buộc.');
+      if (editing) {
+        await adminRequest(`/api/v1/admin/welfare/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        notify('ok', 'Đã cập nhật phúc lợi.');
+      } else {
+        await adminRequest('/api/v1/admin/welfare', { method: 'POST', body: JSON.stringify(body) });
+        notify('ok', 'Đã tạo phúc lợi mới.');
+      }
+      startCreate();
+      await refetch();
+    } catch (err: any) {
+      notify('err', err?.problem?.detail || err?.message || 'Không thể lưu phúc lợi.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleActive(b: WelfareBenefitDto) {
+    setBusy(`toggle-${b.id}`);
+    try {
+      await adminRequest(`/api/v1/admin/welfare/${b.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          code: b.code, name: b.name, description: b.description, sender: b.sender,
+          bonusMinor: b.bonus?.amount ?? 0, month: b.month, day: b.day, isActive: !b.isActive,
+        }),
+      });
+      await refetch();
+    } catch (err: any) {
+      notify('err', err?.problem?.detail || err?.message || 'Không thể cập nhật trạng thái.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeBenefit(id: string) {
+    if (!confirm('Xóa phúc lợi này?')) return;
+    setBusy(`del-${id}`);
+    try {
+      await adminRequest(`/api/v1/admin/welfare/${id}`, { method: 'DELETE' });
+      notify('ok', 'Đã xóa phúc lợi.');
+      if (editing?.id === id) startCreate();
+      await refetch();
+    } catch (err: any) {
+      notify('err', err?.problem?.detail || err?.message || 'Không thể xóa phúc lợi.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const handleApplyChanges = async () => {
+    try {
+      await adminRequest('/api/v1/admin/game-config', {
+        method: 'PUT',
+        body: JSON.stringify({ season: selectedSeason, otRatePercent }),
+      });
+      await refetchConfig();
+      notify('ok', 'Đã lưu cấu hình mùa và OT vào hệ thống (game_state). Người dùng sẽ đồng bộ khi tải/làm mới. Thời gian game cố định: 1 ngày = 1 phút thực tế.');
+    } catch (err: any) {
+      notify('err', err?.problem?.detail || err?.message || 'Không thể lưu cấu hình.');
+    }
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">
-            Quản trị Mùa, Thời tiết & Lịch nghỉ Công nhân
-          </h1>
+          <h1 className="text-xl font-bold text-slate-900">Quản trị Mùa & Phúc lợi công dân</h1>
           <p className="mt-1 text-xs text-slate-600">
-            Điều chỉnh chu kỳ 4 mùa, thời tiết tức thì và chính sách nghỉ lễ / làm thêm giờ (OT)
-            chuẩn Luật Lao động Việt Nam.
+            Cấu hình mùa được lưu vào hệ thống dùng chung; phúc lợi/lì xì do hệ thống phát (server-side). Thời gian game cố định: <b>1 ngày = 1 phút thực tế</b>.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleApplyChanges}
-          className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20"
-        >
-          Áp dụng thay đổi tức thì
+        <button type="button" onClick={handleApplyChanges} className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20">
+          Áp dụng & lưu mùa
         </button>
       </div>
 
       {statusMessage && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">
-          ✓ {statusMessage}
+        <div className={`rounded-xl border p-3 text-xs font-semibold ${statusMessage.type === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}>
+          {statusMessage.type === 'ok' ? '✓ ' : '⚠ '}{statusMessage.text}
         </div>
       )}
+      {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">Không tải được phúc lợi: {(error as any)?.message || 'Lỗi'}</div>}
 
-      {/* Grid 2 cột: Mùa/Thời tiết & Chính sách công nhân */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Panel 1: Điều phối Mùa & Tốc độ thời gian */}
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">
-            1. Cấu hình Mùa & Chu kỳ Thời tiết
-          </h2>
-
+          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">1. Cấu hình Mùa (hệ thống)</h2>
           <div className="space-y-2">
             <label className="text-xs text-slate-700">Chọn mùa khí hậu hiện tại:</label>
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
                 { id: 'spring', label: '🌸 Mùa Xuân', desc: 'Mát mẻ, mưa phùn, năng suất +10%' },
                 { id: 'summer', label: '☀️ Mùa Hạ', desc: 'Nắng nóng gay gắt, hao thể lực +25%' },
-                {
-                  id: 'autumn',
-                  label: '🍂 Mùa Thu',
-                  desc: 'Dễ chịu, sản xuất & kinh doanh đỉnh cao',
-                },
+                { id: 'autumn', label: '🍂 Mùa Thu', desc: 'Dễ chịu, sản xuất & kinh doanh đỉnh cao' },
                 { id: 'winter', label: '❄️ Mùa Đông', desc: 'Se lạnh rét buốt, chi phí sưởi ấm' },
               ].map((m) => (
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() =>
-                    setSelectedSeason(m.id as 'spring' | 'summer' | 'autumn' | 'winter')
-                  }
-                  className={`rounded-xl border p-3 text-left transition ${
-                    selectedSeason === m.id
-                      ? 'border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500'
-                      : 'border-slate-200 bg-slate-100 text-slate-600 hover:border-slate-300'
-                  }`}
+                  onClick={() => setSelectedSeason(m.id as 'spring' | 'summer' | 'autumn' | 'winter')}
+                  className={`rounded-xl border p-3 text-left transition ${selectedSeason === m.id ? 'border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500' : 'border-slate-200 bg-slate-100 text-slate-600 hover:border-slate-300'}`}
                 >
                   <p className="font-semibold text-slate-800">{m.label}</p>
                   <p className="text-[11px] text-slate-600 mt-1">{m.desc}</p>
@@ -154,157 +213,110 @@ export function SeasonCalendarPage() {
               ))}
             </div>
           </div>
-
-          <div className="space-y-2 pt-2">
-            <label className="text-xs text-slate-700">Tình trạng thời tiết tức thì:</label>
-            <div className="flex gap-2">
-              {[
-                { id: 'sunny', label: 'Nắng ráo ☀️' },
-                { id: 'rainy', label: 'Mưa rào 🌧️' },
-                { id: 'storm', label: 'Áp thấp/Bão ⛈️' },
-                { id: 'cloudy', label: 'Nhiều mây ☁️' },
-              ].map((w) => (
-                <button
-                  key={w.id}
-                  type="button"
-                  onClick={() => setCurrentWeather(w.id)}
-                  className={`flex-1 rounded-xl border py-2 text-xs font-medium transition ${
-                    currentWeather === w.id
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                      : 'border-slate-200 bg-slate-100 text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {w.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2 pt-2">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-700">Tốc độ trôi thời gian tự động:</span>
-              <span className="font-mono font-bold text-amber-700">{timeSpeedMultiplier}x</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="10"
-              value={timeSpeedMultiplier}
-              onChange={(e) => setTimeSpeedMultiplier(Number(e.target.value))}
-              className="w-full accent-amber-500 cursor-pointer"
-            />
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1">
+            <p><b>Thời gian game:</b> cố định <b>1 ngày = 1 phút thực tế</b> (không cấu hình tốc độ).</p>
+            <p>Mùa hiện tại trên hệ thống: <b>{gameConfig?.season ?? '—'}</b> (năm {gameConfig?.currentYear ?? 1}, ngày {gameConfig?.currentDay ?? 0}).</p>
           </div>
         </div>
 
-        {/* Panel 2: Chính sách Lao động & Làm thêm giờ (OT) */}
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">
-            2. Quy định Lao động & Tiền lương Công nhân
-          </h2>
-
+          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">2. Quy định Lao động & Phúc lợi (tham chiếu)</h2>
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
               <span className="text-slate-700">Hệ số lương làm thêm ngày lễ (OT):</span>
-              <span className="font-mono font-bold text-emerald-600">
-                {otRatePercent}% (x{(otRatePercent / 100).toFixed(1)})
-              </span>
+              <span className="font-mono font-bold text-emerald-600">{otRatePercent}% (x{(otRatePercent / 100).toFixed(1)})</span>
             </div>
-            <input
-              type="range"
-              min="150"
-              max="400"
-              step="10"
-              value={otRatePercent}
-              onChange={(e) => setOtRatePercent(Number(e.target.value))}
-              className="w-full accent-emerald-500 cursor-pointer"
-            />
+            <input type="range" min="150" max="400" step="10" value={otRatePercent} onChange={(e) => setOtRatePercent(Number(e.target.value))} className="w-full accent-emerald-500 cursor-pointer" />
+            <p className="text-[11px] text-slate-500">OT hiển thị tham chiếu; phúc lợi/lì xì được cấu hình và phát qua API (server-side) bên dưới.</p>
           </div>
-
           <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 text-xs space-y-2">
-            <p className="font-semibold text-slate-800">Chỉ số phúc lợi & Công nhân toàn server:</p>
+            <p className="font-semibold text-slate-800">Phúc lợi đang cấu hình (server):</p>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
-              <div>
-                Tổng lực lượng lao động: <span className="font-bold text-slate-800">24.500</span>
-              </div>
-              <div>
-                Tỷ lệ nghỉ lễ có lương: <span className="font-bold text-emerald-600">100%</span>
-              </div>
-              <div>
-                Bảo hiểm Xã hội (BHXH): <span className="font-bold text-slate-800">Bắt buộc</span>
-              </div>
-              <div>
-                Quỹ thưởng Tết dự phòng: <span className="font-bold text-amber-600">12,5 tỷ ₫</span>
-              </div>
+              <div>Tổng gói phúc lợi: <span className="font-bold text-slate-800">{benefits.length}</span></div>
+              <div>Đang bật: <span className="font-bold text-emerald-600">{activeCount}</span></div>
+              <div className="col-span-2">Nhân vật nhận qua nút &quot;Nhận Lì Xì/Phúc lợi&quot; → cộng tiền vào tài khoản thật (ledger/cash).</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Danh sách Lịch nghỉ Lễ & Thêm ngày nghỉ mới */}
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">
-          3. Lịch nghỉ Lễ & Điều động Công nhân
-        </h2>
-
-        <div className="divide-y divide-slate-200/80 overflow-hidden rounded-xl border border-slate-200 bg-slate-100/70">
-          {holidays.map((item) => (
-            <div
-              key={item.id}
-              className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-3"
-            >
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm text-slate-900">{item.nameVi}</span>
-                  <span className="text-xs font-mono text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
-                    {item.dateStr}
-                  </span>
-                  <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                    Lương OT x{item.otMultiplier}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-600">{item.workerImpact}</p>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleToggleHoliday(item.id)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
-                    item.isOff
-                      ? 'bg-rose-50 text-rose-600 border border-rose-200'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {item.isOff ? 'Đang áp dụng nghỉ lễ' : 'Đã bỏ nghỉ lễ'}
-                </button>
-              </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">{editing ? 'Sửa phúc lợi' : 'Thêm phúc lợi'}</h2>
+          <form onSubmit={saveBenefit} className="space-y-3 text-sm">
+            <label className="block text-xs text-slate-700">Mã (code, duy nhất)
+              <input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="vd: tet_nguyen_dan, quoc_khanh..." disabled={!!editing} />
+            </label>
+            <label className="block text-xs text-slate-700">Tên phúc lợi
+              <input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            </label>
+            <label className="block text-xs text-slate-700">Người gửi/đơn vị
+              <input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={form.sender} onChange={(e) => setForm({ ...form, sender: e.target.value })} />
+            </label>
+            <label className="block text-xs text-slate-700">Nội dung/mô tả
+              <textarea className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 min-h-[70px]" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <label className="block text-xs text-slate-700">Thưởng (₫)
+                <input type="number" min={0} step={1000} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={form.bonusMinor} onChange={(e) => setForm({ ...form, bonusMinor: e.target.value })} />
+              </label>
+              <label className="block text-xs text-slate-700">Tháng (1-12)
+                <input type="number" min={1} max={12} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} placeholder="trống=n/a" />
+              </label>
+              <label className="block text-xs text-slate-700">Ngày (1-31)
+                <input type="number" min={1} max={31} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={form.day} onChange={(e) => setForm({ ...form, day: e.target.value })} placeholder="trống=n/a" />
+              </label>
             </div>
-          ))}
+            <div className="text-[11px] text-slate-500">Số tiền hiển thị: <b>{fmtMoney(Number(form.bonusMinor || 0))}</b>. Nhân vật chỉ nhận 1 lần/kỳ (năm game) cho mỗi phúc lợi.</div>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} />
+              Đang bật (cho phép nhận)
+            </label>
+            <div className="flex gap-2">
+              <button type="submit" disabled={busy === 'save'} className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{busy === 'save' ? 'Đang lưu...' : (editing ? 'Cập nhật' : 'Tạo phúc lợi')}</button>
+              {editing && <button type="button" onClick={startCreate} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700">Hủy sửa</button>}
+            </div>
+          </form>
         </div>
 
-        {/* Form thêm ngày nghỉ mới */}
-        <form onSubmit={handleAddHoliday} className="pt-2 flex flex-col sm:flex-row gap-3">
-          <input
-            type="text"
-            placeholder="Tên ngày nghỉ / Sự kiện công nhân (VD: Ngày truyền thống ngành Than)..."
-            value={newHolidayName}
-            onChange={(e) => setNewHolidayName(e.target.value)}
-            className="flex-1 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-800 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none"
-          />
-          <input
-            type="text"
-            placeholder="Thời gian (VD: 12/11 - 1 ngày)..."
-            value={newHolidayDate}
-            onChange={(e) => setNewHolidayDate(e.target.value)}
-            className="w-full sm:w-56 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-800 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none"
-          />
-          <button
-            type="submit"
-            className="rounded-xl bg-slate-100 border border-slate-300 px-4 py-2 text-xs font-bold text-slate-800 hover:bg-slate-200 transition"
-          >
-            + Thêm ngày nghỉ
-          </button>
-        </form>
+        <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">3. Danh sách phúc lợi & ngày lễ</h2>
+            <button type="button" onClick={() => refetch()} className="text-xs text-slate-600 hover:text-slate-900">Tải lại</button>
+          </div>
+          {isLoading ? (
+            <div className="text-sm text-slate-600">Đang tải...</div>
+          ) : benefits.length === 0 ? (
+            <div className="text-sm text-slate-500">Chưa có phúc lợi nào.</div>
+          ) : (
+            <div className="divide-y divide-slate-200/80 overflow-hidden rounded-xl border border-slate-200 bg-slate-100/70">
+              {benefits.map((b) => (
+                <div key={b.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-3">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-sm text-slate-900">{b.name}</span>
+                      <span className="text-[11px] font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">{b.code}</span>
+                      <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">{fmtMoney(b.bonus?.amount ?? 0)}</span>
+                      {(b.month != null || b.day != null) && (
+                        <span className="text-xs font-mono text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
+                          {b.day != null ? `${b.day}` : '—'}/{b.month != null ? `${b.month}` : '—'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 truncate">{b.description || b.sender}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button type="button" onClick={() => toggleActive(b)} disabled={busy === `toggle-${b.id}`} className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${b.isActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
+                      {b.isActive ? 'Đang bật' : 'Đã tắt'}
+                    </button>
+                    <button type="button" onClick={() => startEdit(b)} className="rounded-xl px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 text-slate-700">Sửa</button>
+                    <button type="button" onClick={() => removeBenefit(b.id)} disabled={busy === `del-${b.id}`} className="rounded-xl px-3 py-1.5 text-xs font-semibold bg-rose-50 border border-rose-200 text-rose-700">Xóa</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

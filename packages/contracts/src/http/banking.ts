@@ -124,17 +124,23 @@ export type AssetLiabilityReport = z.infer<typeof AssetLiabilityReportSchema>;
 
 export const TransferLookupDtoSchema = z.object({
   accountNumber: z.string(),
+  cccdMasked: z.string().optional(),
   characterId: IdSchema,
   fullName: z.string(),
   accountTier: z.enum(['standard', 'silver', 'gold', 'platinum', 'diamond']),
 });
 export type TransferLookupDto = z.infer<typeof TransferLookupDtoSchema>;
 
-export const CreateTransferRequestSchema = z.object({
-  toAccountNumber: z.string().min(6).max(20),
-  amount: MoneySchema,
-  message: z.string().max(200).optional().default(''),
-});
+export const CreateTransferRequestSchema = z
+  .object({
+    targetCccd: z.string().optional(),
+    toAccountNumber: z.string().min(6).max(20).optional(),
+    amount: MoneySchema,
+    message: z.string().max(200).optional().default(''),
+  })
+  .refine((v) => (v.targetCccd && /^\d{12}$/.test(v.targetCccd.replace(/\s+/g, ''))) || !!v.toAccountNumber, {
+    message: 'Cần cung cấp targetCccd (12 số) hoặc toAccountNumber.',
+  });
 export type CreateTransferRequest = z.infer<typeof CreateTransferRequestSchema>;
 
 export const TransferDtoSchema = z.object({

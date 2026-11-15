@@ -47,7 +47,22 @@ function toSessionUser(user: UserRow): SessionUser {
   };
 }
 
+function ensureAccountActive(user: UserRow): void {
+  const status = user.status ?? 'active';
+  if (status === 'active') return;
+  if (status === 'banned') {
+    const until = user.banned_until ? ` đến ${new Date(user.banned_until).toLocaleString('vi-VN')}` : '';
+    const reason = user.ban_reason ? ` Lý do: ${user.ban_reason}` : '';
+    throw AppError.forbidden(`Tài khoản đã bị khóa${until}.${reason}`.trim());
+  }
+  if (status === 'restricted') {
+    const reason = user.ban_reason ? ` Lý do: ${user.ban_reason}` : '';
+    throw AppError.forbidden(`Tài khoản đang bị hạn chế truy cập.${reason}`.trim());
+  }
+}
+
 function issueTokens(user: UserRow): TokenPair {
+  ensureAccountActive(user);
   const accessToken = jwt.sign(
     { sub: user.id, role: user.role, type: 'access' },
     env.JWT_ACCESS_SECRET,
@@ -97,6 +112,7 @@ export class AuthService {
       throw AppError.unauthorized('Invalid email or password');
     }
 
+    ensureAccountActive(user);
     return issueTokens(user);
   }
 
@@ -106,7 +122,7 @@ export class AuthService {
     if (!user) {
       throw AppError.unauthorized('User no longer exists');
     }
-
+    ensureAccountActive(user);
     return issueTokens(user);
   }
 
@@ -144,7 +160,7 @@ export class AuthService {
     if (!user) {
       throw AppError.unauthorized('User no longer exists');
     }
-
+    ensureAccountActive(user);
     return issueTokens(user);
   }
 

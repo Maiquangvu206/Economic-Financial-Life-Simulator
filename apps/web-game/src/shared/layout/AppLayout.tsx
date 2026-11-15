@@ -1,12 +1,28 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { CharacterDto, NotificationDto } from '@efls/contracts';
 import { useSessionStore } from '../../features/auth/sessionStore';
 import { ChatWidget } from '../../features/chat/ChatWidget';
 import { useGameStore } from '../../store/game';
+import { apiRequest } from '../api/httpClient';
+import { getGameSocket } from '../realtime/socket';
 import { formatCompact, formatMoney, formatVietnamDate, formatVietnamTime } from '../lib/format';
 import { Badge } from '../ui/Badge';
-import { ToastContainer } from '../ui/Toast';
+import { ToastContainer, toast } from '../ui/Toast';
+import { DeathSuccessionModal } from '../identity/DeathSuccessionModal';
+
+type BroadcastItem = {
+  id: string;
+  title: string;
+  content: string;
+  type: 'urgent' | 'maintenance' | 'event' | 'economy' | 'news';
+  scope: string;
+  pinned: boolean;
+  sender: string;
+  createdAt: string;
+};
 
 const NAV_ITEMS = [
   { to: '/', label: 'Thành phố', symbol: '▦', end: true },
@@ -19,29 +35,17 @@ const NAV_ITEMS = [
   { to: '/law', label: 'Pháp lý', symbol: '§' },
   { to: '/politics', label: 'Chính trị', symbol: '⚖' },
   { to: '/underworld', label: 'Chợ đen', symbol: '☠' },
+  { to: '/gift-codes', label: 'Mã quà tặng', symbol: '🎁' },
   { to: '/recap', label: 'Offline Recap', symbol: '◷' },
 ];
 
 const SEASON_LABELS: Record<string, { label: string; icon: string; badgeCls: string }> = {
-  spring: {
-    label: 'Mùa Xuân',
-    icon: '🌸',
-    badgeCls: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  },
+  spring: { label: 'Mùa Xuân', icon: '🌸', badgeCls: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
   summer: { label: 'Mùa Hạ', icon: '☀️', badgeCls: 'bg-amber-100 text-amber-800 border-amber-200' },
-  autumn: {
-    label: 'Mùa Thu',
-    icon: '🍂',
-    badgeCls: 'bg-orange-100 text-orange-800 border-orange-200',
-  },
+  autumn: { label: 'Mùa Thu', icon: '🍂', badgeCls: 'bg-orange-100 text-orange-800 border-orange-200' },
   winter: { label: 'Mùa Đông', icon: '❄️', badgeCls: 'bg-sky-100 text-sky-800 border-sky-200' },
 };
-
-const DEFAULT_SEASON: { label: string; icon: string; badgeCls: string } = {
-  label: 'Mùa Xuân',
-  icon: '🌸',
-  badgeCls: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-};
+const DEFAULT_SEASON = SEASON_LABELS.spring;
 
 const PERIOD_LABELS: Record<string, { label: string; icon: string }> = {
   dawn: { label: 'Rạng sáng', icon: '🌅' },
@@ -49,8 +53,7 @@ const PERIOD_LABELS: Record<string, { label: string; icon: string }> = {
   dusk: { label: 'Hoàng hôn', icon: '🌇' },
   night: { label: 'Ban đêm', icon: '🌙' },
 };
-
-const DEFAULT_PERIOD: { label: string; icon: string } = { label: 'Ban ngày', icon: '☀️' };
+const DEFAULT_PERIOD = PERIOD_LABELS.day;
 
 const ROLE_LABEL: Record<string, string> = {
   player: 'Công dân',
@@ -58,58 +61,114 @@ const ROLE_LABEL: Record<string, string> = {
   admin: 'Quản trị viên',
 };
 
+function fmtDate(iso: string) {
+  try { return new Date(iso).toLocaleString('vi-VN'); } catch { return iso; }
+}
+
 export function AppLayout() {
   const navigate = useNavigate();
   const user = useSessionStore((state) => state.user);
   const clearSession = useSessionStore((state) => state.clearSession);
   const {
-    netWorth,
-    cash,
-    heatLevel,
-    energy,
-    year,
-    month,
-    day,
-    hour,
-    minute,
-    timeSpeed,
-    isPaused,
-    season,
-    period,
-    activeHoliday,
-    education,
-    lastHolidayLetter,
-    claimHolidayGift,
-    dismissHolidayLetter,
-    tickTime,
+    netWorth, cash, heatLevel, energy, year, month, day, hour, minute,
+    isPaused, season, period, activeHoliday, education,
+    lastHolidayLetter, claimHolidayGift, dismissHolidayLetter, tickTime, setSeason,
   } = useGameStore();
+  const queryClient = useQueryClient();
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<string[]>([]);
 
-  // Tự động cập nhật thời gian theo từng giây (mỗi 1s thực tế = 5 phút hoặc tuỳ speed)
+  const { data: me } = useQuery<CharacterDto>({
+    queryKey: ['characters', 'me'],
+    queryFn: () => apiRequest<CharacterDto>('/api/v1/characters/me'),
+    retry: 1,
+    staleTime: 15000,
+  });
+  const isDead = me?.isAlive === false;
+
+  const { data: broadcasts = [] } = useQuery<BroadcastItem[]>({
+    queryKey: ['broadcasts', 'active'],
+    queryFn: () => apiRequest<BroadcastItem[]>('/api/v1/broadcasts/active'),
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  const { data: notifications = [] } = useQuery<NotificationDto[]>({
+    queryKey: ['notifications', 'mine'],
+    queryFn: () => apiRequest<NotificationDto[]>('/api/v1/notifications?limit=50'),
+    refetchInterval: 30000,
+    staleTime: 10000,
+  });
+
+  const { data: gameConfig } = useQuery<{ season: 'spring'|'summer'|'autumn'|'winter'; currentDay: number; currentYear: number }>({
+    queryKey: ['game-config'],
+    queryFn: () => apiRequest('/api/v1/game-config'),
+    staleTime: 60000,
+  });
+
   useEffect(() => {
-    if (isPaused || timeSpeed === 0) return;
-    const intervalTimeMs = Math.max(200, 1000 / timeSpeed);
+    if (gameConfig?.season) setSeason(gameConfig.season);
+  }, [gameConfig?.season, setSeason]);
+
+  // Nhận thông báo realtime (broadcast/can thiệp admin/sự kiện vĩ mô) -> làm mới dữ liệu và hiển thị toast
+  useEffect(() => {
+    const socket = getGameSocket();
+    const onNotification = (payload: any) => {
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      void queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
+      void queryClient.invalidateQueries({ queryKey: ['game-config'] });
+      if (payload?.title || payload?.body) {
+        toast({
+          title: payload.title || 'Thông báo hệ thống',
+          description: payload.body,
+          variant: payload?.kind === 'error' ? 'error' : payload?.pinned || payload?.kind === 'urgent' ? 'warning' : 'info',
+        });
+      }
+      if (payload?.kind === 'admin_action' && String(payload?.body || '').includes('khóa')) {
+        // tài khoản bị khóa: buộc làm mới phiên/đăng xuất ở lần gọi API tiếp theo
+        void queryClient.invalidateQueries({ queryKey: ['characters'] });
+      }
+    };
+    socket.on('notification', onNotification as never);
+    return () => {
+      socket.off('notification', onNotification as never);
+    };
+  }, [queryClient]);
+
+  const unreadCount = notifications.filter((n) => !n.readAt).length;
+  const hudBroadcasts = useMemo(
+    () => broadcasts.filter((b) => b.pinned || b.type === 'urgent').filter((b) => !dismissedBroadcastIds.includes(b.id)).slice(0, 3),
+    [broadcasts, dismissedBroadcastIds],
+  );
+
+  // Thời gian game cố định: 1 ngày trong game = 1 phút thực tế (24 phút game mỗi giây thực)
+  useEffect(() => {
+    if (isPaused || isDead) return;
     const interval = setInterval(() => {
-      tickTime(5);
-    }, intervalTimeMs);
+      tickTime(24);
+    }, 1000);
     return () => clearInterval(interval);
-  }, [isPaused, timeSpeed, tickTime]);
+  }, [isPaused, isDead, tickTime]);
 
   // Overlay pastel nhẹ thay đổi theo giờ trong ngày
   const ambientOverlayStyle = useMemo(() => {
     switch (period) {
-      case 'dawn':
-        return 'bg-gradient-to-b from-amber-200/25 via-transparent to-orange-100/30';
-      case 'dusk':
-        return 'bg-gradient-to-b from-orange-200/25 via-rose-200/20 to-violet-200/30';
-      case 'night':
-        return 'bg-gradient-to-b from-indigo-200/20 via-slate-200/10 to-indigo-300/20';
-      default:
-        return 'bg-gradient-to-b from-sky-100/20 via-transparent to-transparent';
+      case 'dawn': return 'bg-gradient-to-b from-amber-200/25 via-transparent to-orange-100/30';
+      case 'dusk': return 'bg-gradient-to-b from-orange-200/25 via-rose-200/20 to-violet-200/30';
+      case 'night': return 'bg-gradient-to-b from-indigo-200/20 via-slate-200/10 to-indigo-300/20';
+      default: return 'bg-gradient-to-b from-sky-100/20 via-transparent to-transparent';
     }
   }, [period]);
 
-  const currentSeason = SEASON_LABELS[season] ?? DEFAULT_SEASON;
-  const currentPeriod = PERIOD_LABELS[period] ?? DEFAULT_PERIOD;
+  const currentSeason = (SEASON_LABELS[season] ?? DEFAULT_SEASON) as { label: string; icon: string; badgeCls: string };
+  const currentPeriod = (PERIOD_LABELS[period] ?? DEFAULT_PERIOD) as { label: string; icon: string };
+
+  async function markAllRead() {
+    try {
+      await apiRequest('/api/v1/notifications/read', { method: 'POST', body: JSON.stringify({}) });
+      await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    } catch { /* ignore */ }
+  }
 
   function handleLogout() {
     clearSession();
@@ -120,29 +179,28 @@ export function AppLayout() {
     <div className="flex h-screen w-screen overflow-hidden bg-surface-50 text-slate-900 font-sans">
       <ToastContainer />
       <ChatWidget />
-      {/* Overlay ánh sáng theo giờ/mùa */}
-      <div
-        className={clsx(
-          'pointer-events-none fixed inset-0 z-40 transition-colors duration-1000',
-          ambientOverlayStyle,
-        )}
+      <DeathSuccessionModal
+        open={isDead}
+        onCompleted={() => {
+          void queryClient.invalidateQueries({ queryKey: ['characters'] });
+          void queryClient.invalidateQueries({ queryKey: ['succession'] });
+          window.location.reload();
+        }}
       />
+      {/* Overlay ánh sáng theo giờ/mùa */}
+      <div className={clsx('pointer-events-none fixed inset-0 z-40 transition-colors duration-1000', ambientOverlayStyle)} />
 
       {/* Sidebar cố định bên trái */}
       <aside className="w-64 h-full flex-shrink-0 flex flex-col bg-white border-r border-slate-200 px-4 py-6">
         <div className="px-2">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <p className="text-xs font-heading font-black uppercase tracking-[0.25em] text-emerald-600">
-              EFLS VIỆT NAM
-            </p>
+            <p className="text-xs font-heading font-black uppercase tracking-[0.25em] text-emerald-600">EFLS VIỆT NAM</p>
           </div>
           <p className="text-sm font-semibold text-slate-900">Mô phỏng Kinh tế & Cuộc sống</p>
           <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
             <span>Học vấn:</span>
-            <span className="font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-              {education.nameVi}
-            </span>
+            <span className="font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">{education.nameVi}</span>
           </div>
         </div>
 
@@ -155,29 +213,21 @@ export function AppLayout() {
               className={({ isActive }) =>
                 clsx(
                   'flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-200',
-                  isActive
-                    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 shadow-sm'
-                    : 'text-slate-600 hover:bg-white hover:text-slate-900',
+                  isActive ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 shadow-sm' : 'text-slate-600 hover:bg-white hover:text-slate-900',
                 )
               }
             >
-              <span aria-hidden className="w-5 text-center text-base font-mono">
-                {item.symbol}
-              </span>
+              <span aria-hidden className="w-5 text-center text-base font-mono">{item.symbol}</span>
               {item.label}
             </NavLink>
           ))}
         </nav>
 
-        {/* Thông tin nhân vật và học vấn */}
+        {/* Thông tin nhân vật */}
         <div className="mt-auto space-y-2 rounded-2xl border border-slate-200 bg-white/90 p-4 text-xs text-slate-500">
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-slate-800 truncate">
-              {user?.username ?? 'Công dân'}
-            </span>
-            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-              {ROLE_LABEL[user?.role ?? 'player'] ?? 'Công dân'}
-            </span>
+            <span className="font-semibold text-slate-800 truncate">{user?.username ?? 'Công dân'}</span>
+            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">{ROLE_LABEL[user?.role ?? 'player'] ?? 'Công dân'}</span>
           </div>
           <div className="flex items-center justify-between text-[11px]">
             <span>Trường tốt nghiệp:</span>
@@ -187,141 +237,168 @@ export function AppLayout() {
             <span>Chứng chỉ:</span>
             <span className="text-amber-700">{education.certificates[0] || 'Chưa có'}</span>
           </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-          >
+          <button type="button" onClick={handleLogout} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600">
             Đăng xuất
           </button>
         </div>
       </aside>
 
-      {/* Phía phải: Topbar trên + Main Content dưới, chỉ Main tự cuộn */}
+      {/* Phía phải */}
       <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden">
-        {/* Topbar cố định */}
+        {/* Topbar */}
         <header className="h-16 w-full flex-shrink-0 flex items-center justify-between gap-y-2 border-b border-slate-200 bg-white px-6">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-white px-3 py-1.5 border border-slate-200 shadow-sm">
-              <span className="text-sm font-mono font-bold text-amber-600">
-                {formatVietnamTime(hour, minute)}
-              </span>
-              <span className="text-[11px] text-slate-500 border-l border-slate-200 pl-2">
-                {currentPeriod.icon} {currentPeriod.label}
-              </span>
-              <span className="text-xs font-mono font-medium text-emerald-700 border-l border-slate-200 pl-2">
-                {formatVietnamDate(day, month, year)}
-              </span>
+              <span className="text-sm font-mono font-bold text-amber-600">{formatVietnamTime(hour, minute)}</span>
+              <span className="text-[11px] text-slate-500 border-l border-slate-200 pl-2">{currentPeriod.icon} {currentPeriod.label}</span>
+              <span className="text-xs font-mono font-medium text-emerald-700 border-l border-slate-200 pl-2">{formatVietnamDate(day, month, year)}</span>
             </div>
-
-            <div
-              className={clsx(
-                'flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-medium',
-                currentSeason.badgeCls,
-              )}
-            >
-              <span>{currentSeason.icon}</span>
-              <span>{currentSeason.label}</span>
+            <div className={clsx('flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-medium', currentSeason.badgeCls)}>
+              <span>{currentSeason.icon}</span><span>{currentSeason.label}</span>
             </div>
-
             {activeHoliday && (
               <div className="flex items-center gap-1.5 rounded-xl bg-rose-50 border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-600">
-                <span>🏮</span>
-                <span>{activeHoliday.nameVi} (Nghỉ lễ)</span>
+                <span>🏮</span><span>{activeHoliday.nameVi} (Nghỉ lễ)</span>
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-6 text-xs">
+          <div className="flex items-center gap-4 text-xs">
             <div className="flex items-center gap-2">
               <span className="whitespace-nowrap text-slate-500">Tiền mặt:</span>
-              <span className="font-mono font-bold text-emerald-600 text-sm">
-                {formatCompact(cash)}
-              </span>
+              <span className="font-mono font-bold text-emerald-600 text-sm">{formatCompact(cash)}</span>
             </div>
-
             <div className="hidden md:flex items-center gap-2">
               <span className="whitespace-nowrap text-slate-500">Tài sản ròng:</span>
-              <span className="font-mono font-semibold text-slate-800">
-                {formatCompact(netWorth)}
-              </span>
+              <span className="font-mono font-semibold text-slate-800">{formatCompact(netWorth)}</span>
             </div>
-
             <div className="flex items-center gap-2">
               <span className="whitespace-nowrap text-slate-500">Thể lực:</span>
-              <span
-                className={clsx(
-                  'font-mono font-bold',
-                  energy < 30 ? 'text-rose-600' : 'text-emerald-600',
-                )}
-              >
-                {energy}%
-              </span>
+              <span className={clsx('font-mono font-bold', energy < 30 ? 'text-rose-600' : 'text-emerald-600')}>{energy}%</span>
             </div>
-
             <div className="hidden sm:flex items-center gap-2">
               <span className="text-slate-500">Heat:</span>
               <Badge variant={heatLevel > 50 ? 'error' : 'default'}>{heatLevel}/100</Badge>
             </div>
 
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 lg:hidden"
-            >
+            {/* Notification center */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setNotifOpen((v) => !v)}
+                className="relative rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-sm hover:bg-slate-50"
+                title="Thông báo"
+              >
+                🔔
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white text-center">{unreadCount > 99 ? '99+' : unreadCount}</span>
+                )}
+              </button>
+              {notifOpen && (
+                <div className="absolute right-0 top-full z-50 mt-2 w-[380px] max-w-[90vw] rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                    <span className="text-xs font-semibold text-slate-800">Thông báo & bản tin hệ thống</span>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => void markAllRead()} className="text-[11px] text-emerald-700 hover:underline">Đánh dấu đã đọc</button>
+                      <button type="button" onClick={() => setNotifOpen(false)} className="text-[11px] text-slate-500">Đóng</button>
+                    </div>
+                  </div>
+                  <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100">
+                    {broadcasts.length > 0 && (
+                      <div className="p-2 bg-amber-50/40">
+                        <div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-amber-700">Thông báo hệ thống</div>
+                        {broadcasts.slice(0, 5).map((b) => (
+                          <div key={`bc-${b.id}`} className="rounded-xl border border-amber-100 bg-white p-2 mb-1">
+                            <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                              {b.pinned && <span className="text-amber-700 font-bold">📌 GHIM</span>}
+                              <span>{fmtDate(b.createdAt)}</span>
+                            </div>
+                            <div className="text-xs font-semibold text-slate-900 mt-0.5">{b.title}</div>
+                            <div className="text-[11px] text-slate-600 mt-0.5 line-clamp-3 whitespace-pre-wrap">{b.content}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {notifications.length === 0 && broadcasts.length === 0 ? (
+                      <div className="p-4 text-xs text-slate-500 text-center">Chưa có thông báo.</div>
+                    ) : (
+                      notifications.map((n) => (
+                        <div key={n.id} className={clsx('p-3', !n.readAt && 'bg-emerald-50/40')}>
+                          <div className="flex items-center justify-between text-[10px] text-slate-500">
+                            <span className="font-medium">{n.kind}</span>
+                            <span>{fmtDate(n.createdAt)}</span>
+                          </div>
+                          <div className="text-xs font-semibold text-slate-900 mt-0.5">{n.title}</div>
+                          <div className="text-[11px] text-slate-600 mt-0.5 whitespace-pre-wrap">{n.body}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button type="button" onClick={handleLogout} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 lg:hidden">
               Thoát
             </button>
           </div>
         </header>
 
-        {/* Main Content: chỉ vùng này tự cuộn khi trang dài */}
+        {/* HUD broadcasts */}
+        {hudBroadcasts.length > 0 && (
+          <div className="flex-shrink-0 space-y-2 border-b border-amber-200 bg-amber-50/70 px-4 py-2">
+            {hudBroadcasts.map((b) => (
+              <div key={b.id} className="flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-white/80 px-3 py-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="font-bold text-amber-700">{b.pinned ? '📌 Thông báo hệ thống' : '🚨 Khẩn cấp'}</span>
+                    <span className="text-slate-500">{fmtDate(b.createdAt)}</span>
+                  </div>
+                  <div className="text-xs font-semibold text-slate-900 truncate">{b.title}</div>
+                  <div className="text-[11px] text-slate-600 line-clamp-2">{b.content}</div>
+                </div>
+                <button type="button" onClick={() => setDismissedBroadcastIds((s) => [...s, b.id])} className="shrink-0 text-[11px] text-slate-500 hover:text-slate-800">Ẩn</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Main */}
         <main className="flex-1 w-full overflow-y-auto p-6">
-          <Outlet />
+          {isDead ? (
+            <div className="flex h-full items-center justify-center text-slate-500">Nhân vật đã qua đời. Vui lòng hoàn tất kế thừa.</div>
+          ) : (
+            <Outlet />
+          )}
         </main>
 
         {/* Modal Thư chúc mừng Lễ/Tết & Nhận Lì xì */}
         {lastHolidayLetter && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
             <div className="w-full max-w-lg space-y-4 rounded-3xl border-2 border-amber-200 bg-white p-6 text-center shadow-soft">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-200 to-rose-200 text-3xl shadow-sm">
-                🧧
-              </div>
-
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-200 to-rose-200 text-3xl shadow-sm">🧧</div>
               <div>
-                <span className="text-[11px] font-bold uppercase tracking-widest text-amber-600">
-                  {lastHolidayLetter.sender}
-                </span>
-                <h2 className="mt-1 text-lg font-heading font-black text-slate-900">
-                  {lastHolidayLetter.title}
-                </h2>
+                <span className="text-[11px] font-bold uppercase tracking-widest text-amber-600">{lastHolidayLetter.sender}</span>
+                <h2 className="mt-1 text-lg font-heading font-black text-slate-900">{lastHolidayLetter.title}</h2>
               </div>
-
-              <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4 text-left text-xs leading-relaxed text-slate-700">
-                {lastHolidayLetter.content}
-              </div>
-
+              <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4 text-left text-xs leading-relaxed text-slate-700">{lastHolidayLetter.content}</div>
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center">
-                <p className="text-xs text-emerald-700 font-medium">
-                  Phong bao phúc lợi chuyển vào tài khoản:
-                </p>
-                <p className="text-2xl font-mono font-black text-emerald-600 mt-1">
-                  +{formatMoney(lastHolidayLetter.bonusCash)}
-                </p>
+                <p className="text-xs text-emerald-700 font-medium">Phong bao phúc lợi chuyển vào tài khoản:</p>
+                <p className="text-2xl font-mono font-black text-emerald-600 mt-1">+{formatMoney(lastHolidayLetter.bonusCash)}</p>
               </div>
-
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={claimHolidayGift}
+                  onClick={async () => {
+                    await claimHolidayGift();
+                    await queryClient.invalidateQueries({ queryKey: ['characters'] });
+                    await queryClient.invalidateQueries({ queryKey: ['banking'] });
+                  }}
                   className="flex-1 rounded-2xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 text-sm font-bold text-emerald-950 transition hover:brightness-105 shadow-md shadow-emerald-500/20"
                 >
                   🎉 Nhận Lì Xì Ngay
                 </button>
-                <button
-                  type="button"
-                  onClick={dismissHolidayLetter}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
-                >
+                <button type="button" onClick={dismissHolidayLetter} className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100">
                   Đóng
                 </button>
               </div>

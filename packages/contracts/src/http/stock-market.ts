@@ -89,8 +89,11 @@ export const MatchResultSchema = z.object({
 });
 export type MatchResult = z.infer<typeof MatchResultSchema>;
 
-export const TakeoverRequestSchema = z.object({
-  companyId: IdSchema.optional(),
-  buyerCharacterId: IdSchema,
-});
+export const TakeoverRequestSchema = z
+  .object({
+    companyId: IdSchema.optional(),
+    buyerCccd: z.string().optional(),
+    buyerCharacterId: IdSchema.optional(),
+  })
+  .refine((v) => !!v.buyerCccd || !!v.buyerCharacterId, { message: 'Cần buyerCccd hoặc buyerCharacterId.' });
 export type TakeoverRequest = z.infer<typeof TakeoverRequestSchema>;

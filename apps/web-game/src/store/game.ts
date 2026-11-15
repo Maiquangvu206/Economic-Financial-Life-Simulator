@@ -19,7 +19,7 @@ export interface GameState {
   day: number;
   hour: number;
   minute: number;
-  timeSpeed: number; // Hệ số nhân tốc độ: 1x, 2x, 5x, 0 = tạm dừng
+  timeSpeed: number; // giữ tương thích; tốc độ thực tế cố định: 1 ngày game = 1 phút thực
   isPaused: boolean;
 
   // Mùa & Thời tiết
@@ -52,7 +52,7 @@ export interface GameState {
 
   // Actions
   dismissHolidayLetter: () => void;
-  claimHolidayGift: () => void;
+  claimHolidayGift: () => Promise<void>;
   tickTime: (deltaMinutes?: number) => void;
   setTimeSpeed: (speed: number) => void;
   togglePause: () => void;
@@ -120,7 +120,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   day: 15,
   hour: 8,
   minute: 0,
-  timeSpeed: 1,
+  timeSpeed: 1, // cố định: 1 ngày game = 1 phút thực (24 phút game/giây thực)
   isPaused: false,
 
   season: 'spring',
@@ -150,18 +150,48 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   dismissHolidayLetter: () => set({ lastHolidayLetter: null }),
 
-  claimHolidayGift: () => {
+  claimHolidayGift: async () => {
     const state = get();
-    if (!state.lastHolidayLetter) return;
-    const bonus = state.lastHolidayLetter.bonusCash;
-    set((s) => ({
-      cash: s.cash + bonus,
-      netWorth: s.netWorth + bonus,
-      lastHolidayLetter: null,
-    }));
+    const letter = state.lastHolidayLetter;
+    if (!letter) return;
+    try {
+      // gửi claim lên server để cộng tiền thật vào tài khoản nhân vật hiện tại
+      const { apiRequest } = await import('../shared/api/httpClient');
+      const year = state.year;
+      const holiday = state.activeHoliday;
+      const res = await apiRequest<{
+        ok: boolean;
+        claimed: boolean;
+        amount?: { amount: number; currency: string };
+        balanceAfter?: { amount: number; currency: string };
+        message?: string;
+      }>('/api/v1/welfare/claim', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: holiday?.id,
+          periodYear: year,
+          gameYear: year,
+          gameMonth: state.month,
+          gameDay: state.day,
+        }),
+      });
+      if (res?.balanceAfter?.amount != null) {
+        set((s) => ({
+          cash: res.balanceAfter!.amount,
+          netWorth: Math.max(s.netWorth, res.balanceAfter!.amount),
+          lastHolidayLetter: null,
+        }));
+      } else {
+        // fallback: đóng thư, số dư sẽ đồng bộ từ server
+        set({ lastHolidayLetter: null });
+      }
+    } catch {
+      // nếu claim server lỗi, không cộng local để tránh sai số dư; đóng thư để thử lại khi có thông báo/kỳ hợp lệ
+      set({ lastHolidayLetter: null });
+    }
   },
 
-  tickTime: (deltaMinutes = 5) => {
+  tickTime: (deltaMinutes = 24) => {
     const state = get();
     if (state.isPaused) return;
 
@@ -233,10 +263,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
   },
 
-  setTimeSpeed: (speed) => set({ timeSpeed: speed }),
+  setTimeSpeed: (_speed) => set({ timeSpeed: 1 }),
   togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
   setSeason: (season) => set({ season }),
-  setWeather: (weather) => set({ weather }),
+  setWeather: (weather) => set({ weather }), // giữ API tương thích, không cấu hình từ admin
+
   setGameState: (partial) => set(partial),
   addCash: (delta) => set((state) => ({ cash: Math.max(0, state.cash + delta) })),
   setEnergy: (value) => set({ energy: Math.min(100, Math.max(0, value)) }),

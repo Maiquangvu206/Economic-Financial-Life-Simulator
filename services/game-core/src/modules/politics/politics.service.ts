@@ -1,7 +1,7 @@
-import { candidateScore, electionWinner } from '@efls/domain';
+﻿import { candidateScore, electionWinner } from '@efls/domain';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
 import { enqueueDomainEvent } from '../../shared/events/eventBus.js';
 import { notify } from '../notifications/notification.service.js';
@@ -55,7 +55,7 @@ export class PoliticsService {
   /** Tạo cuộc bầu cử mới (khi chưa có cuộc mở, hoặc đã kết thúc). */
   async createElection(userId: string, endsAt?: Date): Promise<ElectionDto> {
     return withTransaction(async (client) => {
-      await requireCharacterByUserId(client, userId);
+      await requireLivingCharacterByUserId(client, userId);
       const open = await this.repository.getCurrentElection(client);
       if (open) {
         throw AppError.conflict('election_open', 'Đã có cuộc bầu cử đang mở.');
@@ -85,7 +85,7 @@ export class PoliticsService {
   /** Ứng cử: phí tranh cử 5tr, mỗi người mỗi cuộc 1 lần. */
   async declareCandidacy(userId: string, electionId: string, name: string): Promise<CandidateDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const election = await this.repository.getElection(electionId, client);
       if (!election) throw AppError.notFound('Election');
       if (election.status !== 'open') {
@@ -133,7 +133,7 @@ export class PoliticsService {
   /** Quyên góp cho ứng viên: 1tr = +10 điểm (theo rule domain). */
   async donate(userId: string, candidateId: string, amountMinor: number): Promise<CandidateDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       if (amountMinor < 1_000_000) {
         throw AppError.badRequest('Quyên góp tối thiểu 1.000.000 ₫.');
       }
@@ -172,7 +172,7 @@ export class PoliticsService {
     candidateId: string,
   ): Promise<PoliticsOverviewDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const election = await this.repository.getElection(electionId, client);
       if (!election) throw AppError.notFound('Election');
       if (election.status !== 'open') {
@@ -202,7 +202,7 @@ export class PoliticsService {
   /** Chốt kết quả: chỉ admin/moderator mới được chốt (không phải người chơi). */
   async endElection(userId: string, electionId: string, role?: string): Promise<ElectionDto> {
     return withTransaction(async (client) => {
-      await requireCharacterByUserId(client, userId);
+      await requireLivingCharacterByUserId(client, userId);
       if (role !== 'admin' && role !== 'moderator') {
         throw AppError.forbidden('Chỉ admin mới được chốt kết quả bầu cử.');
       }
@@ -248,3 +248,4 @@ export class PoliticsService {
 }
 
 export const politicsService = new PoliticsService();
+

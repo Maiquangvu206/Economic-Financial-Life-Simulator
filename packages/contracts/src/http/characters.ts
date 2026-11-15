@@ -15,13 +15,14 @@ export const CharacterDtoSchema = z.object({
   fullName: z.string(),
   accountNumber: z.string(),
   accountTier: AccountTierSchema,
-  cccd: z.string().nullable(),
+  cccd: z.string(),
   birthplace: z.string().nullable(),
   birthplaceName: z.string().nullable(),
   age: z.number().int().min(0),
   healthEnergy: z.number().int().min(0).max(100),
   creditScore: z.number().int().min(300).max(850),
   heatLevel: z.number().int().min(0).max(100),
+  isAlive: z.boolean().default(true),
   maritalStatus: MaritalStatusSchema,
   spouseId: IdSchema.nullable(),
   location: z.object({ x: z.number().int(), y: z.number().int() }),
@@ -29,6 +30,29 @@ export const CharacterDtoSchema = z.object({
   createdAt: z.string().datetime(),
 });
 export type CharacterDto = z.infer<typeof CharacterDtoSchema>;
+
+export const ResolveCccdResponseSchema = z.object({
+  cccd_masked: z.string(),
+  full_name: z.string(),
+  is_alive: z.boolean(),
+});
+export type ResolveCccdResponse = z.infer<typeof ResolveCccdResponseSchema>;
+
+export const EligibleSuccessorDtoSchema = z.object({
+  id: IdSchema,
+  cccd: z.string(),
+  full_name: z.string(),
+  age: z.number().int(),
+  relation: z.string(),
+  generation_level: z.number().int(),
+  health_energy: z.number().int(),
+});
+export type EligibleSuccessorDto = z.infer<typeof EligibleSuccessorDtoSchema>;
+
+export const SuccessionRequestSchema = z.object({
+  successorId: IdSchema.nullable().optional(),
+});
+export type SuccessionRequest = z.infer<typeof SuccessionRequestSchema>;
 
 export const AccountLookupDtoSchema = z.object({
   accountNumber: z.string(),

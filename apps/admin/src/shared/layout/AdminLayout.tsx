@@ -6,8 +6,10 @@ import { env } from '../config/env';
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard vĩ mô', icon: '📊', end: true },
   { to: '/broadcast', label: 'Thông báo hệ thống', icon: '📢' },
+  { to: '/gift-codes', label: 'Mã quà tặng', icon: '🎁' },
   { to: '/calendar-seasons', label: 'Mùa & Lịch nghỉ Công nhân', icon: '🗓️' },
   { to: '/education-config', label: 'Giáo dục & Đại học', icon: '🎓' },
+  { to: '/politics', label: 'Chính trị & Bầu cử', icon: '🗳️' },
   { to: '/map-editor', label: 'Map Editor', icon: '🗺️' },
   { to: '/players', label: 'Người chơi', icon: '👥' },
   { to: '/ai-events', label: 'AI & Sự kiện', icon: '🤖' },

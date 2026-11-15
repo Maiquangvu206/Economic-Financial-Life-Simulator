@@ -1,5 +1,5 @@
-import { generateCccd, provinceByCode, PROVINCES_34 } from '@efls/domain';
-import type { AccountTier, CharacterDto, ProvinceDto, CreateCharacterRequest } from '@efls/contracts';
+import { generateCccd, provinceByCode, PROVINCES_34, maskCccd } from '@efls/domain';
+import type { AccountTier, CharacterDto, ProvinceDto, CreateCharacterRequest, ResolveCccdResponse, EligibleSuccessorDto } from '@efls/contracts';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction } from '../../shared/db/tx.js';
 import { generateAccountNumber, resolveAccountTier } from '../../shared/banking/accountTier.js';
@@ -12,7 +12,7 @@ import {
 function toDto(row: CharacterRow, tier: AccountTier, netWorthMinor?: number): CharacterDto {
   return {
     id: row.id,
-    userId: row.user_id,
+    userId: row.user_id!,
     fullName: row.full_name,
     accountNumber: row.account_number,
     accountTier: tier,
@@ -23,6 +23,7 @@ function toDto(row: CharacterRow, tier: AccountTier, netWorthMinor?: number): Ch
     healthEnergy: row.health_energy,
     creditScore: row.credit_score,
     heatLevel: row.heat_level,
+    isAlive: row.is_alive,
     maritalStatus: row.marital_status,
     spouseId: row.spouse_id,
     location: { x: row.location_x, y: row.location_y },
@@ -40,7 +41,6 @@ function toProvinceDto(row: ProvinceRow): ProvinceDto {
   };
 }
 
-/** Vị trí trên map 32x20 theo chỉ số tỉnh trong danh sách 34 tỉnh (0..33). */
 function provinceAnchor(code: string): { x: number; y: number } {
   const index = PROVINCES_34.findIndex((p) => p.code === code);
   const safeIndex = index >= 0 ? index : 0;
@@ -56,7 +56,8 @@ export class CharactersService {
   }
 
   async getMe(userId: string): Promise<CharacterDto> {
-    const character = await this.repository.findByUserId(userId);
+    // Trả về cả nhân vật đã chết để client hiển thị DeathSuccessionModal
+    const character = await this.repository.findAnyByUserId(userId);
     if (!character) {
       throw AppError.notFound('Character');
     }
@@ -67,11 +68,16 @@ export class CharactersService {
     return (await this.repository.listProvinces()).map(toProvinceDto);
   }
 
-  async resolveByCccd(cccd: string): Promise<{ id: string; fullName: string }> {
-    if (!/^\d{12}$/.test(cccd)) throw AppError.badRequest('CCCD phải là 12 chữ số.');
-    const row = await this.repository.findByCccd(cccd);
+  async resolveByCccd(cccd: string): Promise<ResolveCccdResponse> {
+    const normalized = (cccd || '').trim();
+    if (!/^\d{12}$/.test(normalized)) throw AppError.badRequest('CCCD phải là 12 chữ số.');
+    const row = await this.repository.findByCccd(normalized);
     if (!row) throw AppError.notFound('Character');
-    return { id: row.id, fullName: row.full_name };
+    return {
+      cccd_masked: maskCccd(normalized),
+      full_name: row.full_name,
+      is_alive: row.is_alive,
+    };
   }
 
   async getById(characterId: string): Promise<CharacterDto> {
@@ -80,7 +86,6 @@ export class CharactersService {
     return this.toDtoWithTier(row);
   }
 
-  /** Tra cứu theo số tài khoản (STK) để chuyển khoản. */
   async lookupByAccountNumber(accountNumber: string): Promise<{
     accountNumber: string;
     characterId: string;
@@ -99,7 +104,6 @@ export class CharactersService {
     };
   }
 
-  /** Di chuyển nơi ở hiện tại (không đổi nơi sinh / CCCD cố định). */
   async setLocation(userId: string, x: number, y: number): Promise<CharacterDto> {
     const row = await this.repository.findByUserId(userId);
     if (!row) throw AppError.notFound('Character');
@@ -113,14 +117,13 @@ export class CharactersService {
     return withTransaction(async (client) => {
       const existing = await this.repository.findByUserId(userId);
       if (existing) {
-        // Hồ sơ chỉ tạo một lần (đăng ký / sinh con) — không cho tạo trùng.
         throw AppError.conflict('profile_exists', 'Nhân vật đã có hồ sơ.');
       }
       const birthplaceCode = input.birthplaceCode ?? '001';
       const province = provinceByCode(birthplaceCode);
       if (!province) throw AppError.badRequest('Mã tỉnh không hợp lệ.');
       const anchor = provinceAnchor(birthplaceCode);
-      const cccd = await this.uniqueCccd(client, birthplaceCode);
+      const cccd = await this.uniqueCccd(client, birthplaceCode, 18);
       const accountNumber = await this.uniqueAccountNumber(client);
       const created = await this.repository.createCharacter(client, {
         userId,
@@ -130,21 +133,29 @@ export class CharactersService {
         locationX: anchor.x,
         locationY: anchor.y,
         accountNumber,
+        age: 18,
+        cashMinor: 500000,
       });
       created.birthplace_name = province.name;
       return toDto(created, resolveAccountTier(Number(created.cash_minor)), Number(created.cash_minor));
     });
   }
 
-  // Hồ sơ (tên + nơi sinh + CCCD) chỉ được xác định một lần lúc đăng ký
-  // hoặc khi sinh con mới — không sửa sau đó (xem createProfile).
+  async eligibleSuccessors(userId: string): Promise<EligibleSuccessorDto[]> {
+    const me = await this.repository.findByUserId(userId);
+    if (!me) throw AppError.notFound('Character');
+    const rows = await this.repository.listEligibleSuccessors(me.id);
+    return rows.map((r) => ({ id: r.id, cccd: r.cccd, full_name: r.full_name, age: r.age, relation: r.relation, generation_level: r.generation_level, health_energy: r.health_energy }));
+  }
 
   private async uniqueCccd(
     client: Parameters<CharactersRepository['getProvince']>[1],
     birthplaceCode: string,
+    birthAge?: number,
   ): Promise<string> {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const candidate = generateCccd(birthplaceCode);
+    const birthYear = birthAge != null ? (new Date().getUTCFullYear() - birthAge) : undefined;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const candidate = generateCccd(birthplaceCode, undefined, birthYear);
       const exists = await this.repository.cccdExists(candidate, client);
       if (!exists) return candidate;
     }

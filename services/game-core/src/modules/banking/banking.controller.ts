@@ -68,8 +68,9 @@ export class BankingController {
 
   lookupTransfer = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
-    const accountNumber = String(req.query.accountNumber ?? '');
-    const result = await this.service.lookupTransferRecipient(userId, accountNumber);
+    const cccd = req.query.cccd != null ? String(req.query.cccd) : undefined;
+    const accountNumber = req.query.accountNumber != null ? String(req.query.accountNumber) : undefined;
+    const result = await this.service.lookupTransferRecipient(userId, { cccd, accountNumber });
     res.json(result);
   };
 
@@ -77,6 +78,7 @@ export class BankingController {
     const userId = requireActorId(req);
     const input = req.body as CreateTransferRequest;
     const result = await this.service.createTransfer(userId, {
+      targetCccd: input.targetCccd,
       toAccountNumber: input.toAccountNumber,
       amountMinor: input.amount.amount,
       message: input.message,

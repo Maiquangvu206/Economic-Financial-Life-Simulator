@@ -37,8 +37,8 @@ export class TaxController {
   };
 
   report = async (req: Request, res: Response): Promise<void> => {
-    const { targetCharacterId, reason } = req.body as ReportRequest;
-    await this.service.report(req.actorId!, targetCharacterId, reason);
+    const { targetCccd, targetCharacterId, reason } = req.body as ReportRequest;
+    await this.service.report(req.actorId!, { targetCccd, targetCharacterId }, reason);
     res.status(200).json({ ok: true });
   };
 

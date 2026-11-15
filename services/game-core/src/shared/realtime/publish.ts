@@ -1,42 +1,58 @@
 import { Redis } from 'ioredis';
+import { Rooms } from '@efls/contracts';
 import { env } from '../../config/env.js';
-import { logger } from '../logger.js';
+import { pool } from '../db/pool.js';
 
 let client: Redis | null = null;
+let disabled = false;
 
 function getClient(): Redis | null {
-  if (!env.REDIS_URL) return null;
-  if (!client) {
-    client = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 2, lazyConnect: true });
-    client.on('error', (err) => {
-      logger.warn({ err }, 'Realtime redis publish error');
-    });
+  if (disabled) return null;
+  if (client) return client;
+  if (!env.REDIS_URL) {
+    disabled = true;
+    return null;
   }
+  client = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 2, lazyConnect: true });
+  client.on('error', () => {
+    // best-effort realtime; avoid crashing core on publish issues
+  });
   return client;
 }
 
-export async function publishToRoom(room: string, event: string, payload: unknown): Promise<void> {
+async function publishEnvelope(room: string, event: string, payload: unknown): Promise<void> {
   const redis = getClient();
   if (!redis) return;
   try {
-    if (redis.status === 'wait' || redis.status === 'end') {
-      await redis.connect();
-    }
-    const envelope = JSON.stringify({ room, event, payload });
-    await redis.publish(env.REALTIME_CHANNEL, envelope);
-  } catch (err) {
-    logger.warn({ err, room, event }, 'Failed to publish realtime event');
+    await redis.publish(env.REALTIME_CHANNEL, JSON.stringify({ room, event, payload }));
+  } catch {
+    // ignore
   }
 }
 
-export async function pushNotificationToUser(
-  userId: string,
-  payload: { kind: string; title: string; body: string; at?: number },
-): Promise<void> {
-  await publishToRoom(`character_room:${userId}`, 'notification', {
-    kind: payload.kind,
-    title: payload.title,
-    body: payload.body,
-    at: payload.at ?? Date.now(),
-  });
+export async function publishToUser(userId: string, event: string, payload: unknown): Promise<void> {
+  await publishEnvelope(Rooms.character(userId), event, payload);
+}
+
+export async function publishToUsers(userIds: string[], event: string, payload: unknown): Promise<void> {
+  if (userIds.length === 0) return;
+  const redis = getClient();
+  if (!redis) return;
+  // publish sequentially in small batches to avoid overwhelming redis
+  for (const uid of userIds) {
+    try {
+      await redis.publish(env.REALTIME_CHANNEL, JSON.stringify({ room: Rooms.character(uid), event, payload }));
+    } catch {
+      // ignore per-user failure
+    }
+  }
+}
+
+export async function publishToAllUsers(event: string, payload: unknown): Promise<void> {
+  try {
+    const r = await pool.query<{ id: string }>(`SELECT id FROM users`);
+    await publishToUsers(r.rows.map((x) => x.id), event, payload);
+  } catch {
+    // ignore
+  }
 }

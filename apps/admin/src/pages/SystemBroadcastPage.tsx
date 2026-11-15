@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@efls/ui';
+import { adminRequest } from '../shared/api/httpClient';
 
 export type BroadcastType = 'urgent' | 'maintenance' | 'event' | 'economy' | 'news';
 export type BroadcastScope = 'all' | 'workers' | 'investors' | 'businesses';
@@ -16,31 +18,11 @@ interface AnnouncementItem {
 }
 
 const TYPE_CONFIG: Record<BroadcastType, { label: string; icon: string; badgeCls: string }> = {
-  urgent: {
-    label: 'Khẩn cấp / Báo động',
-    icon: '🚨',
-    badgeCls: 'bg-rose-50 text-rose-600 border-rose-200',
-  },
-  maintenance: {
-    label: 'Bảo trì hệ thống',
-    icon: '⚙️',
-    badgeCls: 'bg-amber-50 text-amber-700 border-amber-200',
-  },
-  event: {
-    label: 'Sự kiện / Lễ hội',
-    icon: '🎉',
-    badgeCls: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  },
-  economy: {
-    label: 'Chính sách Kinh tế / Thuế',
-    icon: '📈',
-    badgeCls: 'bg-blue-50 text-blue-700 border-blue-200',
-  },
-  news: {
-    label: 'Bản tin Thành phố',
-    icon: '📰',
-    badgeCls: 'bg-purple-50 text-purple-700 border-purple-200',
-  },
+  urgent: { label: 'Khẩn cấp / Báo động', icon: '🚨', badgeCls: 'bg-rose-50 text-rose-600 border-rose-200' },
+  maintenance: { label: 'Bảo trì hệ thống', icon: '⚙️', badgeCls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  event: { label: 'Sự kiện / Lễ hội', icon: '🎉', badgeCls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  economy: { label: 'Chính sách Kinh tế / Thuế', icon: '📈', badgeCls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  news: { label: 'Bản tin Thành phố', icon: '📰', badgeCls: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
 const SCOPE_CONFIG: Record<BroadcastScope, string> = {
@@ -50,87 +32,79 @@ const SCOPE_CONFIG: Record<BroadcastScope, string> = {
   businesses: 'Chủ doanh nghiệp & Hộ kinh doanh',
 };
 
-export function SystemBroadcastPage() {
-  const [broadcastList, setBroadcastList] = useState<AnnouncementItem[]>([
-    {
-      id: 'ann_1',
-      title: 'Thông báo: Toàn quốc nghỉ Tết Nguyên Đán và chi trả thưởng Phúc lợi',
-      content:
-        'Hệ thống thông báo toàn thể công dân được nghỉ lễ có hưởng lương. Các doanh nghiệp vận hành sản xuất trong dịp Tết bắt buộc áp dụng hệ số lương làm thêm giờ (OT) tối thiểu 300%. Toàn bộ tài khoản công dân đã được giải ngân tiền lì xì may mắn.',
-      type: 'event',
-      scope: 'all',
-      createdAt: '15/01/2026 08:00',
-      sender: 'Ủy ban Quản trị Hệ thống',
-      pinned: true,
-    },
-    {
-      id: 'ann_2',
-      title: 'Cảnh báo: Tăng cường rà soát thuế thu nhập và truy quét tín dụng đen',
-      content:
-        'Cơ quan thuế và Lực lượng Thanh tra liên ngành bắt đầu đợt tổng rà soát hóa đơn chứng từ và các khoản thu nhập bất minh. Mức điểm Heat Level của các đối tượng trốn thuế sẽ bị tăng mạnh.',
-      type: 'economy',
-      scope: 'businesses',
-      createdAt: '12/01/2026 14:30',
-      sender: 'Thanh tra Tài chính & Thuế',
-      pinned: false,
-    },
-  ]);
+function fmtDate(iso: string) {
+  try { return new Date(iso).toLocaleString('vi-VN'); } catch { return iso; }
+}
 
+export function SystemBroadcastPage() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [type, setType] = useState<BroadcastType>('urgent');
+  const [type, setType] = useState<BroadcastType>('news');
   const [scope, setScope] = useState<BroadcastScope>('all');
   const [isPinned, setIsPinned] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  const handleSendBroadcast = (e: React.FormEvent) => {
+  const { data: broadcasts = [], isLoading, error, refetch } = useQuery<AnnouncementItem[]>({
+    queryKey: ['admin', 'broadcasts'],
+    queryFn: () => adminRequest<AnnouncementItem[]>('/api/v1/admin/broadcasts'),
+  });
+
+  const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) return;
-
-    const newAnnouncement: AnnouncementItem = {
-      id: `ann_${Date.now()}`,
-      title: title.trim(),
-      content: content.trim(),
-      type,
-      scope,
-      createdAt: 'Vừa xong (Thời gian thực)',
-      sender: 'Ban Quản trị Admin',
-      pinned: isPinned,
-    };
-
-    setBroadcastList([newAnnouncement, ...broadcastList]);
-    setTitle('');
-    setContent('');
-    setIsPinned(false);
-    setSuccessMsg('Đã phát sóng thông báo hệ thống tức thì tới toàn bộ máy chủ!');
-    setTimeout(() => setSuccessMsg(null), 3500);
+    setBusy(true);
+    setErrMsg(null);
+    try {
+      await adminRequest('/api/v1/admin/broadcasts', {
+        method: 'POST',
+        body: JSON.stringify({ title: title.trim(), content: content.trim(), type, scope, pinned: isPinned }),
+      });
+      setTitle('');
+      setContent('');
+      setIsPinned(false);
+      setType('news');
+      setScope('all');
+      setSuccessMsg('Đã phát sóng thông báo tới hệ thống. Người dùng sẽ thấy trong HUD/hộp thông báo (khi tải hoặc làm mới).');
+      await refetch();
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setErrMsg(err?.problem?.detail || err?.message || 'Không thể phát sóng thông báo.');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setBroadcastList((prev) => prev.filter((item) => item.id !== id));
+  const handleDelete = async (id: string) => {
+    if (!confirm('Xóa thông báo này?')) return;
+    try {
+      await adminRequest(`/api/v1/admin/broadcasts/${id}`, { method: 'DELETE' });
+      await refetch();
+    } catch (err: any) {
+      setErrMsg(err?.problem?.detail || err?.message || 'Không thể xóa thông báo.');
+    }
   };
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Trung tâm Thông báo Hệ thống (System Broadcast)"
-        description="Phát sóng thông báo khẩn cấp, bảo trì, sự kiện lễ hội và điều phối chính sách tới toàn bộ người chơi hoặc nhóm đối tượng cụ thể."
+        description="Phát sóng thông báo tới người chơi. Thông báo được lưu trên hệ thống, hiển thị cho người dùng (HUD ghim/banner & hộp thông báo) và ghi nhận để kiểm toán."
       />
 
       {successMsg && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs font-semibold text-emerald-700">
-          ✓ {successMsg}
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs font-semibold text-emerald-700">✓ {successMsg}</div>
+      )}
+      {(errMsg || error) && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 text-xs font-semibold text-rose-700">
+          ⚠ {errMsg || (error as any)?.message || 'Lỗi tải dữ liệu'}
         </div>
       )}
 
-      {/* Grid: Form tạo thông báo & Danh sách thông báo */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Form soạn và phát sóng thông báo */}
         <div className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-600">
-            Soạn thông báo phát sóng mới
-          </h2>
-
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-600">Soạn thông báo phát sóng mới</h2>
           <form onSubmit={handleSendBroadcast} className="space-y-3.5 text-xs">
             <div>
               <label className="block text-slate-700 font-medium mb-1">Loại thông báo:</label>
@@ -140,32 +114,23 @@ export function SystemBroadcastPage() {
                     key={t}
                     type="button"
                     onClick={() => setType(t)}
-                    className={`rounded-xl border p-2 text-left font-medium transition ${
-                      type === t
-                        ? 'border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500'
-                        : 'border-slate-200 bg-slate-100 text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`rounded-xl border p-2 text-left font-medium transition ${type === t ? 'border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500' : 'border-slate-200 bg-slate-100 text-slate-600 hover:text-slate-900'}`}
                   >
-                    <span>{TYPE_CONFIG[t].icon} </span>
-                    <span>{TYPE_CONFIG[t].label}</span>
+                    <span>{TYPE_CONFIG[t].icon} </span><span>{TYPE_CONFIG[t].label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <label className="block text-slate-700 font-medium mb-1">
-                Đối tượng nhận thông báo:
-              </label>
+              <label className="block text-slate-700 font-medium mb-1">Đối tượng nhận thông báo:</label>
               <select
                 value={scope}
                 onChange={(e) => setScope(e.target.value as BroadcastScope)}
                 className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-800 focus:border-amber-500 focus:outline-none"
               >
                 {(Object.keys(SCOPE_CONFIG) as BroadcastScope[]).map((s) => (
-                  <option key={s} value={s}>
-                    {SCOPE_CONFIG[s]}
-                  </option>
+                  <option key={s} value={s}>{SCOPE_CONFIG[s]}</option>
                 ))}
               </select>
             </div>
@@ -178,6 +143,7 @@ export function SystemBroadcastPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-800 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none"
+                required
               />
             </div>
 
@@ -189,6 +155,7 @@ export function SystemBroadcastPage() {
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-xs text-slate-800 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none leading-relaxed"
+                required
               />
             </div>
 
@@ -201,76 +168,61 @@ export function SystemBroadcastPage() {
                 className="rounded border-slate-300 bg-slate-50 text-amber-500 focus:ring-0 cursor-pointer"
               />
               <label htmlFor="pinCheckbox" className="text-slate-700 text-xs cursor-pointer">
-                Ghim thông báo lên thanh HUD đầu trang của người chơi
+                Ghim thông báo (ưu tiên hiển thị nổi bật/HUD cho người chơi)
               </label>
             </div>
 
             <button
               type="submit"
-              className="w-full rounded-xl bg-amber-500 py-2.5 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20"
+              disabled={busy}
+              className="w-full rounded-xl bg-amber-500 py-2.5 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20 disabled:opacity-50"
             >
-              📢 Phát sóng ngay (Broadcast)
+              {busy ? 'Đang phát sóng...' : '📢 Phát sóng ngay (Broadcast)'}
             </button>
           </form>
         </div>
 
-        {/* Danh sách thông báo đã phát sóng */}
         <div className="lg:col-span-7 rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-600">
-              Lịch sử bản tin đã phát sóng ({broadcastList.length})
+              Lịch sử bản tin đã phát sóng ({broadcasts.length})
             </h2>
-            <span className="text-[11px] text-slate-500">Real-time WebSocket Push</span>
+            <button type="button" onClick={() => refetch()} className="text-[11px] text-slate-600 hover:text-slate-900">Tải lại</button>
           </div>
 
-          <div className="space-y-3">
-            {broadcastList.map((ann) => {
-              const cfg = TYPE_CONFIG[ann.type];
-              return (
-                <div
-                  key={ann.id}
-                  className="rounded-2xl border border-slate-200/90 bg-slate-100/70 p-4 space-y-2 hover:border-slate-300 transition"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-semibold ${cfg.badgeCls}`}
-                      >
-                        <span>{cfg.icon}</span>
-                        <span>{cfg.label}</span>
-                      </span>
-                      {ann.pinned && (
-                        <span className="rounded-lg bg-amber-100 text-amber-700 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold">
-                          📌 ĐÃ GHIM
+          {isLoading ? (
+            <div className="text-sm text-slate-600">Đang tải...</div>
+          ) : broadcasts.length === 0 ? (
+            <div className="text-sm text-slate-500">Chưa có thông báo nào.</div>
+          ) : (
+            <div className="space-y-3">
+              {broadcasts.map((ann) => {
+                const cfg = TYPE_CONFIG[ann.type];
+                return (
+                  <div key={ann.id} className="rounded-2xl border border-slate-200/90 bg-slate-100/70 p-4 space-y-2 hover:border-slate-300 transition">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-semibold ${cfg.badgeCls}`}>
+                          <span>{cfg.icon}</span><span>{cfg.label}</span>
                         </span>
-                      )}
-                      <span className="text-[11px] text-slate-600 font-mono">
-                        Gửi đến: <b>{SCOPE_CONFIG[ann.scope]}</b>
-                      </span>
+                        {ann.pinned && (
+                          <span className="rounded-lg bg-amber-100 text-amber-700 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold">📌 ĐÃ GHIM</span>
+                        )}
+                        <span className="text-[11px] text-slate-600 font-mono">Gửi đến: <b>{SCOPE_CONFIG[ann.scope]}</b></span>
+                      </div>
+                      <button type="button" onClick={() => handleDelete(ann.id)} className="text-xs text-rose-600 px-2 py-0.5 rounded hover:bg-rose-50 transition">Xóa</button>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(ann.id)}
-                      className="text-xs text-rose-600 hover:text-rose-600 px-2 py-0.5 rounded hover:bg-rose-50 transition"
-                    >
-                      Xóa
-                    </button>
+                    <h3 className="font-bold text-sm text-slate-900">{ann.title}</h3>
+                    <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{ann.content}</p>
+                    <div className="pt-1 flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-200/60">
+                      <span>Người phát: <b className="text-slate-600">{ann.sender}</b></span>
+                      <span>Thời gian: {fmtDate(ann.createdAt)}</span>
+                    </div>
                   </div>
-
-                  <h3 className="font-bold text-sm text-slate-900">{ann.title}</h3>
-                  <p className="text-xs text-slate-700 leading-relaxed">{ann.content}</p>
-
-                  <div className="pt-1 flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-200/60">
-                    <span>
-                      Người phát: <b className="text-slate-600">{ann.sender}</b>
-                    </span>
-                    <span>Thời gian: {ann.createdAt}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

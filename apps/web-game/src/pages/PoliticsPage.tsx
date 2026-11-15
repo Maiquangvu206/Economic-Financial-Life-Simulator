@@ -170,25 +170,10 @@ export function PoliticsPage() {
               </div>
             )}
 
-            {election?.status === 'open' && (
+            {election?.status === 'open' && !election.youCandidateId && (
               <div className="flex flex-wrap gap-2">
-                {!election.youCandidateId && (
-                  <GameButton variant="primary" onClick={() => setCandidacyOpen(true)}>
-                    Ứng cử Thị trưởng (5.000.000 ₫)
-                  </GameButton>
-                )}
-                <GameButton
-                  variant="outline"
-                  disabled={busy === 'end'}
-                  onClick={() =>
-                    void handleAction('end', () =>
-                      apiRequest(`/api/v1/politics/elections/${election.id}/end`, {
-                        method: 'POST',
-                      }),
-                    )
-                  }
-                >
-                  Chốt kết quả (admin)
+                <GameButton variant="primary" onClick={() => setCandidacyOpen(true)}>
+                  Ứng cử Thị trưởng (5.000.000 ₫)
                 </GameButton>
               </div>
             )}

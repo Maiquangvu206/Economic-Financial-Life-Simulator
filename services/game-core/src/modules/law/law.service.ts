@@ -1,6 +1,6 @@
-import { AppError } from '../../shared/http/errors.js';
+﻿import { AppError } from '../../shared/http/errors.js';
 import { withTransaction } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
 import { notify } from '../notifications/notification.service.js';
 import {
@@ -102,7 +102,7 @@ export class LawService {
   /** Mở vụ án mới cho chính mình (tự nguyện) hoặc cho nhân vật bị báo cáo. */
   async openCase(userId: string, crimeType: string): Promise<CourtCaseDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const caseId = await this.repository.createCase(client, character.id, crimeType);
       const row = await this.repository.getCase(caseId, client);
       if (!row) throw new Error('Case disappeared after creation');
@@ -125,7 +125,7 @@ export class LawService {
     description: string,
   ): Promise<EvidenceDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const courtCase = await this.repository.getCase(caseId, client);
       if (!courtCase) throw AppError.notFound('Court case');
       if (courtCase.status === 'closed') {
@@ -163,7 +163,7 @@ export class LawService {
    */
   async trial(userId: string, caseId: string): Promise<TrialDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const courtCase = await this.repository.getCase(caseId, client);
       if (!courtCase) throw AppError.notFound('Court case');
       if (courtCase.status === 'closed') {
@@ -263,3 +263,4 @@ export class LawService {
 }
 
 export const lawService = new LawService();
+

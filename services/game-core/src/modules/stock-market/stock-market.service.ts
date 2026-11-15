@@ -1,6 +1,6 @@
-import { AppError } from '../../shared/http/errors.js';
+﻿import { AppError } from '../../shared/http/errors.js';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_ESCROW_ID, SYSTEM_MARKET_ID } from '../../shared/ledger/ledger.service.js';
 import { type TickerDto, type OrderDto, type HoldingDto, type PortfolioDto, type TradeDto, MoneySchema } from '@efls/contracts';
 import { stockMarketRepository } from './stock-market.repository.js';
@@ -88,7 +88,7 @@ export class StockMarketService {
     amount: number,
   ): Promise<{ orderId: string | null; filledAmount: number; trades: TradeDto[]; status: string; message: string }> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const ticker = await this.repository.getTickerById(tickerId, client);
       if (!ticker) throw AppError.notFound('Ticker');
 
@@ -271,7 +271,7 @@ export class StockMarketService {
 
   async cancelOrder(userId: string, orderId: string) {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const order = await this.repository.getOrderById(orderId);
       if (!order) throw AppError.notFound('Order');
       if (order.characterId !== character.id) {
@@ -372,3 +372,4 @@ export class StockMarketService {
 }
 
 export const stockMarketService = new StockMarketService();
+

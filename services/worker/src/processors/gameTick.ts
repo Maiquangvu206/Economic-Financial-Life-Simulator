@@ -259,6 +259,54 @@ export async function processGameTick(): Promise<GameTickResult> {
     }
     applied.push(`loans: ${loans.rows.length} interest/default checked`);
 
+
+    // ---- 8. Death check (health <= 0 or age>=65 exponential risk) ----
+    const deathCandidates = await client.query<{ id: string; user_id: string | null; age: number; health_energy: number; is_alive: boolean }>(
+      `SELECT id, user_id, age, health_energy, COALESCE(is_alive,true) as is_alive FROM characters WHERE COALESCE(is_alive,true)=true`,
+    );
+    for (const ch of deathCandidates.rows) {
+      let reason: string | null = null;
+      if (Number(ch.health_energy) <= 0) reason = 'Sức khỏe cạn kiệt';
+      else if (Number(ch.age) >= 65) {
+        const pDeath = Math.min(0.95, Math.pow(1.12, Number(ch.age) - 65) * 0.02);
+        if (Math.random() < pDeath) reason = 'Tuổi cao đột tử';
+      }
+      if (!reason) continue;
+      const locked = await client.query<{ id: string; is_alive: boolean }>(
+        `SELECT id, COALESCE(is_alive,true) as is_alive FROM characters WHERE id = $1 FOR UPDATE`,
+        [ch.id],
+      );
+      if (!locked.rows[0] || locked.rows[0].is_alive === false) continue;
+      await client.query(
+        `UPDATE characters SET is_alive = false, health_energy = 0, updated_at = now() WHERE id = $1`,
+        [ch.id],
+      );
+      if (ch.user_id) {
+        await enqueueDomainEvent(client, {
+          type: 'character.died',
+          aggregateType: 'character',
+          aggregateId: ch.id,
+          payload: {
+            characterId: ch.id,
+            userId: ch.user_id,
+            reason,
+          },
+        });
+        await client.query(
+          `INSERT INTO notifications (id, user_id, kind, title, body, payload)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5::jsonb)`,
+          [
+            ch.user_id,
+            'system',
+            'Nhân vật đã qua đời',
+            `Nhân vật của bạn đã qua đời (${reason}). Vui lòng chọn người kế thừa để bắt đầu cuộc đời mới.`,
+            JSON.stringify({ characterId: ch.id, reason }),
+          ],
+        );
+      }
+      applied.push(`death:${ch.id}:${reason}`);
+    }
+
     await client.query('COMMIT');
     logger.info({ tick, appliedCount: applied.length }, 'Game tick committed');
 

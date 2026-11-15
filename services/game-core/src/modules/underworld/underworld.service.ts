@@ -1,8 +1,8 @@
-import type { PoolClient } from 'pg';
+﻿import type { PoolClient } from 'pg';
 import { applyHeat, shouldTriggerSweep } from '@efls/domain';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharacterByCccd } from '../../shared/actors/character.js';
 import {
   ledger,
   SYSTEM_ESCROW_ID,
@@ -208,7 +208,7 @@ export class UnderworldService {
   /** Gây tội: tung xúc xắc rủi ro, nhận tiền ngầm nếu thoát, bị bắt + phạt nếu dính. */
   async commitCrime(userId: string, crimeType: CrimeType): Promise<CrimeResultDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const cfg = CRIME_CATALOG[crimeType];
 
       // Cân bằng ngầm: bị bắt nếu roll < risk + heat/4
@@ -285,7 +285,7 @@ export class UnderworldService {
 
       // Đại án tự động khi heat chạm manhunt
       if (shouldTriggerSweep(newHeat)) {
-        await this.runSweep(client, character.id, character.user_id, newHeat);
+        if (character.user_id) await this.runSweep(client, character.id, character.user_id, newHeat);
       }
 
       return {
@@ -301,7 +301,7 @@ export class UnderworldService {
   /** Mua giấy tờ giả. */
   async buyCredential(userId: string, kind: string): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const price = CREDENTIAL_PRICES[kind];
       if (price == null) throw AppError.badRequest('Loại giấy tờ không hợp lệ.');
       const balance = await ledger.getBalance(client, 'character', character.id);
@@ -330,20 +330,23 @@ export class UnderworldService {
   }
 
   /** Thuê thám tử thu thập bằng chứng về một nhân vật. */
-  async collectEvidence(
+    async collectEvidence(
     userId: string,
-    targetCharacterId: string,
+    target: { targetCccd?: string; targetCharacterId?: string },
     priceMinor: number,
   ): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const targetRef = target.targetCccd
+        ? await resolveCharacterByCccd(client, target.targetCccd, { requireAlive: false })
+        : null;
+      const targetCharacterId = targetRef?.id ?? target.targetCharacterId;
+      if (!targetCharacterId) throw AppError.badRequest('Thiếu mục tiêu.');
       if (targetCharacterId === character.id) {
         throw AppError.badRequest('Không thể điều tra chính mình.');
       }
-      const target = await client.query<{ id: string }>(`SELECT id FROM characters WHERE id = $1`, [
-        targetCharacterId,
-      ]);
-      if (!target.rows[0]) throw AppError.notFound('Target character');
+      const targetRow = await client.query<{ id: string }>(`SELECT id FROM characters WHERE id = $1`, [targetCharacterId]);
+      if (!targetRow.rows[0]) throw AppError.notFound('Target character');
       if (priceMinor < 500_000) {
         throw AppError.badRequest('Chi phí thám tử tối thiểu 500.000 ₫.');
       }
@@ -390,7 +393,7 @@ export class UnderworldService {
   /** Bán bằng chứng cho chợ đen (được 40% * độ mạnh * 200.000 ₫). */
   async sellEvidence(userId: string, evidenceId: string): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const evidence = await this.repository.getEvidence(evidenceId, client);
       if (!evidence) throw AppError.notFound('Evidence');
       if (evidence.status !== 'held') {
@@ -421,7 +424,7 @@ export class UnderworldService {
   /** Nộp bằng chứng cho tòa án: tạo vụ án hình sự cho mục tiêu. */
   async submitEvidence(userId: string, evidenceId: string): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const evidence = await this.repository.getEvidence(evidenceId, client);
       if (!evidence) throw AppError.notFound('Evidence');
       if (evidence.status === 'submitted') {
@@ -454,20 +457,21 @@ export class UnderworldService {
   }
 
   /** Mở hợp đồng tống tiền với mục tiêu (dùng bằng chứng có sẵn càng tốt). */
-  async startBlackmail(
+    async startBlackmail(
     userId: string,
-    targetCharacterId: string,
+    target: { targetCccd?: string; targetCharacterId?: string },
     monthlyPaymentMinor: number,
   ): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const targetRef = target.targetCccd ? await resolveCharacterByCccd(client, target.targetCccd, { requireAlive: false }) : null;
+      const targetCharacterId = targetRef?.id ?? target.targetCharacterId;
+      if (!targetCharacterId) throw AppError.badRequest('Thiếu mục tiêu.');
       if (targetCharacterId === character.id) {
         throw AppError.badRequest('Không thể tống tiền chính mình.');
       }
-      const target = await client.query<{ id: string }>(`SELECT id FROM characters WHERE id = $1`, [
-        targetCharacterId,
-      ]);
-      if (!target.rows[0]) throw AppError.notFound('Target character');
+      const targetRow = await client.query<{ id: string }>(`SELECT id FROM characters WHERE id = $1`, [targetCharacterId]);
+      if (!targetRow.rows[0]) throw AppError.notFound('Target character');
       if (monthlyPaymentMinor <= 0) {
         throw AppError.badRequest('Tiền im lặng hàng tháng phải lớn hơn 0.');
       }
@@ -492,7 +496,7 @@ export class UnderworldService {
   /** Thu tiền im lặng tháng này từ mục tiêu (nếu họ còn tiền). */
   async collectBlackmail(userId: string, blackmailId: string): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const blackmail = await this.repository.getBlackmail(blackmailId, client);
       if (!blackmail) throw AppError.notFound('Blackmail contract');
       if (blackmail.blackmailerId !== character.id) {
@@ -528,23 +532,24 @@ export class UnderworldService {
   }
 
   /** Gài bẫy (sting): dùng tiền đánh dấu dụ mục tiêu; catch = target bị mở vụ án. */
-  async startSting(
+    async startSting(
     userId: string,
-    targetCharacterId: string,
+    target: { targetCccd?: string; targetCharacterId?: string },
     amountMinor: number,
   ): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const targetRef = target.targetCccd ? await resolveCharacterByCccd(client, target.targetCccd, { requireAlive: false }) : null;
+      const targetCharacterId = targetRef?.id ?? target.targetCharacterId;
+      if (!targetCharacterId) throw AppError.badRequest('Thiếu mục tiêu.');
       if (targetCharacterId === character.id) {
         throw AppError.badRequest('Không thể gài bẫy chính mình.');
       }
       if (amountMinor < 1_000_000) {
         throw AppError.badRequest('Tiền đánh dấu tối thiểu 1.000.000 ₫.');
       }
-      const target = await client.query<{ id: string }>(`SELECT id FROM characters WHERE id = $1`, [
-        targetCharacterId,
-      ]);
-      if (!target.rows[0]) throw AppError.notFound('Target character');
+      const targetRow = await client.query<{ id: string }>(`SELECT id FROM characters WHERE id = $1`, [targetCharacterId]);
+      if (!targetRow.rows[0]) throw AppError.notFound('Target character');
 
       const balance = await ledger.getBalance(client, 'character', character.id);
       if (balance < amountMinor) {
@@ -616,7 +621,7 @@ export class UnderworldService {
     kind: 'bodyguard' | 'insurance',
   ): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const premium = kind === 'bodyguard' ? 5_000_000 : 10_000_000;
       const coverage = kind === 'bodyguard' ? 20_000_000 : 100_000_000;
       const balance = await ledger.getBalance(client, 'character', character.id);
@@ -649,13 +654,13 @@ export class UnderworldService {
   /** Đại án Công an: càn quét khi heat chạm manhunt (>=80). */
   async triggerSweep(userId: string): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       if (!shouldTriggerSweep(character.heat_level)) {
         throw AppError.badRequest(
           `Heat hiện tại ${character.heat_level} chưa chạm ngưỡng Đại án (80).`,
         );
       }
-      await this.runSweep(client, character.id, character.user_id, character.heat_level);
+      if (character.user_id) await this.runSweep(client, character.id, character.user_id, character.heat_level);
       return this.getOverviewWithDb(userId, client);
     });
   }
@@ -706,3 +711,5 @@ export class UnderworldService {
 }
 
 export const underworldService = new UnderworldService();
+
+

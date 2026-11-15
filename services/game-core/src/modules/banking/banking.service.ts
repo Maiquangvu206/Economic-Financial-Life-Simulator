@@ -9,11 +9,13 @@ import {
 } from '@efls/domain';
 import { AppError } from '../../shared/http/errors.js';
 import { toMinor, withTransaction, type Db } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharacterByCccd } from '../../shared/actors/character.js';
+import { maskCccd } from '@efls/domain';
 import { ledger, SYSTEM_BANK_ID } from '../../shared/ledger/ledger.service.js';
 import { enqueueDomainEvent } from '../../shared/events/eventBus.js';
 import { notify } from '../notifications/notification.service.js';
-import { pushNotificationToUser } from '../../shared/realtime/publish.js';
+import { publishToUser } from '../../shared/realtime/publish.js';
+import { assertNoPendingDivorce } from '../social/social.freeze.js';
 import { accountTierLabel, resolveAccountTier } from '../../shared/banking/accountTier.js';
 import { CharactersRepository } from '../characters/characters.repository.js';
 import {
@@ -119,7 +121,7 @@ export class BankingService {
     return withTransaction(async (client) => {
       const character = await requireCharacterByUserId(client, userId);
       await this.rolloverMaturedSavings(client, character.id);
-      await this.capitalizeOverdueLoanInterest(client, character);
+      await this.capitalizeOverdueLoanInterest(client, { ...character, user_id: (character.user_id ?? (userId as any)) } as any);
 
       const [loans, savingsRow, debt, salary, deposits, terms, baseRate] = await Promise.all([
         this.repository.listLoans(character.id),
@@ -321,7 +323,7 @@ export class BankingService {
           body: `Khoản vay quá hạn đã được cộng lãi vào gốc (${capitalizedPeriods} kỳ). Điểm uy tín giảm ${penalty}.`,
           payload: { loanId: loan.id, periods: capitalizedPeriods, penalty },
         });
-        await pushNotificationToUser(character.user_id, {
+        await publishToUser(character.user_id, 'notification', {
           kind: 'warning',
           title: 'Quay vòng lãi khoản vay',
           body: `Lãi đã nhập gốc (${capitalizedPeriods} kỳ), điểm uy tín -${penalty}.`,
@@ -337,7 +339,7 @@ export class BankingService {
     if (input.amountMinor <= 0) throw AppError.badRequest('Loan amount must be positive');
 
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const baseRate = await this.repository.baseRate(client);
       const rate = recommendedInterestRate(character.credit_score, baseRate);
 
@@ -426,7 +428,7 @@ export class BankingService {
     if (amountMinor <= 0) throw AppError.badRequest('Số tiền trả phải lớn hơn 0.');
 
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const loan = await this.repository.findLoan(loanId, character.id);
       if (!loan) throw AppError.notFound('Loan');
       if (loan.status === 'repaid')
@@ -509,7 +511,7 @@ export class BankingService {
       throw AppError.badRequest('Số tiền gửi phải là số nguyên dương (VND).');
     }
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const cash = toMinor(character.cash_minor);
       if (cash < amountMinor) {
         throw AppError.conflict(
@@ -684,11 +686,18 @@ export class BankingService {
     return toLoanDto(loan);
   }
 
-  async lookupTransferRecipient(userId: string, accountNumber: string) {
-    const character = await requireCharacterByUserId(this.repository.db, userId);
-    const normalized = accountNumber.replace(/\s+/g, '');
-    const target = await this.charactersRepository.findByAccountNumber(normalized);
-    if (!target) throw AppError.notFound('Không tìm thấy số tài khoản (STK) người nhận.');
+  async lookupTransferRecipient(userId: string, query: { cccd?: string; accountNumber?: string }) {
+    const character = await requireLivingCharacterByUserId(this.repository.db, userId);
+    let target: any = null;
+    if (query.cccd && query.cccd.replace(/\s+/g, '')) {
+      const ref = await resolveCharacterByCccd(this.repository.db, query.cccd, { requireAlive: false });
+      if (ref.id === character.id) throw AppError.badRequest('Không thể tra cứu/chuyển khoản cho chính tài khoản của bạn.');
+      target = await this.charactersRepository.findById(ref.id);
+    } else {
+      const normalized = (query.accountNumber ?? '').replace(/\s+/g, '');
+      target = normalized ? await this.charactersRepository.findByAccountNumber(normalized) : null;
+    }
+    if (!target) throw AppError.notFound('Không tìm thấy người nhận (CCCD/STK).');
     if (target.id === character.id) {
       throw AppError.badRequest('Không thể tra cứu/chuyển khoản cho chính tài khoản của bạn.');
     }
@@ -696,6 +705,7 @@ export class BankingService {
     const tier = resolveAccountTier(netWorth);
     return {
       accountNumber: target.account_number,
+      cccdMasked: target.cccd ? maskCccd(target.cccd) : undefined,
       characterId: target.id,
       fullName: target.full_name,
       accountTier: tier,
@@ -704,20 +714,30 @@ export class BankingService {
 
   async createTransfer(
     userId: string,
-    input: { toAccountNumber: string; amountMinor: number; message?: string },
+    input: { targetCccd?: string; toAccountNumber?: string; amountMinor: number; message?: string },
   ) {
     if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) {
       throw AppError.badRequest('Số tiền chuyển phải là số nguyên dương (VND).');
     }
     const msg = (input.message ?? '').trim().slice(0, 200);
-    const toAcc = input.toAccountNumber.replace(/\s+/g, '');
 
     const result = await withTransaction(async (client) => {
-      const from = await requireCharacterByUserId(client, userId);
-      const fromRow = await this.charactersRepository.findByUserId(userId);
+      const from = await requireLivingCharacterByUserId(client, userId);
+      await assertNoPendingDivorce(from.id, client);
+      const fromRow = await this.charactersRepository.findById(from.id, client);
       if (!fromRow) throw AppError.notFound('Character');
-      const to = await this.charactersRepository.findByAccountNumber(toAcc, client);
-      if (!to) throw AppError.notFound('Không tìm thấy số tài khoản (STK) người nhận.');
+
+      let to: any = null;
+      if (input.targetCccd && input.targetCccd.replace(/\s+/g, '')) {
+        const ref = await resolveCharacterByCccd(client, input.targetCccd, { requireAlive: true });
+        if (ref.id === from.id) throw AppError.badRequest('Không thể tự chuyển khoản cho chính mình.');
+        to = await this.charactersRepository.findById(ref.id, client);
+      } else if (input.toAccountNumber) {
+        const toAcc = input.toAccountNumber.replace(/\s+/g, '');
+        to = await this.charactersRepository.findByAccountNumber(toAcc, client);
+      }
+      if (!to) throw AppError.notFound('Không tìm thấy người nhận (CCCD/STK).');
+      if (!to.is_alive) throw AppError.conflict('character_dead', 'Người nhận đã qua đời, không thể chuyển khoản.');
       if (to.id === from.id) {
         throw AppError.badRequest('Không thể tự chuyển khoản cho chính mình.');
       }
@@ -752,47 +772,44 @@ export class BankingService {
 
       const amtText = input.amountMinor.toLocaleString('vi-VN');
       await notify(client, {
-        userId: from.user_id,
+        userId: (from.user_id ?? userId),
         kind: 'banking',
         title: 'Chuyển khoản thành công',
-        body: `Bạn đã chuyển ${amtText} ₫ tới ${to.full_name} (STK ${to.account_number}).`,
-        payload: { transferId, toAccountNumber: to.account_number, amountMinor: input.amountMinor },
+        body: `Bạn đã chuyển ${amtText} ₫ tới ${to.full_name} (${maskCccd(to.cccd)}).`,
+        payload: { transferId, toAccountNumber: to.account_number, toCccd: to.cccd, amountMinor: input.amountMinor },
       });
       await notify(client, {
         userId: to.user_id,
         kind: 'banking',
         title: 'Nhận chuyển khoản',
-        body: `Bạn nhận được ${amtText} ₫ từ ${fromRow.full_name} (STK ${fromRow.account_number}).${msg ? ` Nội dung: ${msg}` : ''}`,
+        body: `Bạn nhận được ${amtText} ₫ từ ${fromRow.full_name} (${maskCccd(fromRow.cccd)}).${msg ? ` Nội dung: ${msg}` : ''}`,
         payload: {
           transferId,
           fromAccountNumber: fromRow.account_number,
+          fromCccd: fromRow.cccd,
           fromName: fromRow.full_name,
           amountMinor: input.amountMinor,
           message: msg,
         },
       });
 
-      return {
-        transferId,
-        to,
-        fromRow,
-        ledgerTxId,
-      };
+      return { transferId, to, fromRow, ledgerTxId };
     });
 
-    // Realtime push (ngoài transaction) để người nhận thấy ngay.
     const amtText = input.amountMinor.toLocaleString('vi-VN');
     await Promise.all([
-      pushNotificationToUser(userId, {
+      publishToUser(userId, 'notification', {
         kind: 'success',
         title: 'Chuyển khoản thành công',
-        body: `Đã chuyển ${amtText} ₫ tới ${result.to.full_name} (STK ${result.to.account_number}).`,
+        body: `Đã chuyển ${amtText} ₫ tới ${result.to.full_name} (${maskCccd(result.to.cccd)}).`,
       }),
-      pushNotificationToUser(result.to.user_id, {
-        kind: 'success',
-        title: 'Nhận chuyển khoản',
-        body: `+${amtText} ₫ từ ${result.fromRow.full_name} (STK ${result.fromRow.account_number}).${msg ? ` ${msg}` : ''}`,
-      }),
+      result.to.user_id
+        ? publishToUser(result.to.user_id, 'notification', {
+            kind: 'success',
+            title: 'Nhận chuyển khoản',
+            body: `+${amtText} ₫ từ ${result.fromRow.full_name} (${maskCccd(result.fromRow.cccd)}).${msg ? ` ${msg}` : ''}`,
+          })
+        : Promise.resolve(),
     ]);
 
     const after = await requireCharacterByUserId(this.repository.db, userId);
@@ -822,3 +839,4 @@ export class BankingService {
     }));
   }
 }
+

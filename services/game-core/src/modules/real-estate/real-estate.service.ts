@@ -1,8 +1,9 @@
-import { AppError } from '../../shared/http/errors.js';
+﻿import { AppError } from '../../shared/http/errors.js';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_MARKET_ID } from '../../shared/ledger/ledger.service.js';
 import { notify } from '../notifications/notification.service.js';
+import { assertNoPendingDivorce } from '../social/social.freeze.js';
 import {
   type PropertyDto,
   type PropertySaleOfferDto,
@@ -149,7 +150,7 @@ export class RealEstateService {
 
   async buyProperty(userId: string, propertyId: string): Promise<PropertyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const property = await this.repository.findById(propertyId);
       if (!property) throw AppError.notFound('Property');
       if (property.status !== 'unowned' && property.status !== 'listed') {
@@ -185,7 +186,7 @@ export class RealEstateService {
 
   async buyLand(userId: string, x: number, y: number): Promise<PropertyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const node = await mapRepository.findNodeByCoord(client, x, y);
       if (!node) throw AppError.notFound('Ô đất');
       if (node.zoneType === 'water' || node.zoneType === 'park') {
@@ -237,12 +238,13 @@ export class RealEstateService {
     saleNotes?: string,
   ): Promise<PropertyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const property = await this.repository.findById(propertyId);
       if (!property) throw AppError.notFound('Property');
       if (property.ownerCharacterId !== character.id) {
         throw AppError.forbidden('Chỉ chủ sở hữu mới được đặt bán.');
       }
+      await assertNoPendingDivorce(character.id, client);
       if (property.status !== 'owned') {
         throw AppError.badRequest('Chỉ có thể đặt bán bất động sản đang sở hữu.');
       }
@@ -265,7 +267,7 @@ export class RealEstateService {
     },
   ): Promise<PropertyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const property = await this.repository.findById(propertyId);
       if (!property) throw AppError.notFound('Property');
       if (property.ownerCharacterId !== character.id) {
@@ -288,7 +290,7 @@ export class RealEstateService {
 
   async rentProperty(userId: string, propertyId: string): Promise<PropertyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const property = await this.repository.findById(propertyId);
       if (!property) throw AppError.notFound('Property');
       if (property.ownerCharacterId === character.id) {
@@ -333,7 +335,7 @@ export class RealEstateService {
     message?: string,
   ): Promise<PropertySaleOfferDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const property = await this.repository.findById(propertyId, client);
       if (!property) throw AppError.notFound('Property');
       if (!property.ownerCharacterId) throw AppError.badRequest('Bất động sản chưa có chủ sở hữu.');
@@ -380,7 +382,7 @@ export class RealEstateService {
     action: 'accept' | 'reject' | 'cancel',
   ): Promise<PropertyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const offer = await this.repository.findOfferById(client, offerId);
       if (!offer) throw AppError.notFound('Offer');
       if (offer.status !== 'pending') throw AppError.badRequest('Đề nghị này đã được xử lý.');
@@ -409,7 +411,8 @@ export class RealEstateService {
         return toPropertyDto(updated, character.id);
       }
 
-      // accept: chốt giá, chuyển tiền và quyền sở hữu
+      // accept: chốt giá, chuyển tiền và quyền sở hữu (phong tỏa khi có ly hôn pending)
+      await assertNoPendingDivorce(offer.sellerCharacterId, client);
       const amount = Number(offer.amountMinor);
       const buyerRow = await client.query<{ cash_minor: string; user_id: string }>(
         `SELECT cash_minor, user_id FROM characters WHERE id = $1`,
@@ -450,3 +453,4 @@ export class RealEstateService {
 }
 
 export const realEstateService = new RealEstateService();
+

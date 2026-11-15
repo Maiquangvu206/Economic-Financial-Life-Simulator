@@ -5,6 +5,7 @@ import { pinoHttp } from 'pino-http';
 import { env } from './config/env.js';
 import { logger } from './shared/logger.js';
 import { attachActor, requireInternalToken } from './shared/http/actor.js';
+import { asyncHandler } from './shared/http/asyncHandler.js';
 import { errorHandler } from './shared/http/errorHandler.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
@@ -24,6 +25,12 @@ import { npcRouter } from './modules/npc/npc.routes.js';
 import { gmRouter } from './modules/gm/gm.routes.js';
 import { observabilityRouter } from './modules/observability/observability.routes.js';
 import { politicsRouter } from './modules/politics/politics.routes.js';
+import { successionRouter } from './modules/succession/succession.routes.js';
+import { welfareRouter, welfareAdminRouter } from './modules/welfare/welfare.routes.js';
+import { giftCodesRouter, giftCodesAdminRouter } from './modules/gift-codes/gift-codes.routes.js';
+import { notificationsRouter } from './modules/notifications/notification.routes.js';
+import { broadcastRouter, broadcastAdminRouter } from './modules/broadcast/broadcast.routes.js';
+import { getGameConfigPublic } from './modules/admin/admin.integration.js';
 import { observabilityService } from './modules/observability/observability.service.js';
 
 export function createApp(): Express {
@@ -100,6 +107,15 @@ export function createApp(): Express {
   app.use('/api/v1/gm', gmRouter);
   app.use('/api/v1/observability', observabilityRouter);
   app.use('/api/v1/politics', politicsRouter);
+  app.use('/api/v1/succession', successionRouter);
+  app.use('/api/v1/welfare', welfareRouter);
+  app.use('/api/v1/gift-codes', giftCodesRouter);
+  app.use('/api/v1/notifications', notificationsRouter);
+  app.use('/api/v1/broadcasts', broadcastRouter);
+  app.get('/api/v1/game-config', attachActor, asyncHandler(getGameConfigPublic));
+  app.use('/api/v1/admin/welfare', attachActor, welfareAdminRouter);
+  app.use('/api/v1/admin/gift-codes', attachActor, giftCodesAdminRouter);
+  app.use('/api/v1/admin/broadcasts', attachActor, broadcastAdminRouter);
   app.use('/api/v1/admin', attachActor, adminRouter);
 
   app.use((_req, res) => {

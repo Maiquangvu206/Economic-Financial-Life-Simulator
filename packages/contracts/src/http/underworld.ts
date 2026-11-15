@@ -69,10 +69,13 @@ export const UnderworldEvidenceDtoSchema = z.object({
 });
 export type UnderworldEvidenceDto = z.infer<typeof UnderworldEvidenceDtoSchema>;
 
-export const CollectEvidenceRequestSchema = z.object({
-  targetCharacterId: IdSchema,
-  price: MoneySchema,
-});
+export const CollectEvidenceRequestSchema = z
+  .object({
+    targetCccd: z.string().optional(),
+    targetCharacterId: IdSchema.optional(),
+    price: MoneySchema,
+  })
+  .refine((v) => !!v.targetCccd || !!v.targetCharacterId, { message: 'Cần targetCccd hoặc targetCharacterId.' });
 export type CollectEvidenceRequest = z.infer<typeof CollectEvidenceRequestSchema>;
 
 export const SellEvidenceRequestSchema = z.object({
@@ -85,10 +88,13 @@ export const SubmitEvidenceUnderworldRequestSchema = z.object({
 });
 export type SubmitEvidenceUnderworldRequest = z.infer<typeof SubmitEvidenceUnderworldRequestSchema>;
 
-export const StartBlackmailRequestSchema = z.object({
-  targetCharacterId: IdSchema,
-  monthlyPayment: MoneySchema,
-});
+export const StartBlackmailRequestSchema = z
+  .object({
+    targetCccd: z.string().optional(),
+    targetCharacterId: IdSchema.optional(),
+    monthlyPayment: MoneySchema,
+  })
+  .refine((v) => !!v.targetCccd || !!v.targetCharacterId, { message: 'Cần targetCccd hoặc targetCharacterId.' });
 export type StartBlackmailRequest = z.infer<typeof StartBlackmailRequestSchema>;
 
 export const BlackmailDtoSchema = z.object({
@@ -112,10 +118,13 @@ export const StingDtoSchema = z.object({
 });
 export type StingDto = z.infer<typeof StingDtoSchema>;
 
-export const StartStingRequestSchema = z.object({
-  targetCharacterId: IdSchema,
-  amount: MoneySchema,
-});
+export const StartStingRequestSchema = z
+  .object({
+    targetCccd: z.string().optional(),
+    targetCharacterId: IdSchema.optional(),
+    amount: MoneySchema,
+  })
+  .refine((v) => !!v.targetCccd || !!v.targetCharacterId, { message: 'Cần targetCccd hoặc targetCharacterId.' });
 export type StartStingRequest = z.infer<typeof StartStingRequestSchema>;
 
 export const ProtectionDtoSchema = z.object({

@@ -39,4 +39,9 @@ export class CharactersController {
     const { x, y } = req.body as { x: number; y: number };
     res.json(await this.service.setLocation(actorId, x, y));
   };
+
+  eligibleSuccessors = async (req: Request, res: Response): Promise<void> => {
+    const actorId = requireActorId(req);
+    res.json(await this.service.eligibleSuccessors(actorId));
+  };
 }

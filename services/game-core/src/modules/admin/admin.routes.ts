@@ -1,8 +1,5 @@
 import { Router } from 'express';
-import type { MacroSnapshotDto } from '@efls/contracts';
-import { UpsertUniversityRequestSchema, UpsertJobRequestSchema } from '@efls/contracts';
-import type { Request, Response } from 'express';
-import { AppError } from '../../shared/http/errors.js';
+import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema } from '@efls/contracts';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import {
@@ -14,40 +11,30 @@ import {
   updateJob,
   deleteJob,
 } from './admin.education.js';
+import {
+  getPoliticsAdminOverview,
+  createPoliticsElection,
+  endPoliticsElection,
+} from './admin.politics.js';
+import {
+  getMacroSnapshot,
+  getAuditLogs,
+  searchPlayers,
+  adminPlayerAction,
+  getGameConfig,
+  updateGameConfig,
+  triggerMacroEvent,
+} from './admin.integration.js';
 
 export const adminRouter: Router = Router();
 
-function ensureAdmin(req: Request): void {
-  if (req.actorRole !== 'admin' && req.actorRole !== 'moderator') {
-    throw AppError.forbidden('Admin role required');
-  }
-}
-
-adminRouter.get('/macro/snapshot', (req, res: Response) => {
-  ensureAdmin(req);
-  const snapshot: MacroSnapshotDto = {
-    tick: 0,
-    inGameYear: 1,
-    moneySupply: { amount: 0, currency: 'VND' },
-    inflationPct: 0,
-    cpi: 100,
-    marketCap: { amount: 0, currency: 'VND' },
-    concurrentUsers: 0,
-    activeCourtCases: 0,
-    generatedAt: new Date().toISOString(),
-  };
-  res.json(snapshot);
-});
-
-adminRouter.post('/players/:id/actions', (req, res: Response) => {
-  ensureAdmin(req);
-  res.status(501).json({
-    type: 'https://efls.game/errors/not-implemented',
-    title: 'Player intervention is not implemented yet',
-    status: 501,
-    detail: 'Wire this action to the audit log and the player-management module first.',
-  });
-});
+adminRouter.get('/macro/snapshot', asyncHandler(getMacroSnapshot));
+adminRouter.post('/macro/events', validateBody(TriggerMacroEventRequestSchema), asyncHandler(triggerMacroEvent));
+adminRouter.get('/audit-logs', asyncHandler(getAuditLogs));
+adminRouter.get('/players', asyncHandler(searchPlayers));
+adminRouter.post('/players/:id/actions', validateBody(AdminPlayerActionRequestSchema), asyncHandler(adminPlayerAction));
+adminRouter.get('/game-config', asyncHandler(getGameConfig));
+adminRouter.put('/game-config', validateBody(UpdateGameConfigRequestSchema), asyncHandler(updateGameConfig));
 
 // Education config (ngành/trường, học phí, thời gian học, mức lương sau tốt nghiệp)
 adminRouter.get('/education/config', asyncHandler(getEducationConfig));
@@ -57,3 +44,8 @@ adminRouter.delete('/education/universities/:id', asyncHandler(deleteUniversity)
 adminRouter.post('/education/jobs', validateBody(UpsertJobRequestSchema), asyncHandler(createJob));
 adminRouter.put('/education/jobs/:id', validateBody(UpsertJobRequestSchema), asyncHandler(updateJob));
 adminRouter.delete('/education/jobs/:id', asyncHandler(deleteJob));
+
+// Politics & elections (admin)
+adminRouter.get('/politics/overview', asyncHandler(getPoliticsAdminOverview));
+adminRouter.post('/politics/elections', asyncHandler(createPoliticsElection));
+adminRouter.post('/politics/elections/:id/end', asyncHandler(endPoliticsElection));

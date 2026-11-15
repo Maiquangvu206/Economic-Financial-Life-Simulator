@@ -1,6 +1,6 @@
-import { AppError } from '../../shared/http/errors.js';
+﻿import { AppError } from '../../shared/http/errors.js';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharacterByCccd } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js';
 import { callAiService } from '../../shared/ai/aiClient.js';
 import { notify } from '../notifications/notification.service.js';
@@ -86,7 +86,7 @@ export class CorporationService {
     initialCapitalMinor: number,
   ): Promise<CompanyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const cash = toMinor(character.cash_minor);
       if (cash < initialCapitalMinor) {
         throw AppError.conflict('insufficient_funds', 'Không đủ tiền mặt để thành lập công ty.');
@@ -150,7 +150,7 @@ export class CorporationService {
   /** Đầu tư vốn vào một công ty (chỉ chủ sở hữu hoặc bất kỳ ai cũng có thể đầu tư). */
   async investCompany(userId: string, companyId: string, amountMinor: number): Promise<CompanyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const company = await this.repository.getCompany(companyId);
       if (!company) throw AppError.notFound('Company');
       if (company.status !== 'active') {
@@ -205,7 +205,7 @@ export class CorporationService {
     totalShares: number,
   ): Promise<CompanyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const company = await this.repository.getCompany(companyId, client);
       if (!company) throw AppError.notFound('Company');
       if (company.ownerCharacterId !== character.id) {
@@ -246,7 +246,7 @@ export class CorporationService {
     amountPerShareMinor: number,
   ): Promise<{ totalDistributedMinor: number; recipientCount: number }> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const company = await this.repository.getCompany(companyId, client);
       if (!company) throw AppError.notFound('Company');
       if (company.ownerCharacterId !== character.id) {
@@ -281,13 +281,9 @@ export class CorporationService {
   }
 
   /** Khiêu kích thác đoá: nếu người mua sở hữu >51% cổ phiếu, trở thành chủ sở hữu mới. */
-  async takeoverCompany(
-    userId: string,
-    companyId: string,
-    buyerCharacterId: string,
-  ): Promise<CompanyDto> {
+  async takeoverCompany(userId: string, companyId: string, buyer: { buyerCccd?: string; buyerCharacterId?: string }): Promise<CompanyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId); const buyerRef = buyer.buyerCccd ? await resolveCharacterByCccd(client, buyer.buyerCccd, { requireAlive: true }) : null; const buyerCharacterId = buyerRef?.id ?? buyer.buyerCharacterId; if (!buyerCharacterId) throw AppError.badRequest('Thiếu người thâu tóm (CCCD).');
       const company = await this.repository.getCompany(companyId, client);
       if (!company) throw AppError.notFound('Company');
       if (company.status !== 'ipo') {
@@ -348,7 +344,7 @@ export class CorporationService {
 
   async fireEmployee(userId: string, companyId: string, employmentId: string): Promise<void> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const company = await this.repository.getCompany(companyId, client);
       if (!company) throw AppError.notFound('Company');
       if (company.ownerCharacterId !== character.id) {
@@ -368,7 +364,7 @@ export class CorporationService {
 
   async dissolveCompany(userId: string, companyId: string): Promise<CompanyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const company = await this.repository.getCompany(companyId, client);
       if (!company) throw AppError.notFound('Company');
       if (company.ownerCharacterId !== character.id) {
@@ -398,7 +394,7 @@ export class CorporationService {
     note?: string,
   ): Promise<CompanyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const company = await this.repository.getCompany(companyId, client);
       if (!company) throw AppError.notFound('Company');
       if (company.ownerCharacterId !== character.id) {
@@ -440,7 +436,7 @@ export class CorporationService {
     note?: string,
   ): Promise<CompanyDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const company = await this.repository.getCompany(companyId, client);
       if (!company) throw AppError.notFound('Company');
       if (company.ownerCharacterId !== character.id) {
@@ -478,7 +474,7 @@ export class CorporationService {
   }
 
   private async assertOwner(client: any, userId: string, companyId: string) {
-    const character = await requireCharacterByUserId(client, userId);
+    const character = await requireLivingCharacterByUserId(client, userId);
     const company = await this.repository.getCompany(companyId, client);
     if (!company) throw AppError.notFound('Company');
     if (company.ownerCharacterId !== character.id) {
@@ -811,3 +807,4 @@ function formatMinor(amount: number): string {
 }
 
 export const corporationService = new CorporationService();
+

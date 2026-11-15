@@ -1,6 +1,6 @@
-import { AppError } from '../../shared/http/errors.js';
+﻿import { AppError } from '../../shared/http/errors.js';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js';
 import { notify } from '../notifications/notification.service.js';
 import { type AuctionDto, type AuctionOverviewDto, MoneySchema } from '@efls/contracts';
@@ -58,7 +58,7 @@ export class AuctionService {
   /** Đặt giá vào phiên đấu giá. Tiền được giữ trong escrow cho đến khi phiên kết thúc. */
   async placeBid(userId: string, auctionId: string, amountMinor: number): Promise<AuctionDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const auction = await this.repository.getAuction(auctionId);
       if (!auction) throw AppError.notFound('Auction');
       if (auction.status !== 'open') {
@@ -124,7 +124,7 @@ export class AuctionService {
   }
   async endAuction(userId: string, auctionId: string): Promise<AuctionDto> {
     await withTransaction(async (client) => {
-      await requireCharacterByUserId(client, userId);
+      await requireLivingCharacterByUserId(client, userId);
       const row = await this.repository.getAuction(auctionId);
       if (!row) throw AppError.notFound('Auction');
       if (row.status !== 'open') {
@@ -267,7 +267,7 @@ export class AuctionService {
     endsAt: Date,
   ): Promise<void> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const property = await this.repository.getPropertyById(client, propertyId);
       if (!property) throw AppError.notFound('Property');
       if (property.ownerCharacterId !== character.id) {
@@ -308,3 +308,4 @@ function formatMinor(amount: number): string {
 }
 
 export const auctionService = new AuctionService();
+

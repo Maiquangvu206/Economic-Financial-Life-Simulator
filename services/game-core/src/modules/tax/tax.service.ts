@@ -1,7 +1,7 @@
 ﻿import { AppError } from '../../shared/http/errors.js';
 import type { PoolClient } from 'pg';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharacterByCccd } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
 import { notify } from '../notifications/notification.service.js';
 import { type TaxOverviewExtDto, MoneySchema } from '@efls/contracts';
@@ -196,7 +196,7 @@ export class TaxService {
 
   async pay(userId: string, assessmentId: string): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const assessment = await this.repository.getAssessment(assessmentId, client);
       if (!assessment) throw AppError.notFound('Tax assessment');
       if (assessment.status !== 'due') {
@@ -230,7 +230,7 @@ export class TaxService {
 
   async startAudit(userId: string, taxYear: number): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const audits = await this.repository.listAudits(character.id, client);
       if (audits.some((a) => a.status === 'open')) {
         throw AppError.conflict('audit_open', 'Đang có một cuộc kiểm toán đang mở.');
@@ -285,17 +285,28 @@ export class TaxService {
   }
 
   /** Tố giác một nhân vật (chung). */
-  async report(userId: string, targetCharacterId: string, reason: string): Promise<void> {
+  async report(userId: string, target: { targetCccd?: string; targetCharacterId?: string }, reason: string): Promise<void> {
     await withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const targetRef = target.targetCccd
+        ? await resolveCharacterByCccd(client, target.targetCccd, { requireAlive: false })
+        : target.targetCharacterId
+          ? await (async () => {
+              const r = await client.query<{ id: string }>(`SELECT id FROM characters WHERE id = $1`, [target.targetCharacterId]);
+              if (!r.rows[0]) throw AppError.notFound('Target character');
+              return { id: r.rows[0].id, user_id: null as any, is_alive: true } as any;
+            })()
+          : null;
+      if (!targetRef) throw AppError.badRequest('Thiếu mục tiêu tố giác.');
+      const targetCharacterId = targetRef.id;
       if (targetCharacterId === character.id) {
         throw AppError.badRequest('Không thể tự tố giác.');
       }
-      const target = await client.query<{ id: string; user_id: string }>(
+      const targetRow = await client.query<{ id: string; user_id: string | null }>(
         `SELECT id, user_id FROM characters WHERE id = $1`,
         [targetCharacterId],
       );
-      if (!target.rows[0]) throw AppError.notFound('Target character');
+      if (!targetRow.rows[0]) throw AppError.notFound('Target character');
 
       await client.query(
         `UPDATE characters
@@ -311,20 +322,22 @@ export class TaxService {
         body: `Tố giác của bạn đã được gửi tới cơ quan chức năng.`,
         payload: { targetCharacterId, reason },
       });
-      await notify(client, {
-        userId: target.rows[0].user_id,
-        kind: 'law',
-        title: 'Bạn bị tố giác',
-        body: `Bạn bị tố giác vì lý do: ${reason}`,
-        payload: { reporterId: character.id, reason },
-      });
+      if (targetRow.rows[0].user_id) {
+        await notify(client, {
+          userId: targetRow.rows[0].user_id,
+          kind: 'law',
+          title: 'Bạn bị tố giác',
+          body: `Bạn bị tố giác vì lý do: ${reason}`,
+          payload: { reporterId: character.id, reason },
+        });
+      }
     });
   }
 
   /** (a) Người chơi (chủ DN) tự cấp/xin cấp giấy phép kinh doanh cho công ty của mình. */
   async issueLicense(userId: string, companyId: string): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const company = await this.repository.getCompanyBasic(companyId, client);
       if (!company) throw AppError.notFound('Company');
       if (company.ownerCharacterId !== character.id) {
@@ -373,7 +386,7 @@ export class TaxService {
   /** (b) Tố cáo công ty kinh doanh không có giấy phép: tạo vụ án và xử phạt. */
   async reportUnlicensedCompany(userId: string, companyId: string, reason?: string): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
-      const reporter = await requireCharacterByUserId(client, userId);
+      const reporter = await requireLivingCharacterByUserId(client, userId);
       const company = await this.repository.getCompanyBasic(companyId, client);
       if (!company) throw AppError.notFound('Company');
       if (company.ownerCharacterId === reporter.id) {
@@ -449,7 +462,7 @@ export class TaxService {
   /** Thu hồi giấy phép kinh doanh (hủy giấy phép công ty) - chủ công ty. */
   async revokeLicense(userId: string, licenseId: string): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const license = await this.repository.getLicense(licenseId, client);
       if (!license) throw AppError.notFound('Business license');
       const company = await client.query<{ owner_character_id: string; name: string }>(
@@ -483,3 +496,4 @@ export class TaxService {
 }
 
 export const taxService = new TaxService();
+

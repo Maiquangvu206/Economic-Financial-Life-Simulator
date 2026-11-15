@@ -8,7 +8,9 @@ import { EducationConfigPage } from '../pages/EducationConfigPage';
 import { MacroDashboardPage } from '../pages/MacroDashboardPage';
 import { MapEditorPage } from '../pages/MapEditorPage';
 import { PlayersPage } from '../pages/PlayersPage';
+import { PoliticsConfigPage } from '../pages/PoliticsConfigPage';
 import { SeasonCalendarPage } from '../pages/SeasonCalendarPage';
+import { GiftCodesPage } from '../pages/GiftCodesPage';
 import { SsoPage } from '../pages/SsoPage';
 import { SystemBroadcastPage } from '../pages/SystemBroadcastPage';
 
@@ -31,8 +33,10 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <MacroDashboardPage /> },
           { path: 'broadcast', element: <SystemBroadcastPage /> },
+          { path: 'gift-codes', element: <GiftCodesPage /> },
           { path: 'calendar-seasons', element: <SeasonCalendarPage /> },
           { path: 'education-config', element: <EducationConfigPage /> },
+          { path: 'politics', element: <PoliticsConfigPage /> },
           { path: 'audit-logs', element: <AuditLogsPage /> },
           { path: 'players', element: <PlayersPage /> },
           { path: 'map-editor', element: <MapEditorPage /> },

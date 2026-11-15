@@ -1,7 +1,7 @@
-import crypto from 'node:crypto';
+﻿import crypto from 'node:crypto';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_MARKET_ID } from '../../shared/ledger/ledger.service.js';
 import { notify } from '../notifications/notification.service.js';
 import { callAiService } from '../../shared/ai/aiClient.js';
@@ -116,7 +116,7 @@ export class EducationService {
 
   async enroll(userId: string, universityId: string): Promise<CareersOverviewExtDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const university = await this.repository.getUniversity(universityId, client);
       if (!university) throw AppError.notFound('University');
 
@@ -158,7 +158,7 @@ export class EducationService {
 
   async graduate(userId: string, degreeId: string): Promise<GraduationDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const degree = await this.repository.getDegreeForCharacter(degreeId, character.id, client);
       if (!degree) throw AppError.notFound('Degree');
       if (degree.status !== 'enrolled') {
@@ -174,7 +174,7 @@ export class EducationService {
   /** Bắt đầu bài kiểm tra tốt nghiệp sớm: tạo 5 câu trắc nghiệm cơ bản do AI sinh theo ngành/lĩnh vực. */
   async startEarlyGraduateTest(userId: string, degreeId: string): Promise<EarlyGraduateStartResponse> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const degree = await this.repository.getDegreeForCharacter(degreeId, character.id, client);
       if (!degree) throw AppError.notFound('Degree');
       if (degree.status !== 'enrolled') {
@@ -268,7 +268,7 @@ export class EducationService {
     input: { degreeId: string; testId: string; answers: Array<{ questionId: number; selectedIndex: number }> },
   ): Promise<EarlyGraduateResultDto> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
       const degree = await this.repository.getDegreeForCharacter(input.degreeId, character.id, client);
       if (!degree) throw AppError.notFound('Degree');
       if (degree.status !== 'enrolled') {
@@ -376,3 +376,4 @@ export class EducationService {
 }
 
 export const educationService = new EducationService();
+

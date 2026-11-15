@@ -1,4 +1,4 @@
-import type { Request, Response } from 'express';
+﻿import type { Request, Response } from 'express';
 import type {
   CompanyInvestRequest,
   CompanyOperationRequest,
@@ -67,11 +67,11 @@ export class CorporationController {
     res.status(200).json(result);
   };
 
-  takeoverCompany = async (req: Request, res: Response): Promise<void> => {
+    takeoverCompany = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
     const { companyId } = req.params as { companyId: string };
-    const { buyerCharacterId } = req.body as TakeoverRequest;
-    const company = await this.service.takeoverCompany(userId, companyId, buyerCharacterId);
+    const { buyerCccd, buyerCharacterId } = req.body as TakeoverRequest;
+    const company = await this.service.takeoverCompany(userId, companyId, { buyerCccd, buyerCharacterId });
     res.status(200).json(company);
   };
 
@@ -195,3 +195,4 @@ export class CorporationController {
 }
 
 export const corporationController = new CorporationController();
+

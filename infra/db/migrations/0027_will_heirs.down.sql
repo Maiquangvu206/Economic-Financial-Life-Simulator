@@ -1,0 +1,4 @@
+﻿-- down 0027
+BEGIN;
+DROP TABLE IF EXISTS will_heirs;
+COMMIT;

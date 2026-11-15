@@ -6,6 +6,7 @@ import { CharacterPage } from '../pages/CharacterPage';
 import { CityPage } from '../pages/CityPage';
 import { EducationPage } from '../pages/EducationPage';
 import { FinancePage } from '../pages/FinancePage';
+import { GiftCodesPage } from '../pages/GiftCodesPage';
 import { LawPage } from '../pages/LawPage';
 import { LoginPage } from '../pages/LoginPage';
 import { OfflineRecapPage } from '../pages/OfflineRecapPage';
@@ -40,6 +41,7 @@ const router = createBrowserRouter([
           { path: 'law', element: <LawPage /> },
           { path: 'politics', element: <PoliticsPage /> },
           { path: 'underworld', element: <UnderworldPage /> },
+          { path: 'gift-codes', element: <GiftCodesPage /> },
           { path: 'recap', element: <OfflineRecapPage /> },
           { path: '*', element: <Navigate to="/" replace /> },
         ],

@@ -11,6 +11,9 @@ export interface UserRow {
   password_hash: string;
   role: UserRole;
   created_at: Date;
+  status?: 'active' | 'banned' | 'restricted';
+  ban_reason?: string | null;
+  banned_until?: Date | null;
 }
 
 export interface NewUserInput {
@@ -37,7 +40,7 @@ async function uniqueCccd(client: PoolClient, birthplace: string): Promise<strin
 export class AuthRepository {
   async findByEmail(email: string): Promise<UserRow | null> {
     const result = await pool.query<UserRow>(
-      `SELECT id, email, username, password_hash, role, created_at
+      `SELECT id, email, username, password_hash, role, created_at, status, ban_reason, banned_until
        FROM users WHERE lower(email) = lower($1) LIMIT 1`,
       [email],
     );
@@ -46,7 +49,7 @@ export class AuthRepository {
 
   async findById(id: string): Promise<UserRow | null> {
     const result = await pool.query<UserRow>(
-      `SELECT id, email, username, password_hash, role, created_at
+      `SELECT id, email, username, password_hash, role, created_at, status, ban_reason, banned_until
        FROM users WHERE id = $1 LIMIT 1`,
       [id],
     );

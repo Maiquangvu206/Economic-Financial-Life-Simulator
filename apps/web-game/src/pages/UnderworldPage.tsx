@@ -7,6 +7,7 @@ import { GameButton } from '../shared/ui/GameButton';
 import { Modal } from '../shared/ui/Modal';
 import { Badge } from '../shared/ui/Badge';
 import { GameInput } from '../shared/ui/GameInput';
+import { CCCDLookupInput } from '../shared/identity/CCCDLookupInput';
 import { formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
 import {
@@ -38,13 +39,13 @@ export function UnderworldPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const [collectOpen, setCollectOpen] = useState(false);
-  const [collectTarget, setCollectTarget] = useState('');
+  const [collectTargetCccd, setCollectTargetCccd] = useState('');
   const [collectPrice, setCollectPrice] = useState('2000000');
   const [blackmailOpen, setBlackmailOpen] = useState(false);
-  const [blackmailTarget, setBlackmailTarget] = useState('');
+  const [blackmailTargetCccd, setBlackmailTargetCccd] = useState('');
   const [blackmailMonthly, setBlackmailMonthly] = useState('1000000');
   const [stingOpen, setStingOpen] = useState(false);
-  const [stingTarget, setStingTarget] = useState('');
+  const [stingTargetCccd, setStingTargetCccd] = useState('');
   const [stingAmount, setStingAmount] = useState('5000000');
   const [npcOpen, setNpcOpen] = useState(false);
   const [npcId, setNpcId] = useState('merchant_01');
@@ -629,12 +630,7 @@ export function UnderworldPage() {
       {/* Modal: thu thập bằng chứng */}
       <Modal open={collectOpen} onClose={() => setCollectOpen(false)} title="Thuê thám tử">
         <div className="space-y-3">
-          <GameInput
-            label="Character ID mục tiêu"
-            value={collectTarget}
-            onChange={(e) => setCollectTarget(e.target.value)}
-            placeholder="UUID..."
-          />
+          <CCCDLookupInput label="CCCD mục tiêu" value={collectTargetCccd} onChange={setCollectTargetCccd} />
           <GameInput
             label="Chi phí thám tử (VNĐ)"
             value={collectPrice}
@@ -655,7 +651,7 @@ export function UnderworldPage() {
                   apiRequest('/api/v1/underworld/evidence/collect', {
                     method: 'POST',
                     body: JSON.stringify({
-                      targetCharacterId: collectTarget,
+                      targetCccd: collectTargetCccd.replace(/\s+/g,''),
                       price: { amount: Number(collectPrice) || 0, currency: 'VND' },
                     }),
                   }),
@@ -675,12 +671,7 @@ export function UnderworldPage() {
         title="Mở hợp đồng tống tiền"
       >
         <div className="space-y-3">
-          <GameInput
-            label="Character ID mục tiêu"
-            value={blackmailTarget}
-            onChange={(e) => setBlackmailTarget(e.target.value)}
-            placeholder="UUID..."
-          />
+          <CCCDLookupInput label="CCCD mục tiêu" value={blackmailTargetCccd} onChange={setBlackmailTargetCccd} />
           <GameInput
             label="Tiền im lặng / tháng (VNĐ)"
             value={blackmailMonthly}
@@ -698,7 +689,7 @@ export function UnderworldPage() {
                   apiRequest('/api/v1/underworld/blackmail/start', {
                     method: 'POST',
                     body: JSON.stringify({
-                      targetCharacterId: blackmailTarget,
+                      targetCccd: blackmailTargetCccd.replace(/\s+/g,''),
                       monthlyPayment: { amount: Number(blackmailMonthly) || 0, currency: 'VND' },
                     }),
                   }),
@@ -714,12 +705,7 @@ export function UnderworldPage() {
       {/* Modal: gài bẫy */}
       <Modal open={stingOpen} onClose={() => setStingOpen(false)} title="Gài bẫy (Sting)">
         <div className="space-y-3">
-          <GameInput
-            label="Character ID mục tiêu"
-            value={stingTarget}
-            onChange={(e) => setStingTarget(e.target.value)}
-            placeholder="UUID..."
-          />
+          <CCCDLookupInput label="CCCD mục tiêu" value={stingTargetCccd} onChange={setStingTargetCccd} />
           <GameInput
             label="Tiền đánh dấu mồi nhử (VNĐ)"
             value={stingAmount}
@@ -740,7 +726,7 @@ export function UnderworldPage() {
                   apiRequest('/api/v1/underworld/sting', {
                     method: 'POST',
                     body: JSON.stringify({
-                      targetCharacterId: stingTarget,
+                      targetCccd: stingTargetCccd.replace(/\s+/g,''),
                       amount: { amount: Number(stingAmount) || 0, currency: 'VND' },
                     }),
                   }),

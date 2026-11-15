@@ -128,6 +128,24 @@ export class PoliticsRepository {
     );
     return result.rows[0] ?? null;
   }
+
+  async listElections(db: Db = this.db, limit = 20): Promise<ElectionRow[]> {
+    const result = await db.query<ElectionRow>(
+      `SELECT id, office, status, starts_at AS "startsAt", ends_at AS "endsAt",
+              winner_candidate_id AS "winnerCandidateId"
+       FROM elections ORDER BY created_at DESC LIMIT $1`,
+      [limit],
+    );
+    return result.rows;
+  }
+
+  async countVotes(electionId: string, db: Db = this.db): Promise<number> {
+    const result = await db.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM votes WHERE election_id = $1`,
+      [electionId],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
 }
 
 export const politicsRepository = new PoliticsRepository();

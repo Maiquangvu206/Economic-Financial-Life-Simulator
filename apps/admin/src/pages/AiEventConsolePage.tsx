@@ -38,10 +38,26 @@ export function AiEventConsolePage() {
     queryFn: () => adminRequest<GmDirectiveDto[]>('/api/v1/gm/directives'),
   });
 
-  function handleTrigger() {
-    setNotice(
-      `Chưa gửi server. Payload hợp lệ: ${eventType}, severity=${severity.toFixed(2)}, ${duration} năm.`,
-    );
+  async function handleTrigger() {
+    if (!reason.trim()) {
+      setNotice('Vui lòng nhập lý do (audit log) trước khi kích hoạt.');
+      return;
+    }
+    try {
+      await adminRequest('/api/v1/admin/macro/events', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: eventType,
+          severity,
+          durationInGameYears: duration,
+          reason: reason.trim(),
+        }),
+      });
+      setNotice(`Đã kích hoạt sự kiện ${eventType}. Hệ thống đã lưu cấu hình, tạo bản tin/thông báo cho người dùng và ghi audit log.`);
+      setReason('');
+    } catch (err: any) {
+      setNotice(err?.problem?.detail || err?.message || 'Kích hoạt sự kiện thất bại.');
+    }
   }
 
   async function handleGmAdjust() {

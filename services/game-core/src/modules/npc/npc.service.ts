@@ -1,6 +1,6 @@
-import { evaluateNpcDeal } from '@efls/domain';
+﻿import { evaluateNpcDeal } from '@efls/domain';
 import { withTransaction } from '../../shared/db/tx.js';
-import { requireCharacterByUserId } from '../../shared/actors/character.js';
+import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { callAiService } from '../../shared/ai/aiClient.js';
 import { notify } from '../notifications/notification.service.js';
 import {
@@ -28,7 +28,7 @@ export class NpcService {
 
   async negotiate(userId: string, input: NpcNegotiateRequest): Promise<NpcNegotiateResponse> {
     return withTransaction(async (client) => {
-      const character = await requireCharacterByUserId(client, userId);
+      const character = await requireLivingCharacterByUserId(client, userId);
 
       // AI đề xuất dialogue/tope (advisory). Fallback dialogue mặc định nếu AI lỗi.
       const { data } = await callAiService<NpcProposalRaw>('/v1/npc/negotiate', {
@@ -107,3 +107,4 @@ export class NpcService {
 }
 
 export const npcService = new NpcService();
+

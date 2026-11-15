@@ -6,6 +6,7 @@ import { apiRequest } from '../shared/api/httpClient';
 import { formatMoney } from '../shared/lib/format';
 import { GameButton } from '../shared/ui/GameButton';
 import { GameInput } from '../shared/ui/GameInput';
+import { CCCDLookupInput } from '../shared/identity/CCCDLookupInput';
 import { Modal } from '../shared/ui/Modal';
 import { Panel } from '../shared/ui/Panel';
 import { StatCard } from '../shared/ui/StatCard';
@@ -63,6 +64,7 @@ type CharacterMe = {
 
 type TransferLookup = {
   accountNumber: string;
+  cccdMasked?: string;
   characterId: string;
   fullName: string;
   accountTier: string;
@@ -108,11 +110,10 @@ export function FinancePage() {
   const [repayAmounts, setRepayAmounts] = useState<Record<string, string>>({});
   const [depositWithdrawAmounts, setDepositWithdrawAmounts] = useState<Record<string, string>>({});
 
-  const [transferTo, setTransferTo] = useState('');
+  const [transferCccd, setTransferCccd] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [transferMessage, setTransferMessage] = useState('');
   const [lookupResult, setLookupResult] = useState<TransferLookup | null>(null);
-  const [lookupError, setLookupError] = useState<string | null>(null);
 
   const applyLoan = useMutation({
     mutationFn: (req: ApplyLoanRequest) =>
@@ -209,26 +210,18 @@ export function FinancePage() {
   });
 
   const lookupTransfer = useMutation({
-    mutationFn: (accountNumber: string) =>
-      apiRequest<TransferLookup>(
-        `/api/v1/banking/transfers/lookup?accountNumber=${encodeURIComponent(accountNumber.trim())}`,
-      ),
-    onSuccess: (data) => {
-      setLookupResult(data);
-      setLookupError(null);
-    },
-    onError: (err: Error) => {
-      setLookupResult(null);
-      setLookupError(err.message || 'Không tìm thấy tài khoản.');
-    },
+    mutationFn: (cccd: string) =>
+      apiRequest<TransferLookup>(`/api/v1/banking/transfers/lookup?cccd=${encodeURIComponent(cccd.trim())}`),
+    onSuccess: (data) => { setLookupResult(data); },
+    onError: () => { setLookupResult(null); },
   });
 
   const createTransfer = useMutation({
-    mutationFn: (payload: { toAccountNumber: string; amount: number; message?: string }) =>
+    mutationFn: (payload: { targetCccd: string; amount: number; message?: string }) =>
       apiRequest('/api/v1/banking/transfers', {
         method: 'POST',
         body: JSON.stringify({
-          toAccountNumber: payload.toAccountNumber,
+          targetCccd: payload.targetCccd,
           amount: moneyMinor(payload.amount),
           message: payload.message ?? '',
         }),
@@ -362,19 +355,19 @@ export function FinancePage() {
   };
 
   const handleLookup = () => {
-    const acc = transferTo.trim();
-    if (!acc) {
-      setLookupError('Vui lòng nhập số tài khoản (STK) người nhận.');
+    const cccd = transferCccd.replace(/\s+/g, '');
+    if (!/^\d{12}$/.test(cccd)) {
+      toast({ title: 'CCCD không hợp lệ', description: 'Vui lòng nhập đúng 12 số CCCD người nhận.', variant: 'error' });
       setLookupResult(null);
       return;
     }
-    lookupTransfer.mutate(acc);
+    lookupTransfer.mutate(cccd);
   };
 
   const handleTransfer = () => {
     const amount = parseVnd(transferAmount);
     if (!lookupResult) {
-      toast({ title: 'Chưa xác nhận người nhận', description: 'Hãy tra cứu STK người nhận trước.', variant: 'error' });
+      toast({ title: 'Chưa xác nhận người nhận', description: 'Hãy kiểm tra CCCD người nhận trước.', variant: 'error' });
       return;
     }
     if (amount <= 0) {
@@ -382,18 +375,10 @@ export function FinancePage() {
       return;
     }
     if (amount > cash) {
-      toast({
-        title: 'Không đủ tiền mặt',
-        description: `Tiền mặt hiện có ${formatMoney(cash)}, không đủ để chuyển ${formatMoney(amount)}.`,
-        variant: 'error',
-      });
+      toast({ title: 'Không đủ tiền mặt', description: `Tiền mặt hiện có ${formatMoney(cash)}, không đủ để chuyển ${formatMoney(amount)}.`, variant: 'error' });
       return;
     }
-    createTransfer.mutate({
-      toAccountNumber: lookupResult.accountNumber,
-      amount,
-      message: transferMessage.trim(),
-    });
+    createTransfer.mutate({ targetCccd: transferCccd.replace(/\s+/g, ''), amount, message: transferMessage.trim() });
   };
 
   const copyStk = async () => {
@@ -658,33 +643,25 @@ export function FinancePage() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <Panel title="Chuyển khoản (theo STK, thời gian thực)" borderColor="emerald">
+        <Panel title="Chuyển khoản (theo CCCD, thời gian thực)" borderColor="emerald">
           <div className="space-y-3">
             <p className="text-[11px] text-slate-500">
-              Nhập số tài khoản (STK) người nhận để tra cứu, xác nhận tên & cấp bậc, sau đó chuyển tiền từ ví. Người nhận được thông báo ngay (realtime).
+              Nhập CCCD (12 số) người nhận để kiểm tra, xác nhận tên & trạng thái, sau đó chuyển tiền từ ví. Người nhận được thông báo ngay (realtime).
             </p>
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-end">
-              <GameInput
-                label="Số tài khoản (STK) người nhận"
-                value={transferTo}
-                onChange={(e) => {
-                  setTransferTo(e.target.value);
-                  setLookupResult(null);
-                  setLookupError(null);
-                }}
-                placeholder="Nhập STK (10 chữ số)"
-              />
-              <GameButton variant="outline" onClick={handleLookup} disabled={lookupTransfer.isPending}>
-                {lookupTransfer.isPending ? 'Đang tra cứu...' : 'Tra cứu'}
-              </GameButton>
-            </div>
-            {lookupError && <p className="text-[11px] text-rose-600">{lookupError}</p>}
+            <CCCDLookupInput
+              value={transferCccd}
+              onChange={(v) => { setTransferCccd(v); setLookupResult(null); }}
+              onResolved={(r) => {
+                if (r) { lookupTransfer.mutate(transferCccd.replace(/\s+/g, '')); } else { setLookupResult(null); }
+              }}
+              label="CCCD người nhận"
+            />
             {lookupResult && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5 text-sm">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="font-semibold text-slate-900">{lookupResult.fullName}</p>
-                    <p className="text-[11px] text-slate-600">STK: <span className="font-mono">{lookupResult.accountNumber}</span></p>
+                    <p className="text-[11px] text-slate-600">CCCD: <span className="font-mono">{lookupResult.cccdMasked ?? '—'}</span> · STK: <span className="font-mono">{lookupResult.accountNumber}</span></p>
                   </div>
                   <Badge variant={tierVariant(lookupResult.accountTier)}>{tierLabel(lookupResult.accountTier)}</Badge>
                 </div>
@@ -737,7 +714,7 @@ export function FinancePage() {
                         <p className="font-medium text-slate-800">
                           {incoming ? 'Nhận từ' : 'Chuyển tới'} {t.counterpartyName}
                         </p>
-                        <p className="text-[11px] text-slate-500">STK: <span className="font-mono">{t.counterpartyAccountNumber}</span></p>
+                        <p className="text-[11px] text-slate-500">STK/Ref: <span className="font-mono">{t.counterpartyAccountNumber}</span></p>
                         {t.message ? <p className="text-[11px] text-slate-600 mt-0.5">ND: {t.message}</p> : null}
                       </div>
                       <div className="text-right">

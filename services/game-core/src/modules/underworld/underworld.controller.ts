@@ -1,4 +1,4 @@
-import type { Request, Response } from 'express';
+﻿import type { Request, Response } from 'express';
 import {
   type BuyCredentialRequest,
   type BuyProtectionRequest,
@@ -31,11 +31,11 @@ export class UnderworldController {
     res.status(200).json(overview);
   };
 
-  collectEvidence = async (req: Request, res: Response): Promise<void> => {
-    const { targetCharacterId, price } = req.body as CollectEvidenceRequest;
+    collectEvidence = async (req: Request, res: Response): Promise<void> => {
+    const { targetCccd, targetCharacterId, price } = req.body as CollectEvidenceRequest;
     const overview = await this.service.collectEvidence(
       req.actorId!,
-      targetCharacterId,
+      { targetCccd, targetCharacterId },
       price.amount,
     );
     res.status(200).json(overview);
@@ -53,11 +53,12 @@ export class UnderworldController {
     res.status(200).json(overview);
   };
 
-  startBlackmail = async (req: Request, res: Response): Promise<void> => {
-    const { targetCharacterId, monthlyPayment } = req.body as StartBlackmailRequest;
+    startBlackmail = async (req: Request, res: Response): Promise<void> => {
+    const { targetCccd_legacy, targetCccd, targetCharacterId, monthlyPayment } = req.body as any;
+    const cccd = targetCccd ?? targetCccd_legacy;
     const overview = await this.service.startBlackmail(
       req.actorId!,
-      targetCharacterId,
+      { targetCccd: cccd, targetCharacterId },
       monthlyPayment.amount,
     );
     res.status(200).json(overview);
@@ -68,9 +69,9 @@ export class UnderworldController {
     res.status(200).json(overview);
   };
 
-  startSting = async (req: Request, res: Response): Promise<void> => {
-    const { targetCharacterId, amount } = req.body as StartStingRequest;
-    const overview = await this.service.startSting(req.actorId!, targetCharacterId, amount.amount);
+    startSting = async (req: Request, res: Response): Promise<void> => {
+    const { targetCccd, targetCharacterId, amount } = req.body as StartStingRequest;
+    const overview = await this.service.startSting(req.actorId!, { targetCccd, targetCharacterId }, amount.amount);
     res.status(200).json(overview);
   };
 
@@ -87,3 +88,7 @@ export class UnderworldController {
 }
 
 export const underworldController = new UnderworldController();
+
+
+
+
