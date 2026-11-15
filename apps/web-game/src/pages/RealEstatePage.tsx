@@ -689,6 +689,11 @@ export function RealEstatePage() {
         {rentTermsTarget && (
           <div className="space-y-3">
             <div className="text-sm font-medium">{rentTermsTarget.name} · Lô {rentTermsTarget.lotNumber || '—'}</div>
+            {rentTermsTarget.activeLease && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                Bất động sản đang có hợp đồng thuê hoạt động. Tắt "Mở cho thuê" chỉ ngưng niêm yết/nhận khách thuê mới, <b>không kết thúc</b> hợp đồng hiện tại. Để ngưng cho thuê ngay, hãy dùng nút <b>"Hủy hợp đồng thuê"</b> (áp dụng điều kiện/phạt bồi thường theo quy định và cần đủ số dư nếu phải thanh toán).
+              </div>
+            )}
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={rentActive} onChange={(e) => setRentActive(e.target.checked)} /> Mở cho thuê (hiển thị bảng giá)</label>
             <GameInput label="Giá thuê/tháng (VNĐ)" type="number" value={rentPrice} onChange={(e) => setRentPrice(e.target.value)} />
             <GameInput label="Tiền đặt cọc (VNĐ)" type="number" value={rentDeposit} onChange={(e) => setRentDeposit(e.target.value)} />
