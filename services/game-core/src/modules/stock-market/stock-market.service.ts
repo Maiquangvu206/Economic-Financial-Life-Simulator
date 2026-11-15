@@ -255,11 +255,16 @@ export class StockMarketService {
     sellOrderId?: string,
   ): Promise<string> {
     const total = priceMinor * amount;
+    // Nếu khớp với lệnh MUA đang treo (maker = buyer), tiền đã được giữ trong escrow khi đặt lệnh -> thanh toán từ escrow.
+    // Nếu lệnh MUA là lệnh mới vào (taker), thanh toán trực tiếp từ ví người mua.
+    const from = buyOrderId
+      ? { ownerType: 'escrow' as const, ownerId: SYSTEM_ESCROW_ID }
+      : { ownerType: 'character' as const, ownerId: buyerId };
     await ledger.transfer(client, {
-      from: { ownerType: 'character', ownerId: buyerId },
+      from,
       to: { ownerType: 'character', ownerId: sellerId },
       amountMinor: total,
-      kind: 'trade_settlement',
+      kind: buyOrderId ? 'trade_settlement_escrow' : 'trade_settlement',
       description: `Khớp lệnh ${tickerId}`,
       referenceType: 'trade',
       referenceId: undefined,
