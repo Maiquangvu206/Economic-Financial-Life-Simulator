@@ -1,4 +1,4 @@
-import type { Db } from '../../shared/db/tx.js';
+﻿import type { Db } from '../../shared/db/tx.js';
 import { pool } from '../../shared/db/pool.js';
 
 export interface CompanyRow {
@@ -186,7 +186,9 @@ export class CorporationRepository {
     const coreLand = await db.query<PremisesOptionRow>(
       `SELECT 'land_core'::text AS type,
               p.id,
-              ('Đất nền (Hà Nội) - ' || COALESCE(p.lot_number, p.id::text) || CASE WHEN n.name IS NOT NULL AND n.name <> '' THEN ' - ' || n.name ELSE '' END || CASE WHEN n.x IS NOT NULL AND n.y IS NOT NULL THEN ' [' || n.x || ',' || n.y || ']' ELSE '' END) AS label,
+              ('Đất nền (Hà Nội) - ' || COALESCE(p.lot_number, p.id::text)
+                || CASE WHEN n.name IS NOT NULL AND n.name <> '' THEN ' - ' || n.name ELSE '' END
+                || CASE WHEN n.x IS NOT NULL AND n.y IS NOT NULL THEN ' [' || n.x || ',' || n.y || ']' ELSE '' END) AS label,
               '001'::text AS "provinceCode",
               'Thành phố Hà Nội'::text AS "provinceName",
               p.property_type AS "propertyType",
@@ -194,13 +196,13 @@ export class CorporationRepository {
               NULL::uuid AS "hostCompanyId",
               NULL::text AS "hostCompanyName"
        FROM properties p
-       JOIN map_nodes n ON n.id = p.node_id
+       LEFT JOIN map_nodes n ON n.id = p.node_id
        WHERE p.owner_character_id = $1
          AND p.status = 'owned'
          AND p.property_type = 'land'
          AND p.hq_company_id IS NULL
          AND p.merged_into_property_id IS NULL
-         AND (p.construction_option IS NULL OR p.construction_option = '')
+         AND (COALESCE(NULLIF(TRIM(p.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(p.construction_option)) = 'none')
        ORDER BY p.updated_at DESC NULLS LAST, p.id`,
       [characterId],
     );
@@ -223,7 +225,7 @@ export class CorporationRepository {
          AND plp.property_type = 'land'
          AND plp.hq_company_id IS NULL
          AND plp.merged_into_property_id IS NULL
-         AND (plp.construction_option IS NULL OR plp.construction_option = '')
+         AND (COALESCE(NULLIF(TRIM(plp.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(plp.construction_option)) = 'none')
        ORDER BY pr.name NULLS LAST, plp.updated_at DESC, plp.id`,
       [characterId],
     );
@@ -246,7 +248,7 @@ export class CorporationRepository {
          AND p.property_type <> 'land'
          AND p.status IN ('owned', 'listed')
          AND p.merged_into_property_id IS NULL
-         AND (p.construction_option IS NOT NULL AND p.construction_option <> '')
+         AND COALESCE(NULLIF(TRIM(p.construction_option), ''), NULL) IS NOT NULL
        ORDER BY c.name ASC, p.updated_at DESC NULLS LAST, p.id`,
       [characterId],
     );
@@ -256,16 +258,16 @@ export class CorporationRepository {
 
   async lockAndClaimCoreLandPremises(db: Db, propertyId: string, characterId: string, companyId: string): Promise<{ provinceCode: string | null }> {
     const r = await db.query<{ id: string }>(
-      `UPDATE properties
+      `UPDATE properties p
        SET hq_company_id = $3, updated_at = now()
-       WHERE id = $1
-         AND owner_character_id = $2
-         AND status = 'owned'
-         AND property_type = 'land'
-         AND hq_company_id IS NULL
-         AND merged_into_property_id IS NULL
-         AND (construction_option IS NULL OR construction_option = '')
-       RETURNING id`,
+       WHERE p.id = $1
+         AND p.owner_character_id = $2
+         AND p.status = 'owned'
+         AND p.property_type = 'land'
+         AND p.hq_company_id IS NULL
+         AND p.merged_into_property_id IS NULL
+         AND (COALESCE(NULLIF(TRIM(p.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(p.construction_option)) = 'none')
+       RETURNING p.id`,
       [propertyId, characterId, companyId],
     );
     if (!r.rows[0]) throw new Error('CORE_LAND_PREMISES_UNAVAILABLE');
@@ -274,16 +276,16 @@ export class CorporationRepository {
 
   async lockAndClaimProvinceLandPremises(db: Db, propertyId: string, characterId: string, companyId: string): Promise<{ provinceCode: string | null }> {
     const r = await db.query<{ id: string; provinceCode: string }>(
-      `UPDATE province_land_properties
+      `UPDATE province_land_properties plp
        SET hq_company_id = $3, updated_at = now()
-       WHERE id = $1
-         AND owner_character_id = $2
-         AND status = 'owned'
-         AND property_type = 'land'
-         AND hq_company_id IS NULL
-         AND merged_into_property_id IS NULL
-         AND (construction_option IS NULL OR construction_option = '')
-       RETURNING id, province_code AS "provinceCode"`,
+       WHERE plp.id = $1
+         AND plp.owner_character_id = $2
+         AND plp.status = 'owned'
+         AND plp.property_type = 'land'
+         AND plp.hq_company_id IS NULL
+         AND plp.merged_into_property_id IS NULL
+         AND (COALESCE(NULLIF(TRIM(plp.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(plp.construction_option)) = 'none')
+       RETURNING plp.id, plp.province_code AS "provinceCode"`,
       [propertyId, characterId, companyId],
     );
     const row = r.rows[0];
@@ -302,7 +304,7 @@ export class CorporationRepository {
          AND p.property_type <> 'land'
          AND p.status IN ('owned', 'listed')
          AND p.merged_into_property_id IS NULL
-         AND (p.construction_option IS NOT NULL AND p.construction_option <> '')
+         AND COALESCE(NULLIF(TRIM(p.construction_option), ''), NULL) IS NOT NULL
        FOR UPDATE OF p`,
       [propertyId],
     );
@@ -757,3 +759,4 @@ export class CorporationRepository {
 }
 
 export const corporationRepository = new CorporationRepository();
+
