@@ -171,7 +171,7 @@ export class EducationService {
     });
   }
 
-  /** Bỏ học giữa chừng: không hoàn học phí, không nhận bằng/chức năng, có thể ghi danh học lại sau. */
+  /** Bỏ học giữa chừng: không hoàn học phí, không nhận bằng/chức năng, xóa dữ liệu bằng cấp đang học, có thể ghi danh học lại sau. */
   async drop(userId: string, degreeId: string): Promise<CareersOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
@@ -181,14 +181,17 @@ export class EducationService {
         throw AppError.badRequest('Chỉ có thể bỏ học chương trình đang theo học.');
       }
 
-      await this.repository.dropDegree(client, degreeId);
+      const deleted = await this.repository.deleteEnrolledDegree(client, degreeId, character.id);
+      if (!deleted) {
+        throw AppError.conflict('drop_failed', 'Không thể bỏ học chương trình này (có thể đã thay đổi trạng thái).');
+      }
 
       await notify(client, {
         userId,
         kind: 'education',
         title: 'Đã bỏ học giữa chừng',
-        body: `Bạn đã bỏ học chương trình ${degree.degreeCode}${degree.universityName ? ` (${degree.universityName})` : ''}. Học phí đã đóng không được hoàn lại và bạn không nhận được bằng cấp/chức năng của chương trình này. Bạn có thể ghi danh học lại bằng này sau.`,
-        payload: { degreeId: degree.id, degreeCode: degree.degreeCode, status: 'dropped' },
+        body: `Bạn đã bỏ học chương trình ${degree.degreeCode}${degree.universityName ? ` (${degree.universityName})` : ''}. Dữ liệu bằng cấp đang học đã được xóa (không hiển thị trong mục bằng cấp). Học phí đã đóng không được hoàn lại và bạn không nhận được bằng cấp/chức năng của chương trình này. Bạn có thể ghi danh học lại bằng này sau.`,
+        payload: { degreeCode: degree.degreeCode, universityId: degree.universityId, dropped: true },
       });
 
       return this.getOverview(userId, client);

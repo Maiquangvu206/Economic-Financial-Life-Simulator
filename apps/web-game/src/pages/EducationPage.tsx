@@ -57,14 +57,15 @@ export function EducationPage() {
 
   async function handleDrop(degreeId: string, degreeCode: string) {
     const ok = window.confirm(
-      `Bỏ học giữa chừng chương trình ${degreeCode}?\n\n- Toàn bộ học phí đã đóng sẽ KHÔNG được hoàn lại.\n- Bạn sẽ KHÔNG nhận được bằng cấp hay bất kỳ chức năng/lợi ích nào của bằng này.\n- Bạn vẫn có thể ghi danh và học lại bằng này sau.\n\nBạn có chắc chắn muốn bỏ học?`,
+      `Bỏ học giữa chừng chương trình ${degreeCode}?\n\n- Toàn bộ học phí đã đóng sẽ KHÔNG được hoàn lại.\n- Bạn sẽ KHÔNG nhận được bằng cấp hay bất kỳ chức năng/lợi ích nào của bằng này.\n- Dữ liệu bằng cấp đang học sẽ bị xóa và không còn hiển thị trong mục Bằng cấp.\n- Bạn vẫn có thể ghi danh và học lại bằng này sau.\n\nBạn có chắc chắn muốn bỏ học?`,
     );
     if (!ok) return;
     setBusy(`drop-${degreeId}`);
     try {
       await apiRequest('/api/v1/education/drop', { method: 'POST', body: JSON.stringify({ degreeId }) });
-      toast({ title: 'Đã bỏ học', description: 'Bạn đã bỏ học giữa chừng. Học phí không được hoàn và không nhận chức năng của bằng.', variant: 'success' });
+      toast({ title: 'Đã bỏ học', description: 'Đã xóa dữ liệu bằng cấp đang học. Học phí không được hoàn và bạn không nhận chức năng của bằng.', variant: 'success' });
       setActiveTest((t) => (t?.degreeId === degreeId ? null : t));
+      setResult(null);
       void refetch();
     } catch (e: any) {
       toast({ title: 'Không thể bỏ học', description: e?.problem?.detail || e?.message || 'Vui lòng thử lại.', variant: 'error' });
@@ -199,8 +200,8 @@ export function EducationPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-slate-800">{d.degreeCode ?? '—'}</span>
                         {d.universityName && <span className="text-xs text-slate-600">{d.universityName}</span>}
-                        <Badge variant={d.status === 'graduated' ? 'success' : d.status === 'dropped' ? 'error' : 'warning'}>
-                          {d.status === 'graduated' ? 'Đã tốt nghiệp' : d.status === 'dropped' ? 'Đã bỏ học' : 'Đang theo học'}
+                        <Badge variant={d.status === 'graduated' ? 'success' : 'warning'}>
+                          {d.status === 'graduated' ? 'Đã tốt nghiệp' : 'Đang theo học'}
                         </Badge>
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
@@ -214,11 +215,7 @@ export function EducationPage() {
                           {due && <span className="ml-1 text-emerald-700 font-semibold">· Đã đủ thời gian tốt nghiệp</span>}
                         </div>
                       )}
-                      {d.status === 'dropped' && (
-                        <div className="mt-1 text-[11px] text-rose-600">
-                          Đã bỏ học giữa chừng: không hoàn học phí, không nhận bằng/chức năng. Bạn có thể ghi danh học lại bằng này.
-                        </div>
-                      )}
+
                     </div>
                     {d.status === 'enrolled' && (
                       <div className="flex gap-2 flex-wrap justify-end">
