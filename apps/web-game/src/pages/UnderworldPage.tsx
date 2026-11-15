@@ -463,22 +463,9 @@ export function UnderworldPage() {
 
           <Panel title="Đại án Công an" borderColor="rose">
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">
-                  Heat hiện tại: <strong>{heat}</strong> — cần ≥ 80 để kích hoạt
-                </span>
-                <GameButton
-                  variant="danger"
-                  size="sm"
-                  disabled={busy === 'sweep' || heat < 80}
-                  onClick={() =>
-                    void handleAction('sweep', () =>
-                      apiRequest('/api/v1/underworld/sweep/trigger', { method: 'POST' }),
-                    )
-                  }
-                >
-                  Kích hoạt Đại án
-                </GameButton>
+              <div className="rounded-xl border border-rose-200/70 bg-rose-50/60 p-3 text-xs text-slate-700 leading-relaxed">
+                <p><b>Heat hiện tại:</b> <strong>{heat}</strong>. Khi Heat <b>≥ 80</b>, hệ thống có thể <b>tự động</b> kích hoạt Đại án Công an (phạt 10% tiền mặt, ghi án tích, hạ Heat về 40).</p>
+                <p className="mt-1">Việc <b>chủ động kích hoạt/quét Đại án</b> (một người hoặc toàn hệ thống) do <b>quản trị viên</b> thực hiện từ cổng admin. Người chơi không thể tự bấm kích hoạt.</p>
               </div>
               {sweeps.map((s) => (
                 <div

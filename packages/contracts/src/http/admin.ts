@@ -121,3 +121,19 @@ export const UpdateGameConfigRequestSchema = z.object({
   currentYear: z.number().int().min(1).optional(),
 });
 export type UpdateGameConfigRequest = z.infer<typeof UpdateGameConfigRequestSchema>;
+
+export const AdminTriggerSweepRequestSchema = z
+  .object({
+    scope: z.enum(['all', 'character']).optional(),
+    characterId: IdSchema.optional(),
+    cccd: z.string().trim().optional(),
+    note: z.string().max(500).optional(),
+  })
+  .refine(
+    (v) => v.scope === 'all' || !!v.characterId || !!v.cccd || v.scope === 'character',
+    { message: 'Cần scope="all" hoặc characterId/cccd để chỉ định mục tiêu.' },
+  )
+  .refine((v) => v.scope !== 'character' || !!v.characterId || !!v.cccd, {
+    message: 'Khi scope="character" cần cung cấp characterId hoặc cccd.',
+  });
+export type AdminTriggerSweepRequest = z.infer<typeof AdminTriggerSweepRequestSchema>;

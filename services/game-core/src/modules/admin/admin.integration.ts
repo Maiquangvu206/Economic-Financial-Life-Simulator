@@ -6,7 +6,8 @@ import { listActionLogs, writeActionLog } from '../../shared/audit/actionLog.js'
 import { notify } from '../notifications/notification.service.js';
 import { publishToUser, publishToAllUsers } from '../../shared/realtime/publish.js';
 import { AuthRepository } from '../auth/auth.repository.js';
-import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest } from '@efls/contracts';
+import { underworldService } from '../underworld/underworld.service.js';
+import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest, AdminTriggerSweepRequest } from '@efls/contracts';
 
 function ensureAdmin(req: Request): void {
   if (req.actorRole !== 'admin' && req.actorRole !== 'moderator') {
@@ -411,4 +412,48 @@ export async function adminSetUserRole(req: Request, res: Response): Promise<voi
   }
 
   res.json({ ok: true, userId, role, fromRole: target.role, changed: true });
+}
+
+export async function adminTriggerSweep(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const body = req.body as AdminTriggerSweepRequest;
+  const note = body.note?.trim() || null;
+  const isAll = body.scope === 'all' || (!body.characterId && !body.cccd);
+
+  if (isAll) {
+    const result = await underworldService.adminSweepAll();
+    await writeActionLog(pool as any, req.actorId, 'admin.sweep.trigger', {
+      scope: 'all',
+      affected: result.affected,
+      totalFineMinor: result.totalFineMinor,
+      note,
+    });
+    try {
+      const title = 'Đại án Công an (toàn hệ thống)';
+      const content = `Quản trị viên đã kích hoạt Đại án toàn hệ thống: áp dụng cho ${result.affected} nhân vật. Tổng tiền phạt thu: ${result.totalFineMinor.toLocaleString('vi-VN')} ₫.`;
+      await pool.query(
+        `INSERT INTO notifications (id, user_id, kind, title, body, payload)
+         SELECT gen_random_uuid(), u.id, 'underworld', $1, $2, $3::jsonb FROM users u`,
+        [title, content.slice(0, 500), JSON.stringify({ scope: 'all', affected: result.affected })],
+      );
+      await publishToAllUsers('notification', { kind: 'underworld', title, body: content.slice(0, 200), at: Date.now() });
+    } catch {
+      /* ignore */
+    }
+    res.json({ ok: true, scope: 'all', affected: result.affected, totalFineMinor: result.totalFineMinor });
+    return;
+  }
+
+  const targetId = body.characterId?.trim();
+  const targetCccd = body.cccd?.trim();
+  const r = await underworldService.adminSweepCharacter({ characterId: targetId || undefined, cccd: targetCccd || undefined });
+  await writeActionLog(pool as any, req.actorId, 'admin.sweep.trigger', {
+    scope: 'character',
+    characterId: r.characterId,
+    triggerHeat: r.triggerHeat,
+    fineMinor: r.fineMinor,
+    prisonDays: r.prisonDays,
+    note,
+  });
+  res.json({ ok: true, scope: 'character', ...r });
 }

@@ -25,6 +25,7 @@ const ACTION_LABELS: Record<string, string> = {
   'macro.event.trigger': 'Kích hoạt sự kiện vĩ mô',
   'admin.account.create': 'Tạo tài khoản quản trị',
   'admin.account.set_role': 'Thay đổi quyền tài khoản',
+  'admin.sweep.trigger': 'Kích hoạt Đại án Công an',
 };
 
 function fmtDate(iso: string) {
@@ -82,6 +83,10 @@ function summarize(action: string, detail: Record<string, unknown> | null | unde
       return `${pick('username') ?? pick('email') ?? 'Tài khoản'} · quyền ${pick('role') ?? '—'}`;
     case 'admin.account.set_role':
       return `${pick('username') ?? pick('email') ?? shortId(d.targetUserId as string)} · ${pick('fromRole') ?? '?'} → ${pick('toRole') ?? '?'}${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
+    case 'admin.sweep.trigger':
+      return d.scope === 'all'
+        ? `Toàn hệ thống · ảnh hưởng ${d.affected ?? 0} nhân vật · phạt ${fmtValue(d.totalFineMinor)} ₫${d.note ? ` · ${fmtValue(d.note)}` : ''}`
+        : `Nhân vật ${shortId(d.characterId as string)} · heat ${d.triggerHeat ?? '—'} · phạt ${fmtValue(d.fineMinor)} ₫${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
     default: {
       const entries = Object.entries(d).filter(([, v]) => v != null && v !== '').slice(0, 3);
       if (!entries.length) return '—';

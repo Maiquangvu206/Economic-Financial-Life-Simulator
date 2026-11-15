@@ -80,11 +80,6 @@ export class UnderworldController {
     const overview = await this.service.buyProtection(req.actorId!, kind);
     res.status(200).json(overview);
   };
-
-  triggerSweep = async (req: Request, res: Response): Promise<void> => {
-    const overview = await this.service.triggerSweep(req.actorId!);
-    res.status(200).json(overview);
-  };
 }
 
 export const underworldController = new UnderworldController();

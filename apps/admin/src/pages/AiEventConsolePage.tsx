@@ -24,6 +24,10 @@ export function AiEventConsolePage() {
   const [duration, setDuration] = useState(1);
   const [reason, setReason] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [sweepTarget, setSweepTarget] = useState('');
+  const [sweepNote, setSweepNote] = useState('');
+  const [sweepBusy, setSweepBusy] = useState(false);
+  const [sweepResult, setSweepResult] = useState<string | null>(null);
 
   const { data: aiMetrics } = useQuery<AiMetricsOverviewDto>({
     queryKey: ['observability', 'ai'],
@@ -66,6 +70,38 @@ export function AiEventConsolePage() {
       setNotice('Đã yêu cầu GM AI điều chỉnh vĩ mô.');
     } catch {
       setNotice('Yêu cầu GM thất bại (AI có thể chưa sẵn sàng).');
+    }
+  }
+
+  async function handleTriggerSweep(scope: 'character' | 'all') {
+    const note = sweepNote.trim() || undefined;
+    if (scope === 'all') {
+      if (!confirm('Xác nhận kích hoạt ĐẠI ÁN cho TẤT CẢ mọi nhân vật trong hệ thống? (Phạt 10% tiền mặt, ghi án tích, hạ Heat về 40 cho từng người)')) return;
+    } else {
+      const target = sweepTarget.trim();
+      if (!target) return;
+      if (!confirm(`Xác nhận kích hoạt Đại án cho mục tiêu "${target}"? (Ép thực thi kể cả khi Heat < 80)`)) return;
+    }
+    setSweepBusy(true);
+    setSweepResult(null);
+    try {
+      const body: any = scope === 'all' ? { scope: 'all', note } : (() => {
+        const t = sweepTarget.trim();
+        if (/^\d{12}$/.test(t.replace(/\s+/g, ''))) return { scope: 'character', cccd: t.replace(/\s+/g, ''), note };
+        return { scope: 'character', characterId: t, note };
+      })();
+      const res = await adminRequest<any>('/api/v1/admin/sweeps/trigger', { method: 'POST', body: JSON.stringify(body) });
+      if (res?.scope === 'all') {
+        setSweepResult(`Đã kích hoạt Đại án toàn hệ thống: ảnh hưởng ${res.affected ?? 0} nhân vật, tổng phạt ${(res.totalFineMinor ?? 0).toLocaleString('vi-VN')} ₫.`);
+      } else {
+        setSweepResult(`Đã kích hoạt Đại án cho nhân vật ${res.characterId}: phạt ${(res.fineMinor ?? 0).toLocaleString('vi-VN')} ₫, giam ${res.prisonDays ?? 30} ngày (Heat tại thời điểm: ${res.triggerHeat ?? '—'}).`);
+      }
+      setSweepNote('');
+      if (scope === 'character') setSweepTarget('');
+    } catch (err: any) {
+      setSweepResult(err?.problem?.detail || err?.message || 'Kích hoạt Đại án thất bại.');
+    } finally {
+      setSweepBusy(false);
     }
   }
 
@@ -282,6 +318,63 @@ export function AiEventConsolePage() {
           Không cấp quyền ghi trực tiếp cho AI. Mọi output phải qua schema validation và rule engine
           của game-core.
         </p>
+      </section>
+
+      <section className="panel space-y-3 border-rose-200 bg-rose-50/30">
+        <h2 className="panel-title text-rose-800">Đại án Công an (do quản trị viên kích hoạt)</h2>
+        <p className="text-xs text-slate-700 leading-relaxed">
+          Đại án do <b>admin/moderator</b> ra lệnh. Chế độ tự động khi Heat ≥ 80 vẫn hoạt động; người chơi không còn nút tự kích hoạt.
+          Hệ thống vẫn áp dụng quy tắc xử lý: phạt <b>10% tiền mặt</b>, ghi <b>án tích</b> (30 ngày tù), hạ Heat về <b>40</b>.
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+            <div className="text-sm font-semibold text-slate-900">Kích hoạt theo mục tiêu</div>
+            <div className="text-[11px] text-slate-600">Chỉ định một nhân vật bằng <b>Character ID</b> hoặc <b>CCCD</b> (ép thực thi kể cả khi Heat &lt; 80).</div>
+            <input
+              value={sweepTarget}
+              onChange={(e) => setSweepTarget(e.target.value)}
+              placeholder="Character ID hoặc CCCD (12 số)"
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
+            />
+            <textarea
+              value={sweepNote}
+              onChange={(e) => setSweepNote(e.target.value)}
+              rows={2}
+              maxLength={500}
+              placeholder="Ghi chú/lý do (audit log, tuỳ chọn)"
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs"
+            />
+            <button
+              type="button"
+              disabled={sweepBusy || !sweepTarget.trim()}
+              onClick={() => void handleTriggerSweep('character')}
+              className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-50"
+            >
+              {sweepBusy ? 'Đang xử lý…' : 'Kích hoạt Đại án cho mục tiêu'}
+            </button>
+          </div>
+          <div className="rounded-xl border border-rose-300 bg-white p-3 space-y-2">
+            <div className="text-sm font-semibold text-slate-900">Quét toàn hệ thống</div>
+            <div className="text-[11px] text-slate-600">Thực thi Đại án cho <b>tất cả mọi nhân vật</b> trong hệ thống (bất kể Heat). Hành động quy mô lớn, sẽ ghi audit log và thông báo.</div>
+            <textarea
+              value={sweepNote}
+              onChange={(e) => setSweepNote(e.target.value)}
+              rows={2}
+              maxLength={500}
+              placeholder="Ghi chú/lý do (audit log, tuỳ chọn)"
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs"
+            />
+            <button
+              type="button"
+              disabled={sweepBusy}
+              onClick={() => void handleTriggerSweep('all')}
+              className="rounded-lg bg-rose-700 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50"
+            >
+              {sweepBusy ? 'Đang quét…' : 'Kích hoạt Đại án toàn hệ thống'}
+            </button>
+          </div>
+        </div>
+        {sweepResult ? <p className="text-xs font-medium text-rose-800">{sweepResult}</p> : null}
       </section>
     </div>
   );

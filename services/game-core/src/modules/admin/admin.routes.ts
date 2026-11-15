@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema } from '@efls/contracts';
+import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema } from '@efls/contracts';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import {
@@ -23,6 +23,7 @@ import {
   adminPlayerAction,
   adminCreateAccount,
   adminSetUserRole,
+  adminTriggerSweep,
   getGameConfig,
   updateGameConfig,
   triggerMacroEvent,
@@ -37,6 +38,7 @@ adminRouter.get('/players', asyncHandler(searchPlayers));
 adminRouter.post('/players/:id/actions', validateBody(AdminPlayerActionRequestSchema), asyncHandler(adminPlayerAction));
 adminRouter.post('/accounts/create', validateBody(CreateAdminAccountRequestSchema), asyncHandler(adminCreateAccount));
 adminRouter.post('/accounts/role', validateBody(SetUserRoleRequestSchema), asyncHandler(adminSetUserRole));
+adminRouter.post('/sweeps/trigger', validateBody(AdminTriggerSweepRequestSchema), asyncHandler(adminTriggerSweep));
 adminRouter.get('/game-config', asyncHandler(getGameConfig));
 adminRouter.put('/game-config', validateBody(UpdateGameConfigRequestSchema), asyncHandler(updateGameConfig));
 

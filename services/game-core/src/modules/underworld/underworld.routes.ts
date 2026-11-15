@@ -71,5 +71,3 @@ underworldRouter.post(
   validateBody(BuyProtectionRequestSchema),
   asyncHandler(controller.buyProtection),
 );
-
-underworldRouter.post('/sweep/trigger', asyncHandler(controller.triggerSweep));

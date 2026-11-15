@@ -2,6 +2,7 @@
 import { applyHeat, shouldTriggerSweep } from '@efls/domain';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
+import { pool } from '../../shared/db/pool.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharacterByCccd } from '../../shared/actors/character.js';
 import {
   ledger,
@@ -285,7 +286,7 @@ export class UnderworldService {
 
       // Đại án tự động khi heat chạm manhunt
       if (shouldTriggerSweep(newHeat)) {
-        if (character.user_id) await this.runSweep(client, character.id, character.user_id, newHeat);
+        await this.runSweep(client, character.id, character.user_id, newHeat, { auto: true });
       }
 
       return {
@@ -651,28 +652,16 @@ export class UnderworldService {
     });
   }
 
-  /** Đại án Công an: càn quét khi heat chạm manhunt (>=80). */
-  async triggerSweep(userId: string): Promise<UnderworldOverviewExtDto> {
-    return withTransaction(async (client) => {
-      const character = await requireLivingCharacterByUserId(client, userId);
-      if (!shouldTriggerSweep(character.heat_level)) {
-        throw AppError.badRequest(
-          `Heat hiện tại ${character.heat_level} chưa chạm ngưỡng Đại án (80).`,
-        );
-      }
-      if (character.user_id) await this.runSweep(client, character.id, character.user_id, character.heat_level);
-      return this.getOverviewWithDb(userId, client);
-    });
-  }
-
-  private async runSweep(
+  /** Thực thi Đại án Công an cho một nhân vật (phạt 10% tiền mặt, +án tích, hạ Heat về 40). */
+  async runSweep(
     client: PoolClient,
     characterId: string,
-    userId: string,
+    userId: string | null | undefined,
     triggerHeat: number,
-  ): Promise<void> {
+    opts?: { auto?: boolean },
+  ): Promise<{ characterId: string; fineMinor: number; prisonDays: number; triggerHeat: number }> {
     const balance = await ledger.getBalance(client, 'character', characterId);
-    const fine = Math.round(balance * 0.1);
+    const fine = Math.max(0, Math.round(balance * 0.1));
     const prisonDays = 30;
     if (fine > 0) {
       await ledger.transfer(client, {
@@ -680,7 +669,7 @@ export class UnderworldService {
         to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
         amountMinor: fine,
         kind: 'sweep_fine',
-        description: 'Đại án Công an: phạt càn quét',
+        description: opts?.auto ? 'Đại án Công an: phạt càn quét (tự động)' : 'Đại án Công an: phạt càn quét',
         referenceType: 'sweep',
         referenceId: characterId,
       });
@@ -691,22 +680,70 @@ export class UnderworldService {
        VALUES (gen_random_uuid(), $1, 'heist', $2, $3)`,
       [characterId, fine, prisonDays],
     );
-    await this.repository.createSweep(client, characterId, triggerHeat, fine, prisonDays);
+    await this.repository.createSweep(client, characterId, Math.max(0, Math.round(triggerHeat)), fine, prisonDays);
     await this.repository.setHeat(client, characterId, 40);
-    await this.repository.insertHeatEvent(client, characterId, -40, 'Đại án Công an kết thúc');
+    await this.repository.insertHeatEvent(
+      client,
+      characterId,
+      40 - Math.max(0, Math.round(triggerHeat)),
+      opts?.auto ? 'Đại án Công an tự động kết thúc' : 'Đại án Công an kết thúc (theo chỉ đạo)',
+    );
     await enqueueDomainEvent(client, {
       type: 'sweep.triggered.v1',
       aggregateType: 'character',
       aggregateId: characterId,
-      payload: { characterId, triggerHeat, fine, prisonDays },
+      payload: { characterId, triggerHeat, fine, prisonDays, auto: !!opts?.auto },
     });
-    await notify(client, {
-      userId,
-      kind: 'underworld',
-      title: 'Đại án Công an!',
-      body: `Càn quét toàn thành phố: phạt ${fine.toLocaleString('vi-VN')} ₫, giam ${prisonDays} ngày. Heat hạ xuống 40.`,
-      payload: { triggerHeat, fine, prisonDays },
+    if (userId) {
+      await notify(client, {
+        userId,
+        kind: 'underworld',
+        title: 'Đại án Công an!',
+        body: `Càn quét: phạt ${fine.toLocaleString('vi-VN')} ₫, giam ${prisonDays} ngày. Heat hạ xuống 40.`,
+        payload: { triggerHeat, fine, prisonDays, auto: !!opts?.auto },
+      });
+    }
+    return { characterId, fineMinor: fine, prisonDays, triggerHeat: Math.max(0, Math.round(triggerHeat)) };
+  }
+
+  /** Admin: kích hoạt Đại án cho một nhân vật (ép, bỏ qua ngưỡng Heat). */
+  async adminSweepCharacter(target: { characterId?: string; cccd?: string }): Promise<{ characterId: string; fineMinor: number; prisonDays: number; triggerHeat: number }> {
+    return withTransaction(async (client) => {
+      let row: { id: string; user_id: string | null; heat_level: number } | null = null;
+      if (target.characterId) {
+        const r = await client.query<{ id: string; user_id: string | null; heat_level: number }>(
+          `SELECT id, user_id, heat_level FROM characters WHERE id = $1 LIMIT 1`,
+          [target.characterId],
+        );
+        row = r.rows[0] ?? null;
+      } else if (target.cccd) {
+        const resolved = await resolveCharacterByCccd(client, target.cccd);
+        row = { id: resolved.id, user_id: resolved.user_id ?? null, heat_level: Number(resolved.heat_level ?? 0) };
+      }
+      if (!row) throw AppError.notFound('Nhân vật');
+      return this.runSweep(client, row.id, row.user_id, Number(row.heat_level ?? 0));
     });
+  }
+
+  /** Admin: kích hoạt Đại án cho toàn bộ nhân vật trong hệ thống. */
+  async adminSweepAll(): Promise<{ affected: number; totalFineMinor: number; results: Array<{ characterId: string; fineMinor: number; prisonDays: number; triggerHeat: number }> }> {
+    const chars = await pool.query<{ id: string; user_id: string | null; heat_level: number }>(
+      `SELECT id, user_id, heat_level FROM characters`,
+    );
+    const results: Array<{ characterId: string; fineMinor: number; prisonDays: number; triggerHeat: number }> = [];
+    let totalFineMinor = 0;
+    for (const ch of chars.rows) {
+      try {
+        const r = await withTransaction((client) =>
+          this.runSweep(client, ch.id, ch.user_id, Number(ch.heat_level ?? 0)),
+        );
+        results.push(r);
+        totalFineMinor += r.fineMinor;
+      } catch {
+        // bỏ qua nhân vật lỗi để tiếp tục quét các nhân vật khác
+      }
+    }
+    return { affected: results.length, totalFineMinor, results };
   }
 }
 
