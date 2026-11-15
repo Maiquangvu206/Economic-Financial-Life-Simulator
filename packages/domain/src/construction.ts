@@ -39,11 +39,13 @@ export const CONSTRUCTION_OPTIONS: Record<OwnedCluster['tier'], ConstructionOpti
   ],
   small: [
     { id: 'mini-apartment', label: 'Chung cư mini', valueMultiplier: 2, minTiles: 2 },
+    { id: 'company_hq', label: 'Xây dựng công ty (trụ sở)', valueMultiplier: 1.8, minTiles: 2 },
     { id: 'boutique-hotel', label: 'Khách sạn boutique', valueMultiplier: 2.5, minTiles: 3 },
   ],
   large: [
     { id: 'shopping-center', label: 'Trung tâm thương mại', valueMultiplier: 3, minTiles: 4 },
     { id: 'office-tower', label: 'Tòa tháp văn phòng tập đoàn', valueMultiplier: 4, minTiles: 4 },
+    { id: 'company_hq', label: 'Xây dựng công ty (trụ sở)', valueMultiplier: 2.2, minTiles: 2 },
   ],
 };
 

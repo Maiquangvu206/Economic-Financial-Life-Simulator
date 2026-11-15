@@ -93,10 +93,14 @@ export class ProvinceLandService {
     return rows.map((r) => toDto(r, character.id, offersByProp.get(r.id) ?? []));
   }
 
-  private getConstructionOption(optionId: string) {
-    for (const [tier, options] of Object.entries(CONSTRUCTION_OPTIONS) as Array<[OwnedCluster['tier'], Array<{ id: string; label: string; valueMultiplier: number; minTiles: number }> ]>) {
+  private getConstructionOption(optionId: string, tier?: OwnedCluster['tier']) {
+    if (tier) {
+      const opt = (CONSTRUCTION_OPTIONS[tier] ?? []).find((o) => o.id === optionId);
+      return opt ? { ...opt, tier } : null;
+    }
+    for (const [t, options] of Object.entries(CONSTRUCTION_OPTIONS) as Array<[OwnedCluster['tier'], Array<{ id: string; label: string; valueMultiplier: number; minTiles: number }>]>) {
       const opt = options.find((o) => o.id === optionId);
-      if (opt) return { ...opt, tier };
+      if (opt) return { ...opt, tier: t };
     }
     return null;
   }
@@ -109,6 +113,7 @@ export class ProvinceLandService {
       case 'boutique-hotel': return 'boutique_hotel';
       case 'shopping-center': return 'shopping_center';
       case 'office-tower': return 'office_tower';
+      case 'company_hq': return 'office';
       case 'house4': return 'house';
       default: return 'house';
     }
@@ -146,9 +151,6 @@ export class ProvinceLandService {
   ): Promise<PropertyDto[]> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
-      const option = this.getConstructionOption(optionId);
-      if (!option) throw AppError.badRequest('Phương án xây dựng không hợp lệ.');
-      const label = constructionName?.trim() || option.label;
 
       const uniqueIds = Array.from(new Set([propertyId, ...memberPropertyIds]));
       const rows = await this.repo.findByIds(client, uniqueIds);
@@ -175,9 +177,12 @@ export class ProvinceLandService {
       if (!this.validateConnectedCluster(cells)) throw AppError.badRequest('Các lô hợp thửa phải liền kề nhau (4 hướng).');
       const size = rows.length;
       const tier = size >= 4 ? 'large' : size >= 2 ? 'small' : 'single';
-      if (option.tier !== tier || option.minTiles > size) {
+      const option = this.getConstructionOption(optionId, tier);
+      if (!option) throw AppError.badRequest('Phương án xây dựng không hợp lệ.');
+      if (option.minTiles > size) {
         throw AppError.badRequest('Phương án xây dựng không phù hợp với quy mô cụm (số ô).');
       }
+      const label = constructionName?.trim() || option.label;
 
       const totalBaseValue = rows.reduce((sum, r) => sum + Number(r.currentValueMinor), 0);
       const costMinor = Math.max(0, Math.round(totalBaseValue * 0.2));

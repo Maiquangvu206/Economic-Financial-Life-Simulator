@@ -658,62 +658,50 @@ export function BusinessPage() {
             {premisesLoading ? (
               <p className="text-xs text-slate-500">Đang tải địa điểm khả dụng từ bất động sản/bản đồ...</p>
             ) : (
-              <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-slate-700">Đất nền đang sở hữu (xây dựng công ty trên đất - liên kết Thành phố/Bản đồ)</p>
-                  {(premisesOptions?.land?.length ?? 0) === 0 ? (
-                    <p className="text-[11px] text-amber-700">Chưa có đất nền trống phù hợp. Hãy vào <Link to="/" className="underline font-medium">Thành phố/Bản đồ</Link> để mua/đấu giá và sở hữu đất nền (Hà Nội hoặc tỉnh/thành), sau đó quay lại chọn.</p>
-                  ) : (
-                    <div className="grid gap-1.5">
-                      {(premisesOptions?.land ?? []).map((o) => {
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-700">Chọn địa điểm/cơ sở (combo box)</label>
+                <select
+                  value={premisesKey}
+                  onChange={(e) => setPremisesKey(e.target.value)}
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                >
+                  <option value="">-- Chọn địa điểm thành lập công ty --</option>
+                  <optgroup label="Đất nền / trụ sở đã hợp thửa & xây dựng công ty (sở hữu của bạn)">
+                    {(premisesOptions?.land ?? []).length === 0 ? (
+                      <option value="" disabled>Không có đất nền hoặc trụ sở công ty (≥ 2 ô liền nhau, đã xây dựng &quot;Công ty&quot;) phù hợp</option>
+                    ) : (
+                      (premisesOptions?.land ?? []).map((o) => {
                         const key = `${o.type}:${o.id}`;
-                        const selected = premisesKey === key;
-                        return (
-                          <label key={key} className={`flex cursor-pointer items-start gap-2 rounded-xl border p-2.5 text-sm ${selected ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-                            <input type="radio" name="company-premises" className="mt-0.5" checked={selected} onChange={() => setPremisesKey(key)} />
-                            <div className="min-w-0 flex-1">
-                              <div className="font-medium text-slate-800 break-words">{o.label}</div>
-                              <div className="mt-0.5 text-[11px] text-slate-500">
-                                {o.type === 'land_core' ? 'Đất nền core (Hà Nội)' : `Đất nền tỉnh/thành${o.provinceName ? `: ${o.provinceName}` : ''}${o.provinceCode ? ` (${o.provinceCode})` : ''}`}
-                                {o.location ? ` · Tọa độ [${o.location.x}, ${o.location.y}]` : ''}
-                                {' · Nguồn: Thành phố/Bản đồ'}
-                              </div>
-                            </div>
-                            <Link to="/" onClick={(e) => e.stopPropagation()} className="shrink-0 text-[11px] font-medium text-emerald-700 underline">Bản đồ</Link>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-slate-700">Bất động sản thuộc công ty khác (đặt trụ sở - liên kết Bất động sản)</p>
-                  {(premisesOptions?.companyProperties?.length ?? 0) === 0 ? (
-                    <p className="text-[11px] text-slate-500">Không có bất động sản đã xây dựng thuộc công ty khác đang khả dụng. Bạn có thể kiểm tra tại <Link to="/real-estate" className="underline font-medium">Bất động sản</Link>.</p>
-                  ) : (
-                    <div className="grid gap-1.5">
-                      {(premisesOptions?.companyProperties ?? []).map((o) => {
+                        const suffix = o.type === 'land_province'
+                          ? ` · ${o.provinceName ?? o.provinceCode ?? 'Tỉnh/thành'}`
+                          : ' · Hà Nội';
+                        return <option key={key} value={key}>{o.label}{suffix}</option>;
+                      })
+                    )}
+                  </optgroup>
+                  <optgroup label="Bất động sản thuộc công ty khác (đặt trụ sở)">
+                    {(premisesOptions?.companyProperties ?? []).length === 0 ? (
+                      <option value="" disabled>Không có bất động sản công ty khác khả dụng</option>
+                    ) : (
+                      (premisesOptions?.companyProperties ?? []).map((o) => {
                         const key = `${o.type}:${o.id}`;
-                        const selected = premisesKey === key;
-                        return (
-                          <label key={key} className={`flex cursor-pointer items-start gap-2 rounded-xl border p-2.5 text-sm ${selected ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-                            <input type="radio" name="company-premises" className="mt-0.5" checked={selected} onChange={() => setPremisesKey(key)} />
-                            <div className="min-w-0 flex-1">
-                              <div className="font-medium text-slate-800 break-words">{o.label}</div>
-                              <div className="mt-0.5 text-[11px] text-slate-500">
-                                Thuộc công ty: {o.hostCompanyName ?? '—'}{o.propertyType ? ` · Loại BĐS: ${o.propertyType}` : ''}
-                                {o.location ? ` · Tọa độ [${o.location.x}, ${o.location.y}]` : ''}
-                                {' · Nguồn: Bất động sản'}
-                              </div>
-                            </div>
-                            <Link to="/real-estate" onClick={(e) => e.stopPropagation()} className="shrink-0 text-[11px] font-medium text-emerald-700 underline">BĐS</Link>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
+                        return <option key={key} value={key}>{o.label}{o.hostCompanyName ? ` · ${o.hostCompanyName}` : ''}</option>;
+                      })
+                    )}
+                  </optgroup>
+                </select>
+                <div className="text-[11px] text-slate-500">
+                  Bao gồm: đất nền trống đang sở hữu và <b>ô đất hợp thửa từ 2 ô liền nhau trở lên đã xây dựng “Công ty (trụ sở)”</b> (tại Thành phố/Bản đồ) hoặc bất động sản đã xây dựng thuộc công ty khác.
                 </div>
+                {premisesKey && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-[11px] text-emerald-800">
+                    Đã chọn: <b>{(() => {
+                      const all = [...(premisesOptions?.land ?? []), ...(premisesOptions?.companyProperties ?? [])];
+                      const found = all.find((o) => `${o.type}:${o.id}` === premisesKey);
+                      return found?.label ?? premisesKey;
+                    })()}</b>
+                  </div>
+                )}
               </div>
             )}
 

@@ -503,10 +503,15 @@ export class RealEstateService {
     });
   }
 
-  private getConstructionOption(optionId: string) {
-    for (const [tier, options] of Object.entries(CONSTRUCTION_OPTIONS) as Array<[OwnedCluster['tier'], Array<{ id: string; label: string; valueMultiplier: number; minTiles: number }> ]>) {
+  private getConstructionOption(optionId: string, tier?: OwnedCluster['tier']) {
+    const entries = Object.entries(CONSTRUCTION_OPTIONS) as Array<[OwnedCluster['tier'], Array<{ id: string; label: string; valueMultiplier: number; minTiles: number }>]>;
+    if (tier) {
+      const opt = (CONSTRUCTION_OPTIONS[tier] ?? []).find((o) => o.id === optionId);
+      return opt ? { ...opt, tier } : null;
+    }
+    for (const [t, options] of entries) {
       const opt = options.find((o) => o.id === optionId);
-      if (opt) return { ...opt, tier };
+      if (opt) return { ...opt, tier: t };
     }
     return null;
   }
@@ -519,6 +524,7 @@ export class RealEstateService {
       case 'boutique-hotel': return 'boutique_hotel';
       case 'shopping-center': return 'shopping_center';
       case 'office-tower': return 'office_tower';
+      case 'company_hq': return 'office';
       case 'house4': return 'house';
       default: return 'house';
     }
@@ -556,9 +562,6 @@ export class RealEstateService {
   ): Promise<RealEstateOverviewDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
-      const option = this.getConstructionOption(optionId);
-      if (!option) throw AppError.badRequest('Phương án xây dựng không hợp lệ.');
-      const label = constructionName?.trim() || option.label;
 
       const uniqueIds = Array.from(new Set([propertyId, ...memberPropertyIds]));
       const rows = await this.repository.findByIds(client, uniqueIds);
@@ -591,12 +594,12 @@ export class RealEstateService {
       }
       const size = rows.length;
       const tier = size >= 4 ? 'large' : size >= 2 ? 'small' : 'single';
-      if (option.tier !== tier) {
-        throw AppError.badRequest('Phương án xây dựng không phù hợp với quy mô cụm (số ô).');
-      }
+      const option = this.getConstructionOption(optionId, tier);
+      if (!option) throw AppError.badRequest('Phương án xây dựng không hợp lệ.');
       if (option.minTiles > size) {
         throw AppError.badRequest(`Phương án này cần tối thiểu ${option.minTiles} ô liền kề.`);
       }
+      const label = constructionName?.trim() || option.label;
 
       const totalBaseValue = rows.reduce((sum, r) => sum + Number(r.currentValueMinor), 0);
       const costMinor = Math.max(0, Math.round(totalBaseValue * 0.2)); // 20% tổng giá trị hiện tại

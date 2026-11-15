@@ -186,9 +186,15 @@ export class CorporationRepository {
     const coreLand = await db.query<PremisesOptionRow>(
       `SELECT 'land_core'::text AS type,
               p.id,
-              ('Đất nền (Hà Nội) - ' || COALESCE(p.lot_number, p.id::text)
-                || CASE WHEN n.name IS NOT NULL AND n.name <> '' THEN ' - ' || n.name ELSE '' END
-                || CASE WHEN n.x IS NOT NULL AND n.y IS NOT NULL THEN ' [' || n.x || ',' || n.y || ']' ELSE '' END) AS label,
+              CASE
+                WHEN LOWER(COALESCE(p.construction_option,'')) = 'company_hq'
+                  THEN ('Trụ sở công ty đã xây (Hà Nội) - ' || COALESCE(p.construction_label, p.lot_number, p.id::text)
+                        || CASE WHEN n.name IS NOT NULL AND n.name <> '' THEN ' - ' || n.name ELSE '' END
+                        || CASE WHEN n.x IS NOT NULL AND n.y IS NOT NULL THEN ' [' || n.x || ',' || n.y || ']' ELSE '' END)
+                ELSE ('Đất nền (Hà Nội) - ' || COALESCE(p.lot_number, p.id::text)
+                      || CASE WHEN n.name IS NOT NULL AND n.name <> '' THEN ' - ' || n.name ELSE '' END
+                      || CASE WHEN n.x IS NOT NULL AND n.y IS NOT NULL THEN ' [' || n.x || ',' || n.y || ']' ELSE '' END)
+              END AS label,
               '001'::text AS "provinceCode",
               'Thành phố Hà Nội'::text AS "provinceName",
               p.property_type AS "propertyType",
@@ -199,18 +205,24 @@ export class CorporationRepository {
        LEFT JOIN map_nodes n ON n.id = p.node_id
        WHERE p.owner_character_id = $1
          AND p.status = 'owned'
-         AND p.property_type = 'land'
          AND p.hq_company_id IS NULL
          AND p.merged_into_property_id IS NULL
-         AND (COALESCE(NULLIF(TRIM(p.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(p.construction_option)) = 'none')
-       ORDER BY p.updated_at DESC NULLS LAST, p.id`,
+         AND (
+           (p.property_type = 'land' AND (COALESCE(NULLIF(TRIM(p.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(p.construction_option)) = 'none'))
+           OR LOWER(COALESCE(p.construction_option,'')) = 'company_hq'
+         )
+       ORDER BY (LOWER(COALESCE(p.construction_option,'')) = 'company_hq') DESC, p.updated_at DESC NULLS LAST, p.id`,
       [characterId],
     );
 
     const provinceLand = await db.query<PremisesOptionRow>(
       `SELECT 'land_province'::text AS type,
               plp.id,
-              ('Đất nền - ' || COALESCE(pr.name, plp.province_code) || ' - ' || plp.node_name || ' [' || plp.node_x || ',' || plp.node_y || ']') AS label,
+              CASE
+                WHEN LOWER(COALESCE(plp.construction_option,'')) = 'company_hq'
+                  THEN ('Trụ sở công ty đã xây - ' || COALESCE(pr.name, plp.province_code) || ' - ' || COALESCE(plp.construction_label, plp.node_name) || ' [' || plp.node_x || ',' || plp.node_y || ']')
+                ELSE ('Đất nền - ' || COALESCE(pr.name, plp.province_code) || ' - ' || plp.node_name || ' [' || plp.node_x || ',' || plp.node_y || ']')
+              END AS label,
               plp.province_code AS "provinceCode",
               pr.name AS "provinceName",
               plp.property_type AS "propertyType",
@@ -222,11 +234,13 @@ export class CorporationRepository {
        LEFT JOIN provinces pr ON pr.code = plp.province_code
        WHERE plp.owner_character_id = $1
          AND plp.status = 'owned'
-         AND plp.property_type = 'land'
          AND plp.hq_company_id IS NULL
          AND plp.merged_into_property_id IS NULL
-         AND (COALESCE(NULLIF(TRIM(plp.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(plp.construction_option)) = 'none')
-       ORDER BY pr.name NULLS LAST, plp.updated_at DESC, plp.id`,
+         AND (
+           (plp.property_type = 'land' AND (COALESCE(NULLIF(TRIM(plp.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(plp.construction_option)) = 'none'))
+           OR LOWER(COALESCE(plp.construction_option,'')) = 'company_hq'
+         )
+       ORDER BY (LOWER(COALESCE(plp.construction_option,'')) = 'company_hq') DESC, pr.name NULLS LAST, plp.updated_at DESC, plp.id`,
       [characterId],
     );
 
@@ -263,10 +277,12 @@ export class CorporationRepository {
        WHERE p.id = $1
          AND p.owner_character_id = $2
          AND p.status = 'owned'
-         AND p.property_type = 'land'
          AND p.hq_company_id IS NULL
          AND p.merged_into_property_id IS NULL
-         AND (COALESCE(NULLIF(TRIM(p.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(p.construction_option)) = 'none')
+         AND (
+           (p.property_type = 'land' AND (COALESCE(NULLIF(TRIM(p.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(p.construction_option)) = 'none'))
+           OR LOWER(COALESCE(p.construction_option,'')) = 'company_hq'
+         )
        RETURNING p.id`,
       [propertyId, characterId, companyId],
     );
@@ -281,10 +297,12 @@ export class CorporationRepository {
        WHERE plp.id = $1
          AND plp.owner_character_id = $2
          AND plp.status = 'owned'
-         AND plp.property_type = 'land'
          AND plp.hq_company_id IS NULL
          AND plp.merged_into_property_id IS NULL
-         AND (COALESCE(NULLIF(TRIM(plp.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(plp.construction_option)) = 'none')
+         AND (
+           (plp.property_type = 'land' AND (COALESCE(NULLIF(TRIM(plp.construction_option), ''), NULL) IS NULL OR LOWER(TRIM(plp.construction_option)) = 'none'))
+           OR LOWER(COALESCE(plp.construction_option,'')) = 'company_hq'
+         )
        RETURNING plp.id, plp.province_code AS "provinceCode"`,
       [propertyId, characterId, companyId],
     );
