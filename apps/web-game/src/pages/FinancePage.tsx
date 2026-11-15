@@ -962,7 +962,7 @@ export function FinancePage() {
         )}
       </Panel>
 
-      <Modal open={loanModal} onClose={() => setLoanModal(false)} title="Đơn vay ngân hàng">
+      <Modal open={loanModal} onClose={() => setLoanModal(false)} title="Đơn vay ngân hàng" size="2xl">
         <form onSubmit={handleApplyLoan} className="space-y-4">
           {(() => {
             const opts = overview.collateralOptions ?? [];
@@ -977,20 +977,20 @@ export function FinancePage() {
               <>
                 <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Hạn mức vay (dựa trên điểm tín dụng + tiền mặt + tiết kiệm + BĐS + công ty)</div>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-700">
+                  <div className="grid grid-cols-1 gap-x-3 gap-y-1 text-xs text-slate-700 sm:grid-cols-2">
                     <span>Điểm tín dụng</span><span className="text-right font-mono">{overview.creditScore} ({overview.creditBand})</span>
                     <span>Tiền mặt</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.cash.amount ?? overview.cash.amount)}</span>
                     <span>Tiết kiệm</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.savings.amount ?? overview.savings.amount)}</span>
                     <span>Bất động sản</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.realEstate.amount ?? 0)}</span>
                     <span>Công ty</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.companies.amount ?? 0)}</span>
                   </div>
-                  <div className="flex justify-between text-xs pt-1 border-t border-slate-200">
+                  <div className="flex justify-between gap-2 text-xs pt-1 border-t border-slate-200">
                     <span>Hạn mức tín dụng (không thế chấp)</span>
-                    <span className="font-mono font-semibold text-emerald-700">{formatMoney(unsecuredMax)}</span>
+                    <span className="font-mono font-semibold text-emerald-700 text-right">{formatMoney(unsecuredMax)}</span>
                   </div>
-                  <div className="flex justify-between text-xs">
+                  <div className="flex justify-between gap-2 text-xs">
                     <span>Hạn mức áp dụng (theo lựa chọn)</span>
-                    <span className="font-mono font-semibold text-emerald-700">{formatMoney(effectiveMax)}</span>
+                    <span className="font-mono font-semibold text-emerald-700 text-right">{formatMoney(effectiveMax)}</span>
                   </div>
                 </div>
 
@@ -1015,7 +1015,7 @@ export function FinancePage() {
                   )}
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <GameInput
                       label="Số tiền vay (VND)"
@@ -1024,7 +1024,7 @@ export function FinancePage() {
                       placeholder="Nhập số tiền..."
                       required
                     />
-                    <GameButton type="button" variant="outline" size="sm" onClick={() => setLoanAmount(String(effectiveMax))}>
+                    <GameButton type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => setLoanAmount(String(effectiveMax))}>
                       Điền hạn mức tối đa
                     </GameButton>
                   </div>
@@ -1048,7 +1048,7 @@ export function FinancePage() {
           {loanPreview ? (
             <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Ước tính khoản vay (như thực tế)</p>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <div className="text-[11px] text-slate-500">Lãi suất dự kiến</div>
                   <div className="font-mono font-semibold text-emerald-700">{loanPreview.rate}%/năm</div>
@@ -1087,8 +1087,8 @@ export function FinancePage() {
               })()}
               <div>
                 <p className="text-[11px] font-semibold text-slate-600 mb-1">Lịch trả nợ dự kiến từng tháng</p>
-                <div className="max-h-52 overflow-auto rounded-lg border border-slate-200 bg-white">
-                  <table className="min-w-full text-[11px]">
+                <div className="max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white">
+                  <table className="min-w-[560px] w-full text-[11px]">
                     <thead className="sticky top-0 bg-slate-100 text-slate-600">
                       <tr>
                         <th className="px-2 py-1 text-left font-medium">Kỳ</th>
@@ -1120,7 +1120,10 @@ export function FinancePage() {
             <p className="text-[11px] text-slate-500">Nhập số tiền và kỳ hạn để xem lãi suất, lịch trả góp và tổng gốc lãi.</p>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <GameButton type="button" variant="outline" onClick={() => setLoanModal(false)}>
+              Hủy
+            </GameButton>
             <GameButton variant="primary" type="submit" disabled={applyLoan.isPending}>
               {applyLoan.isPending ? 'Đang gửi...' : 'Gửi đơn'}
             </GameButton>
