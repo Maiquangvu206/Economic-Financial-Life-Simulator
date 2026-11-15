@@ -28,7 +28,9 @@ export class BroadcastController {
   create = async (req: Request, res: Response): Promise<void> => {
     ensureAdmin(req);
     const body = req.body as CreateSystemBroadcastRequest;
-    if (body.showOnLogin !== true && body.showInApp !== false) {
+    const showOnLogin = body.showOnLogin === true;
+    const showInApp = body.showInApp !== false;
+    if (!showOnLogin && !showInApp) {
       throw AppError.badRequest('Vui lòng chọn ít nhất một vị trí hiển thị (trang đăng nhập hoặc trang người dùng).');
     }
     res.status(201).json(await broadcastService.create(req.actorId, body));

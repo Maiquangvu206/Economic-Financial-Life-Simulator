@@ -11,6 +11,7 @@ import { LoginPage } from '../pages/LoginPage';
 import { OfflineRecapPage } from '../pages/OfflineRecapPage';
 import { PoliticsPage } from '../pages/PoliticsPage';
 import { RealEstatePage } from '../pages/RealEstatePage';
+import { EducationPage } from '../pages/EducationPage';
 import { StockMarketPage } from '../pages/StockMarketPage';
 import { UnderworldPage } from '../pages/UnderworldPage';
 
@@ -32,6 +33,7 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <CityPage /> },
           { path: 'character', element: <CharacterPage /> },
+          { path: 'education', element: <EducationPage /> },
           { path: 'finance', element: <FinancePage /> },
           { path: 'real-estate', element: <RealEstatePage /> },
           { path: 'business', element: <BusinessPage /> },
