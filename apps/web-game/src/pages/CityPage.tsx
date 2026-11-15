@@ -652,30 +652,32 @@ export function CityPage() {
                                                                               ))}
                                                                             </div>
 
-                                                                            {/* Danh sách các tỉnh */}
-                                                                            <div className="max-h-[320px] space-y-1 overflow-y-auto pr-1 [scrollbar-width:thin]">
-                                                                              {filteredProvinces.map((p, index) => {
-                                                                                const isHome = character?.birthplace === p.code;
-                                                                                const anchorX = (index % 16) * 2;
-                                                                                const anchorY = Math.floor(index / 16) * 6 + 2;
-                                                                                const isHere =
-                                                                                  character != null &&
-                                                                                  character.location?.x === anchorX &&
-                                                                                  character.location?.y === anchorY;
-                                                                                const isBrowsing = activeProvince === p.code;
+              {/* Danh sách các tỉnh */}
+              <div className="max-h-[320px] space-y-1 overflow-y-auto pr-1 [scrollbar-width:thin]">
+                {filteredProvinces.map((p, index) => {
+                  const isHome = character?.birthplace === p.code;
+                  const anchorX = (index % 16) * 2;
+                  const anchorY = Math.floor(index / 16) * 6 + 2;
+                  const isHere =
+                    character != null &&
+                    character.location?.x === anchorX &&
+                    character.location?.y === anchorY;
+                  const isBrowsing = activeProvince === p.code;
 
-                                                                                return (
-                                                                                  <button
-                                                                                    key={p.code}
-                                                                                    type="button"
-                                                                                    disabled={movingProvince === p.code}
-                                                                                    onClick={() => void handleMoveProvince(p, index)}
-                                                                                            ? 'border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300'
-                                                                                            : isHere
-                                                                                                ? 'border-emerald-400 bg-emerald-50 ring-1 ring-emerald-300'
-                                                                                                : isHome
-                                                                                                      ? 'border-emerald-200 bg-emerald-50/50'
-                                                                                                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  return (
+                    <button
+                      key={p.code}
+                      type="button"
+                      disabled={movingProvince === p.code}
+                      onClick={() => void handleMoveProvince(p, index)}
+                      className={`flex w-full items-center justify-between gap-2 rounded-xl border px-2.5 py-1.5 text-left transition hover:brightness-105 disabled:opacity-60 ${
+                        isBrowsing
+                          ? 'border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300'
+                          : isHere
+                            ? 'border-emerald-400 bg-emerald-50 ring-1 ring-emerald-300'
+                            : isHome
+                              ? 'border-emerald-200 bg-emerald-50/50'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center gap-2">
