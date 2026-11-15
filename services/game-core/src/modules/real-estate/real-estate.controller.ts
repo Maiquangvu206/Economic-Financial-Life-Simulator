@@ -39,7 +39,7 @@ export class RealEstateController {
   };
 
   unlistProperty = async (req: Request, res: Response): Promise<void> => {
-    const { propertyId } = req.body as { propertyId: string };
+    const { propertyId } = req.body as UnlistPropertyRequest;
     const property = await this.service.unlistProperty(req.actorId!, propertyId);
     res.status(200).json(property);
   };

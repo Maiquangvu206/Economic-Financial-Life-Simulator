@@ -230,20 +230,19 @@ export function RealEstatePage() {
                     )}
                     {p.status === 'listed' && (
                       <GameButton
-                        variant="danger"
+                        variant="outline"
                         size="sm"
-                        disabled={isBusy(p.id)}
-                        onClick={() =>
-                          runAction(
-                            p.id,
-                            () =>
-                              apiRequest('/api/v1/real-estate/unlist', {
-                                method: 'POST',
-                                body: JSON.stringify({ propertyId: p.id }),
-                              }).then(() => {}),
-                            'Đã ngưng bán bất động sản.',
-                          )
-                        }
+                        disabled={isBusy(`unlist-${p.id}`)}
+                        onClick={() => runAction(
+                          `unlist-${p.id}`,
+                          async () => {
+                            await apiRequest('/api/v1/real-estate/unlist', {
+                              method: 'POST',
+                              body: JSON.stringify({ propertyId: p.id }),
+                            });
+                          },
+                          'Đã ngưng bán bất động sản.',
+                        )}
                       >
                         Ngưng bán
                       </GameButton>
