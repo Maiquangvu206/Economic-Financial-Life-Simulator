@@ -3,6 +3,7 @@ import { pool } from '../../shared/db/pool.js';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger } from '../../shared/ledger/ledger.service.js';
+import { debitStateFund } from '../../shared/state-fund/stateFund.js';
 import type { ClaimWelfareRequest, ClaimWelfareResponse, UpsertWelfareBenefitRequest, WelfareAvailableDto, WelfareBenefitDto } from '@efls/contracts';
 
 function money(amount: number) {
@@ -139,22 +140,29 @@ export class WelfareService {
 
       const amountMinor = Number(benefitRow.bonus_minor || 0);
       if (amountMinor > 0) {
-        // nguồn hệ thống: ghi nhận tăng số dư (cash) an toàn theo ledger nếu có tài khoản nguồn; dùng market/system
-        await (client as any).query(
-          `INSERT INTO ledger_accounts (owner_type, owner_id, kind, balance_minor)
-           VALUES ('character', $1, 'cash', 0)
-           ON CONFLICT (owner_type, owner_id, kind, currency) DO NOTHING`,
-          [character.id],
-        );
-        await (client as any).query(
-          `UPDATE ledger_accounts SET balance_minor = balance_minor + $2, updated_at = now()
-           WHERE owner_type='character' AND owner_id=$1 AND kind='cash' AND currency='VND'`,
-          [character.id, amountMinor],
-        );
-        await (client as any).query(
-          `UPDATE characters SET cash_minor = cash_minor + $2, updated_at = now() WHERE id = $1`,
-          [character.id, amountMinor],
-        );
+        try {
+          await debitStateFund(
+            client,
+            { ownerType: 'character', ownerId: character.id, kind: 'cash' },
+            amountMinor,
+            {
+              amountMinor: -amountMinor,
+              reasonCode: 'welfare_claim',
+              description: `Chi phúc lợi cố định: ${benefitRow.name ?? benefitRow.code ?? benefitRow.id}`,
+              refType: 'welfare_benefit',
+              refId: String(benefitRow.id),
+              actorType: 'system',
+              actorId: null,
+              ledgerKind: 'welfare_claim',
+              ledgerDescription: `Phúc lợi: ${benefitRow.name ?? 'Hỗ trợ'} (từ quỹ đất nước)`,
+            },
+          );
+        } catch (e: any) {
+          if (String(e?.message).includes('STATE_FUND_INSUFFICIENT')) {
+            throw AppError.conflict('state_fund_insufficient', 'Quỹ đất nước hiện không đủ để chi trả phúc lợi này. Vui lòng thử lại sau.');
+          }
+          throw e;
+        }
       }
 
       await (client as any).query(

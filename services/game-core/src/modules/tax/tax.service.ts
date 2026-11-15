@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharacterByCccd } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
+import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { notify } from '../notifications/notification.service.js';
 import { type TaxOverviewExtDto, MoneySchema } from '@efls/contracts';
 import { taxRepository } from './tax.repository.js';
@@ -153,15 +154,21 @@ export class TaxService {
     if (taxDue > 0) {
       const balance = await ledger.getBalance(client, 'character', characterId);
       if (balance >= taxDue) {
-        await ledger.transfer(client, {
-          from: { ownerType: 'character', ownerId: characterId },
-          to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
-          amountMinor: taxDue,
-          kind: 'tax_payment',
-          description: `Quyết toán thuế cá nhân năm ${taxYear} (tự động, từ thu nhập công việc)`,
-          referenceType: 'tax_assessment',
-          referenceId: assessmentId,
-        });
+        await creditStateFund(
+          client,
+          { ownerType: 'character', ownerId: characterId, kind: 'cash' },
+          taxDue,
+          {
+            amountMinor: taxDue,
+            reasonCode: 'personal_income_tax',
+            description: `Quyết toán thuế cá nhân năm ${taxYear} (tự động) vào quỹ đất nước`,
+            refType: 'tax_assessment',
+            refId: assessmentId,
+            actorType: 'system',
+            ledgerKind: 'tax_payment',
+            ledgerDescription: `Quyết toán thuế cá nhân năm ${taxYear} (tự động, từ thu nhập công việc)`,
+          },
+        );
         await this.repository.markPaid(client, assessmentId);
         autoPaid = true;
       }
@@ -207,15 +214,22 @@ export class TaxService {
       if (balance < due) {
         throw AppError.conflict('insufficient_funds', 'Không đủ tiền nộp thuế.');
       }
-      await ledger.transfer(client, {
-        from: { ownerType: 'character', ownerId: character.id },
-        to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
-        amountMinor: due,
-        kind: 'tax_payment',
-        description: `Nộp thuế năm ${assessment.taxYear}`,
-        referenceType: 'tax_assessment',
-        referenceId: assessmentId,
-      });
+      await creditStateFund(
+        client,
+        { ownerType: 'character', ownerId: character.id, kind: 'cash' },
+        due,
+        {
+          amountMinor: due,
+          reasonCode: 'personal_income_tax',
+          description: `Nộp thuế năm ${assessment.taxYear} vào quỹ đất nước`,
+          refType: 'tax_assessment',
+          refId: assessmentId,
+          actorType: 'character',
+          actorId: character.id,
+          ledgerKind: 'tax_payment',
+          ledgerDescription: `Nộp thuế năm ${assessment.taxYear}`,
+        },
+      );
       await this.repository.markPaid(client, assessmentId);
       await notify(client, {
         userId,
@@ -251,15 +265,21 @@ export class TaxService {
         const balance = await ledger.getBalance(client, 'character', character.id);
         const payable = Math.min(penalty, balance);
         if (payable > 0) {
-          await ledger.transfer(client, {
-            from: { ownerType: 'character', ownerId: character.id },
-            to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
-            amountMinor: payable,
-            kind: 'tax_penalty',
-            description: `Phạt kiểm toán năm ${taxYear}`,
-            referenceType: 'tax_audit',
-            referenceId: auditId,
-          });
+          await creditStateFund(
+            client,
+            { ownerType: 'character', ownerId: character.id, kind: 'cash' },
+            payable,
+            {
+              amountMinor: payable,
+              reasonCode: 'tax_audit_penalty',
+              description: `Phạt kiểm toán thuế năm ${taxYear} vào quỹ đất nước`,
+              refType: 'tax_audit',
+              refId: auditId,
+              actorType: 'system',
+              ledgerKind: 'tax_penalty',
+              ledgerDescription: `Phạt kiểm toán năm ${taxYear}`,
+            },
+          );
         }
         await client.query(
           `UPDATE characters
@@ -359,15 +379,22 @@ export class TaxService {
           `Không đủ tiền nộp lệ phí cấp giấy phép (${LICENSE_ISSUE_FEE.toLocaleString('vi-VN')} ₫).`,
         );
       }
-      await ledger.transfer(client, {
-        from: { ownerType: 'character', ownerId: character.id },
-        to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
-        amountMinor: LICENSE_ISSUE_FEE,
-        kind: 'license_fee',
-        description: `Lệ phí cấp giấy phép kinh doanh - ${company.name}`,
-        referenceType: 'company',
-        referenceId: companyId,
-      });
+      await creditStateFund(
+        client,
+        { ownerType: 'character', ownerId: character.id, kind: 'cash' },
+        LICENSE_ISSUE_FEE,
+        {
+          amountMinor: LICENSE_ISSUE_FEE,
+          reasonCode: 'business_license_fee',
+          description: `Lệ phí cấp giấy phép kinh doanh "${company.name}" vào quỹ đất nước`,
+          refType: 'company',
+          refId: companyId,
+          actorType: 'character',
+          actorId: character.id,
+          ledgerKind: 'license_fee',
+          ledgerDescription: `Lệ phí cấp giấy phép kinh doanh - ${company.name}`,
+        },
+      );
 
       const licenseId = await this.repository.issueLicense(client, companyId, 'Giấy phép kinh doanh');
 
@@ -416,15 +443,15 @@ export class TaxService {
         [company.ownerCharacterId],
       );
 
-      // Phạt từ quỹ công ty nếu có (chuyển về ngân sách chính phủ).
+      // Phạt từ quỹ công ty nếu có (chuyển về quỹ đất nước).
       const companyCash = Math.max(0, Number(company.cashMinor));
       const fine = Math.min(UNLICENSED_FINE, companyCash);
       if (fine > 0) {
         await client.query(
-          `UPDATE companies SET cash_minor = cash_minor - $2::bigint, updated_at = now() WHERE id = $1`,
+          `UPDATE companies SET cash_minor = GREATEST(0, cash_minor - $2::bigint), updated_at = now() WHERE id = $1`,
           [companyId, fine],
         );
-        // ghi nhận vào ledger_accounts công ty (giảm) nếu có, và chuyển sang government
+        // Cập nhật ledger công ty nếu có tài khoản cash, rồi ghi nhận vào quỹ đất nước (government cash) + state_fund
         await client.query(
           `UPDATE ledger_accounts
               SET balance_minor = GREATEST(0, balance_minor - $3::bigint), updated_at = now()
@@ -433,10 +460,20 @@ export class TaxService {
         );
         await client.query(
           `INSERT INTO ledger_accounts (id, owner_type, owner_id, kind, currency, balance_minor)
-           VALUES (gen_random_uuid(), 'government', $1, 'treasury', 'VND', $2)
+           VALUES (gen_random_uuid(), 'government', $1, 'cash', 'VND', $2)
            ON CONFLICT (owner_type, owner_id, kind, currency)
            DO UPDATE SET balance_minor = ledger_accounts.balance_minor + EXCLUDED.balance_minor, updated_at = now()`,
           [SYSTEM_GOVERNMENT_ID, fine],
+        );
+        // record state_fund inflow
+        await client.query(`INSERT INTO state_fund (id, balance_minor) VALUES (1,0) ON CONFLICT (id) DO NOTHING`);
+        const sf = await client.query<{ balance_minor: string }>(`SELECT balance_minor FROM state_fund WHERE id=1 FOR UPDATE`);
+        const nextSf = Number(sf.rows[0]?.balance_minor ?? 0) + fine;
+        await client.query(`UPDATE state_fund SET balance_minor=$1, updated_at=now() WHERE id=1`, [nextSf]);
+        await client.query(
+          `INSERT INTO state_fund_transactions (id, amount_minor, balance_after, reason_code, description, ref_type, ref_id, actor_type, actor_id, meta)
+           VALUES (gen_random_uuid(), $1, $2, 'unlicensed_company_fine', $3, 'company', $4, 'system', NULL, $5::jsonb)`,
+          [fine, nextSf, `Phạt công ty kinh doanh không giấy phép "${company.name}" vào quỹ đất nước`, companyId, JSON.stringify({ caseId, companyName: company.name })],
         );
       }
 

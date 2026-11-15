@@ -11,9 +11,22 @@ export const MacroSnapshotDtoSchema = z.object({
   marketCap: MoneySchema,
   concurrentUsers: z.number().int().nonnegative(),
   activeCourtCases: z.number().int().nonnegative(),
+  stateFundBalance: MoneySchema.optional(),
   generatedAt: z.string().datetime(),
 });
 export type MacroSnapshotDto = z.infer<typeof MacroSnapshotDtoSchema>;
+
+export const AdjustStateFundRequestSchema = z.object({
+  deltaMinor: z.number().int().refine((v) => v !== 0, "deltaMinor must be non-zero"),
+  reason: z.string().min(3).max(500),
+});
+export type AdjustStateFundRequest = z.infer<typeof AdjustStateFundRequestSchema>;
+
+export const StateFundSnapshotDtoSchema = z.object({
+  balance: MoneySchema,
+  updatedAt: z.string().datetime().nullable().optional(),
+});
+export type StateFundSnapshotDto = z.infer<typeof StateFundSnapshotDtoSchema>;
 
 export const MacroEventTypeSchema = z.enum([
   'banking_crisis',

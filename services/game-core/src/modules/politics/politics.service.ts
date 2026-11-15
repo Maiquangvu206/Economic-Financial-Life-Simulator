@@ -3,6 +3,7 @@ import { AppError } from '../../shared/http/errors.js';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
+import { creditStateFund, debitStateFund, getStateFundBalance } from '../../shared/state-fund/stateFund.js';
 import { enqueueDomainEvent } from '../../shared/events/eventBus.js';
 import { notify } from '../notifications/notification.service.js';
 import { publishToUser, publishToAllUsers } from '../../shared/realtime/publish.js';
@@ -177,15 +178,22 @@ export class PoliticsService {
       if (balance < CAMPAIGN_FEE) {
         throw AppError.conflict('insufficient_funds', 'Không đủ tiền phí tranh cử (5.000.000 ₫).');
       }
-      await ledger.transfer(client as any, {
-        from: { ownerType: 'character', ownerId: character.id },
-        to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
-        amountMinor: CAMPAIGN_FEE,
-        kind: 'campaign_fee',
-        description: 'Phí tranh cử Thị trưởng',
-        referenceType: 'election',
-        referenceId: electionId,
-      });
+      await creditStateFund(
+        client as any,
+        { ownerType: 'character', ownerId: character.id, kind: 'cash' },
+        CAMPAIGN_FEE,
+        {
+          amountMinor: CAMPAIGN_FEE,
+          reasonCode: 'campaign_fee',
+          description: 'Phí tranh cử Thị trưởng vào quỹ đất nước',
+          refType: 'election',
+          refId: electionId,
+          actorType: 'character',
+          actorId: character.id,
+          ledgerKind: 'campaign_fee',
+          ledgerDescription: 'Phí tranh cử Thị trưởng',
+        },
+      );
       const candidateId = await this.repository.declareCandidacy(
         client,
         electionId,
@@ -229,15 +237,22 @@ export class PoliticsService {
       if (balance < amountMinor) {
         throw AppError.conflict('insufficient_funds', 'Không đủ tiền quyên góp.');
       }
-      await ledger.transfer(client as any, {
-        from: { ownerType: 'character', ownerId: character.id },
-        to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
+      await creditStateFund(
+        client as any,
+        { ownerType: 'character', ownerId: character.id, kind: 'cash' },
         amountMinor,
-        kind: 'campaign_donation',
-        description: 'Quyên góp tranh cử',
-        referenceType: 'candidate',
-        referenceId: candidateId,
-      });
+        {
+          amountMinor,
+          reasonCode: 'campaign_donation',
+          description: 'Quyên góp tranh cử vào quỹ đất nước',
+          refType: 'candidate',
+          refId: candidateId,
+          actorType: 'character',
+          actorId: character.id,
+          ledgerKind: 'campaign_donation',
+          ledgerDescription: 'Quyên góp tranh cử',
+        },
+      );
       await this.repository.addDonation(client as any, candidateId, amountMinor);
       const after = await this.repository.listCandidates(election.id, client);
       const updated = after.find((c) => c.id === candidateId);
@@ -462,18 +477,32 @@ export class PoliticsService {
         if (total > mayor.config.treasurySpendLimitMinor) {
           throw AppError.badRequest(`Tổng chi vượt hạn mức cho phép (${mayor.config.treasurySpendLimitMinor.toLocaleString('vi-VN')} ₫).`);
         }
-        const govBal = await ledger.getBalance(client as any, 'government', SYSTEM_GOVERNMENT_ID);
-        if (govBal < total) throw AppError.conflict('insufficient_treasury', 'Ngân sách nhà nước không đủ cho gói hỗ trợ.');
+        const fundBal = await getStateFundBalance(client as any);
+        if (fundBal < total) throw AppError.conflict('insufficient_treasury', 'Quỹ đất nước không đủ để chi trả gói hỗ trợ.');
         for (const c of citizens.rows) {
-          await ledger.transfer(client as any, {
-            from: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
-            to: { ownerType: 'character', ownerId: c.id },
-            amountMinor: perCitizen,
-            kind: 'mayor_welfare_bonus',
-            description: 'Gói hỗ trợ phúc lợi do Thị trưởng ban hành',
-            referenceType: 'election',
-            referenceId: mayor.electionId,
-          });
+          try {
+            await debitStateFund(
+              client as any,
+              { ownerType: 'character', ownerId: c.id, kind: 'cash' },
+              perCitizen,
+              {
+                amountMinor: -perCitizen,
+                reasonCode: 'mayor_welfare_bonus',
+                description: 'Gói hỗ trợ phúc lợi do Thị trưởng ban hành (từ quỹ đất nước)',
+                refType: 'election',
+                refId: mayor.electionId,
+                actorType: 'mayor',
+                actorId: mayor.characterId,
+                ledgerKind: 'mayor_welfare_bonus',
+                ledgerDescription: 'Gói hỗ trợ phúc lợi do Thị trưởng ban hành',
+              },
+            );
+          } catch (e: any) {
+            if (String(e?.message).includes('STATE_FUND_INSUFFICIENT')) {
+              throw AppError.conflict('insufficient_treasury', 'Quỹ đất nước không đủ để chi trả gói hỗ trợ.');
+            }
+            throw e;
+          }
         }
         await this.repository.insertMayorAction(client as any, {
           electionId: mayor.electionId, actorCharacterId: mayor.characterId, actorUserId: mayor.userId,

@@ -2,6 +2,7 @@
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_MARKET_ID } from '../../shared/ledger/ledger.service.js';
+import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { notify } from '../notifications/notification.service.js';
 import { assertNoPendingDivorce } from '../social/social.freeze.js';
 import {
@@ -603,15 +604,22 @@ export class RealEstateService {
       this.ensureFunds(cash, costMinor);
 
       if (costMinor > 0) {
-        await ledger.transfer(client, {
-          from: { ownerType: 'character', ownerId: character.id },
-          to: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
-          amountMinor: costMinor,
-          kind: 'property_construction',
-          description: `Xây dựng ${label} (${size} ô)`,
-          referenceType: 'property',
-          referenceId: primary.id,
-        });
+        await creditStateFund(
+          client,
+          { ownerType: 'character', ownerId: character.id, kind: 'cash' },
+          costMinor,
+          {
+            amountMinor: costMinor,
+            reasonCode: 'property_construction_fee',
+            description: `Phí/thuế xây dựng ${label} (${size} ô) vào quỹ đất nước`,
+            refType: 'property',
+            refId: primary.id,
+            actorType: 'character',
+            actorId: character.id,
+            ledgerKind: 'property_construction',
+            ledgerDescription: `Xây dựng ${label} (${size} ô)`,
+          },
+        );
       }
 
       const newCurrentValueMinor = Math.round(totalBaseValue * option.valueMultiplier);
@@ -756,4 +764,5 @@ export class RealEstateService {
 }
 
 export const realEstateService = new RealEstateService();
+
 

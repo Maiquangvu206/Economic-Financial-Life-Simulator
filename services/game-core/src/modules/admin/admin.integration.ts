@@ -7,7 +7,8 @@ import { notify } from '../notifications/notification.service.js';
 import { publishToUser, publishToAllUsers } from '../../shared/realtime/publish.js';
 import { AuthRepository } from '../auth/auth.repository.js';
 import { underworldService } from '../underworld/underworld.service.js';
-import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest, AdminTriggerSweepRequest, UpdateInterestRateConfigRequest, InterestRateConfigDto } from '@efls/contracts';
+import { adjustStateFund, creditStateFund, debitStateFund, getStateFundBalance } from '../../shared/state-fund/stateFund.js';
+import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest, AdminTriggerSweepRequest, UpdateInterestRateConfigRequest, InterestRateConfigDto, AdjustStateFundRequest } from '@efls/contracts';
 
 function ensureAdmin(req: Request): void {
   if (req.actorRole !== 'admin' && req.actorRole !== 'moderator') {
@@ -62,6 +63,8 @@ export async function getMacroSnapshot(req: Request, res: Response): Promise<voi
 
     const state = stateRes.rows[0] ?? { current_day: 0, current_year: 1, season: 'spring', macro: {} };
     const macro = (state.macro && typeof state.macro === 'object') ? state.macro : {};
+    let stateFundBalanceMinor = 0;
+    try { stateFundBalanceMinor = await getStateFundBalance(client as any); } catch { stateFundBalanceMinor = 0; }
     const snapshot: MacroSnapshotDto = {
       tick: Number(state.current_day ?? 0),
       inGameYear: Number(state.current_year ?? 1),
@@ -71,6 +74,7 @@ export async function getMacroSnapshot(req: Request, res: Response): Promise<voi
       marketCap: money(Number(marketRes.rows[0]?.total ?? 0)),
       concurrentUsers: Number(ccuRes.rows[0]?.total ?? 0),
       activeCourtCases,
+      stateFundBalance: money(stateFundBalanceMinor),
       generatedAt: new Date().toISOString(),
     };
     res.json(snapshot);
@@ -232,39 +236,66 @@ export async function adminPlayerAction(req: Request, res: Response): Promise<vo
   }
 
   if (action === 'fine' || action === 'grant_aid') {
-    const amountMinor = Number(body?.amount?.amount ?? 0);
+    const amountMinor = Math.trunc(Number(body?.amount?.amount ?? 0));
     if (!Number.isFinite(amountMinor) || amountMinor <= 0) throw AppError.badRequest('Số tiền không hợp lệ.');
-    const delta = action === 'fine' ? -amountMinor : amountMinor;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const cur = await client.query<{ cash_minor: string }>(
-        `SELECT cash_minor FROM characters WHERE id = $1 FOR UPDATE`,
-        [characterId],
-      );
-      if (!cur.rows[0]) throw AppError.notFound('Nhân vật');
-      const before = Number(cur.rows[0].cash_minor ?? 0);
-      const after = Math.max(0, before + delta);
-      const actualDelta = after - before;
-
-      await client.query(
-        `INSERT INTO ledger_accounts (id, owner_type, owner_id, kind, balance_minor, is_system)
-         VALUES (gen_random_uuid(), 'character', $1, 'cash', $2, false)
-         ON CONFLICT (owner_type, owner_id, kind, currency) DO NOTHING`,
-        [characterId, before],
-      );
-      await client.query(
-        `UPDATE characters SET cash_minor = $2, updated_at = now() WHERE id = $1`,
-        [characterId, after],
-      );
-      await client.query(
-        `UPDATE ledger_accounts SET balance_minor = $2, updated_at = now()
-         WHERE owner_type='character' AND owner_id=$1 AND kind='cash' AND currency='VND'`,
-        [characterId, after],
-      );
+      if (action === 'fine') {
+        const cur = await client.query<{ cash_minor: string }>(
+          `SELECT cash_minor FROM characters WHERE id = $1 FOR UPDATE`,
+          [characterId],
+        );
+        if (!cur.rows[0]) throw AppError.notFound('Nhân vật');
+        const before = Number(cur.rows[0].cash_minor ?? 0);
+        const actual = Math.min(before, amountMinor);
+        if (actual > 0) {
+          await creditStateFund(
+            client as any,
+            { ownerType: 'character', ownerId: characterId, kind: 'cash' },
+            actual,
+            {
+              amountMinor: actual,
+              reasonCode: 'admin_fine',
+              description: `Phạt hành chính bởi admin vào quỹ đất nước${body?.note ? `: ${body.note}` : ''}`,
+              refType: 'character',
+              refId: characterId,
+              actorType: 'admin',
+              actorId: req.actorId ?? null,
+              ledgerKind: 'admin_fine',
+              ledgerDescription: 'Phạt hành chính (admin)',
+              meta: { note: body?.note ?? null },
+            },
+          );
+        }
+        body.amount = body.amount ? { amount: actual } : body.amount;
+      } else {
+        try {
+          await debitStateFund(
+            client as any,
+            { ownerType: 'character', ownerId: characterId, kind: 'cash' },
+            amountMinor,
+            {
+              amountMinor: -amountMinor,
+              reasonCode: 'admin_grant_aid',
+              description: `Hỗ trợ từ quỹ đất nước (admin)${body?.note ? `: ${body.note}` : ''}`,
+              refType: 'character',
+              refId: characterId,
+              actorType: 'admin',
+              actorId: req.actorId ?? null,
+              ledgerKind: 'admin_grant_aid',
+              ledgerDescription: 'Hỗ trợ từ quỹ đất nước (admin)',
+              meta: { note: body?.note ?? null },
+            },
+          );
+        } catch (e: any) {
+          if (String(e?.message).includes('STATE_FUND_INSUFFICIENT')) {
+            throw AppError.conflict('state_fund_insufficient', 'Quỹ đất nước không đủ để cấp hỗ trợ.');
+          }
+          throw e;
+        }
+      }
       await client.query('COMMIT');
-
-      body.amount = body.amount ? { amount: Math.abs(actualDelta) } : body.amount;
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
@@ -759,4 +790,53 @@ export async function updateInterestRateConfig(req: Request, res: Response): Pro
   }
 
   await getInterestRateConfig(req, res);
+}
+
+export async function getStateFundSnapshot(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const balance = await getStateFundBalance(pool as any);
+  const row = await pool.query<{ updated_at: Date | null }>(`SELECT updated_at FROM state_fund WHERE id = 1`);
+  res.json({ balance: money(balance), updatedAt: row.rows[0]?.updated_at ? new Date(row.rows[0].updated_at).toISOString() : null });
+}
+
+export async function adminAdjustStateFund(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const body = req.body as AdjustStateFundRequest;
+  const deltaMinor = Math.trunc(Number(body.deltaMinor));
+  const reason = String(body.reason ?? '').trim();
+  if (!Number.isFinite(deltaMinor) || deltaMinor === 0) throw AppError.badRequest('Số tiền điều chỉnh không hợp lệ (khác 0).');
+  if (reason.length < 3) throw AppError.badRequest('Vui lòng nhập lý do điều chỉnh (tối thiểu 3 ký tự).');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    try {
+      await adjustStateFund(client as any, deltaMinor, {
+        amountMinor: deltaMinor,
+        reasonCode: 'admin_adjust',
+        description: `Admin điều chỉnh quỹ đất nước: ${reason}`,
+        refType: 'admin',
+        refId: req.actorId ?? undefined,
+        actorType: 'admin',
+        actorId: req.actorId ?? undefined,
+        meta: { reason },
+        ledgerKind: 'state_fund_adjust',
+        ledgerDescription: `Admin điều chỉnh quỹ đất nước (${deltaMinor > 0 ? '+' : ''}${deltaMinor})`,
+      });
+    } catch (e: any) {
+      if (String(e?.message).includes('STATE_FUND_INSUFFICIENT')) {
+        throw AppError.conflict('state_fund_insufficient', 'Quỹ đất nước không đủ để giảm theo mức yêu cầu.');
+      }
+      throw e;
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+
+  await writeActionLog(pool as any, req.actorId, 'state_fund.adjust', { deltaMinor, reason });
+  await getStateFundSnapshot(req, res);
 }

@@ -5,7 +5,8 @@ import type { PoolClient } from 'pg';
 import { AppError } from '../../shared/http/errors.js';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
-import { ledger, SYSTEM_ESCROW_ID, SYSTEM_MARKET_ID } from '../../shared/ledger/ledger.service.js';
+import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js';
+import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { notify } from '../notifications/notification.service.js';
 import { mapRepository } from '../map/map.repository.js';
 import { pool } from '../../shared/db/pool.js';
@@ -69,15 +70,22 @@ export class ProvinceLandAuctionService {
       await withTransaction(async (client) => {
         const result = await this.repo.endAuction(client, auction.id);
         if (result.winnerId && result.settledPriceMinor > 0) {
-          await ledger.transfer(client, {
-            from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
-            to: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
-            amountMinor: result.settledPriceMinor,
-            kind: 'auction_settlement',
-            description: `Thanh toán đấu giá đất ${auction.id}`,
-            referenceType: 'province_land_auction',
-            referenceId: auction.id,
-          });
+          await creditStateFund(
+            client,
+            { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID, kind: 'cash' },
+            result.settledPriceMinor,
+            {
+              amountMinor: result.settledPriceMinor,
+              reasonCode: 'province_land_auction',
+              description: `Thanh toán đấu giá đất chưa chủ sở hữu ${auction.id} (${auction.provinceCode})`,
+              refType: 'province_land_auction',
+              refId: auction.id,
+              actorType: 'system',
+              ledgerKind: 'auction_settlement',
+              ledgerDescription: `Thanh toán đấu giá đất ${auction.id} vào quỹ đất nước`,
+              meta: { provinceCode: auction.provinceCode, x: auction.nodeX, y: auction.nodeY },
+            },
+          );
           // Grant province land ownership so the winner can build/merge on this map tile.
           await client.query(
             `INSERT INTO province_land_properties (
@@ -240,16 +248,23 @@ export class ProvinceLandAuctionService {
       await withTransaction(async (client) => {
         const result = await this.repo.endAuction(client, auction.id);
         if (result.winnerId && result.settledPriceMinor > 0) {
-          // GM/system land sale: escrow goes to market
-          await ledger.transfer(client, {
-            from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
-            to: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
-            amountMinor: result.settledPriceMinor,
-            kind: 'auction_settlement',
-            description: `Thanh toán đấu giá đất ${auction.id}`,
-            referenceType: 'province_land_auction',
-            referenceId: auction.id,
-          });
+          // GM/system land sale: escrow goes to national/state land fund
+          await creditStateFund(
+            client,
+            { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID, kind: 'cash' },
+            result.settledPriceMinor,
+            {
+              amountMinor: result.settledPriceMinor,
+              reasonCode: 'province_land_auction',
+              description: `Thanh toán đấu giá đất chưa chủ sở hữu ${auction.id} (${auction.provinceCode})`,
+              refType: 'province_land_auction',
+              refId: auction.id,
+              actorType: 'system',
+              ledgerKind: 'auction_settlement',
+              ledgerDescription: `Thanh toán đấu giá đất ${auction.id} vào quỹ đất nước`,
+              meta: { provinceCode: auction.provinceCode, x: auction.nodeX, y: auction.nodeY },
+            },
+          );
           await notifyCharacter(client, result.winnerId, {
             kind: 'auction',
             title: 'Bạn thắng đấu giá đất',

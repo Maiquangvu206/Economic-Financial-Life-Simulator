@@ -1,11 +1,12 @@
-import crypto from 'node:crypto';
+﻿import crypto from 'node:crypto';
 import { CONSTRUCTION_OPTIONS, type OwnedCluster } from '@efls/domain';
 import { MoneySchema, type PropertyDto, type PropertySaleOfferDto } from '@efls/contracts';
 import type { PoolClient } from 'pg';
 import { AppError } from '../../shared/http/errors.js';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
-import { ledger, SYSTEM_MARKET_ID } from '../../shared/ledger/ledger.service.js';
+import { ledger } from '../../shared/ledger/ledger.service.js';
+import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { notify } from '../notifications/notification.service.js';
 import { pool } from '../../shared/db/pool.js';
 import { provinceLandRepository, type ProvinceLandPropertyRow, type ProvinceLandPurchaseOfferRow } from './provinceLand.repository.js';
@@ -184,15 +185,22 @@ export class ProvinceLandService {
       if (cash < costMinor) throw AppError.conflict('insufficient_funds', `Số dư không đủ. Cần ${costMinor.toLocaleString('vi-VN')} ₫.`);
 
       if (costMinor > 0) {
-        await ledger.transfer(client, {
-          from: { ownerType: 'character', ownerId: character.id },
-          to: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
-          amountMinor: costMinor,
-          kind: 'property_construction',
-          description: `Xây dựng ${label} (${size} ô) - ${provinceCode}`,
-          referenceType: 'province_land_property',
-          referenceId: primary.id,
-        });
+        await creditStateFund(
+          client,
+          { ownerType: 'character', ownerId: character.id, kind: 'cash' },
+          costMinor,
+          {
+            amountMinor: costMinor,
+            reasonCode: 'province_land_construction_fee',
+            description: `Phí/thuế xây dựng ${label} (${size} ô) - ${provinceCode} vào quỹ đất nước`,
+            refType: 'province_land_property',
+            refId: primary.id,
+            actorType: 'character',
+            actorId: character.id,
+            ledgerKind: 'property_construction',
+            ledgerDescription: `Xây dựng ${label} (${size} ô) - ${provinceCode}`,
+          },
+        );
       }
 
       const newCurrentValueMinor = Math.round(totalBaseValue * option.valueMultiplier);
@@ -351,3 +359,4 @@ export class ProvinceLandService {
 }
 
 export const provinceLandService = new ProvinceLandService();
+

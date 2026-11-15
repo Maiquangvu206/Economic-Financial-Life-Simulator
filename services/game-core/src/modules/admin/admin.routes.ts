@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema, RevokeMayorRequestSchema, UpdateMayorConfigRequestSchema, UpdateInterestRateConfigRequestSchema } from '@efls/contracts';
+import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema, RevokeMayorRequestSchema, UpdateMayorConfigRequestSchema, UpdateInterestRateConfigRequestSchema, AdjustStateFundRequestSchema } from '@efls/contracts';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import {
@@ -33,11 +33,15 @@ import {
   triggerMacroEvent,
   getInterestRateConfig,
   updateInterestRateConfig,
+  getStateFundSnapshot,
+  adminAdjustStateFund,
 } from './admin.integration.js';
 
 export const adminRouter: Router = Router();
 
 adminRouter.get('/macro/snapshot', asyncHandler(getMacroSnapshot));
+adminRouter.get('/state-fund', asyncHandler(getStateFundSnapshot));
+adminRouter.post('/state-fund/adjust', validateBody(AdjustStateFundRequestSchema), asyncHandler(adminAdjustStateFund));
 adminRouter.post('/macro/events', validateBody(TriggerMacroEventRequestSchema), asyncHandler(triggerMacroEvent));
 adminRouter.get('/audit-logs', asyncHandler(getAuditLogs));
 adminRouter.get('/players', asyncHandler(searchPlayers));
