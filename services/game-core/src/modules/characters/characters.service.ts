@@ -97,12 +97,15 @@ export class CharactersService {
     const normalized = accountNumber.replace(/\s+/g, '');
     const row = await this.repository.findByAccountNumber(normalized);
     if (!row) throw AppError.notFound('Tài khoản (STK)');
-    const netWorth = await this.repository.getNetWorthMinor(row.id);
+    const [tierValue, thresholds] = await Promise.all([
+      this.repository.getAccountTierValueMinor(row.id),
+      this.repository.getAccountTierThresholds(),
+    ]);
     return {
       accountNumber: row.account_number,
       characterId: row.id,
       fullName: row.full_name,
-      accountTier: resolveAccountTier(netWorth),
+      accountTier: resolveAccountTier(tierValue, thresholds),
     };
   }
 
@@ -139,7 +142,9 @@ export class CharactersService {
         cashMinor: 500000,
       });
       created.birthplace_name = province.name;
-      return toDto(created, resolveAccountTier(Number(created.cash_minor)), Number(created.cash_minor));
+      const thresholds = await this.repository.getAccountTierThresholds(client);
+      // Nhân vật mới: xếp hạng theo giá trị cấu hình (tài sản ròng + BĐS + DN)
+      return toDto(created, resolveAccountTier(Number(created.cash_minor ?? 0), thresholds), Number(created.cash_minor ?? 0));
     });
   }
 

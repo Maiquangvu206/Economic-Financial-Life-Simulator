@@ -633,6 +633,7 @@ export async function getInterestRateConfig(req: Request, res: Response): Promis
     ),
   ]);
   const macro = (stateRes.rows[0]?.macro && typeof stateRes.rows[0].macro === 'object') ? (stateRes.rows[0].macro as any) : {};
+  const tierCfg = macro.accountTierConfig && typeof macro.accountTierConfig === 'object' ? (macro.accountTierConfig as any).thresholds : null;
   const dto: InterestRateConfigDto = {
     loanBaseRatePct: Number(macro.baseRatePct ?? 5),
     savingsTerms: termsRes.rows.map((r: any) => ({
@@ -641,6 +642,13 @@ export async function getInterestRateConfig(req: Request, res: Response): Promis
       earlyWithdrawPenaltyPct: Number(r.early_withdraw_penalty_pct ?? 0),
       label: String(r.label ?? ''),
     })),
+    accountTierThresholds: {
+      standard: 0,
+      silver: Number(tierCfg?.silver ?? 50_000_000),
+      gold: Number(tierCfg?.gold ?? 200_000_000),
+      platinum: Number(tierCfg?.platinum ?? 1_000_000_000),
+      diamond: Number(tierCfg?.diamond ?? 5_000_000_000),
+    },
   };
   res.json(dto);
 }
@@ -669,13 +677,34 @@ export async function updateInterestRateConfig(req: Request, res: Response): Pro
     if (!String(t.label ?? '').trim()) throw AppError.badRequest(`Thiếu nhãn cho kỳ hạn ${m} tháng.`);
   }
 
+  const tierInput = (body as any).accountTierThresholds ?? {};
+  const tierThresholds = {
+    standard: 0,
+    silver: Math.max(0, Math.trunc(Number(tierInput.silver ?? 50_000_000))),
+    gold: Math.max(0, Math.trunc(Number(tierInput.gold ?? 200_000_000))),
+    platinum: Math.max(0, Math.trunc(Number(tierInput.platinum ?? 1_000_000_000))),
+    diamond: Math.max(0, Math.trunc(Number(tierInput.diamond ?? 5_000_000_000))),
+  };
+  if ([tierThresholds.silver, tierThresholds.gold, tierThresholds.platinum, tierThresholds.diamond].some((x) => !Number.isFinite(x))) {
+    throw AppError.badRequest('Ngưỡng xếp hạng tài khoản không hợp lệ.');
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const existing = await client.query(`SELECT macro FROM game_state WHERE id = 1 FOR UPDATE`);
     const prevMacro = (existing.rows[0]?.macro && typeof existing.rows[0].macro === 'object') ? (existing.rows[0].macro as any) : {};
     const prevBaseRate = Number(prevMacro.baseRatePct ?? 5);
-    const nextMacro = { ...prevMacro, baseRatePct: loanBaseRatePct };
+    const nextMacro = {
+      ...prevMacro,
+      baseRatePct: loanBaseRatePct,
+      accountTierConfig: {
+        ...(prevMacro.accountTierConfig && typeof prevMacro.accountTierConfig === 'object' ? prevMacro.accountTierConfig : {}),
+        basis: 'net_worth_realestate_company',
+        thresholds: tierThresholds,
+        updatedAt: new Date().toISOString(),
+      },
+    };
 
     await client.query(
       `INSERT INTO game_state (id, current_day, current_year, season, macro)
@@ -712,6 +741,7 @@ export async function updateInterestRateConfig(req: Request, res: Response): Pro
       loanBaseRatePct: { before: prevBaseRate, after: loanBaseRatePct },
       savingsTermCount: terms.length,
       savingsTerms: terms.map((t) => ({ termMonths: t.termMonths, annualRatePct: t.annualRatePct })),
+      accountTierThresholds: tierThresholds,
     });
     try {
       await publishToAllUsers('notification', {

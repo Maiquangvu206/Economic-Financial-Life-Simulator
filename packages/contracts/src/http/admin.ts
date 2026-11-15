@@ -167,14 +167,25 @@ export const SavingsRateTermConfigSchema = z.object({
 });
 export type SavingsRateTermConfig = z.infer<typeof SavingsRateTermConfigSchema>;
 
+export const AccountTierThresholdsSchema = z.object({
+  standard: z.number().int().min(0).default(0),
+  silver: z.number().int().min(0).default(50_000_000),
+  gold: z.number().int().min(0).default(200_000_000),
+  platinum: z.number().int().min(0).default(1_000_000_000),
+  diamond: z.number().int().min(0).default(5_000_000_000),
+});
+export type AccountTierThresholds = z.infer<typeof AccountTierThresholdsSchema>;
+
 export const InterestRateConfigDtoSchema = z.object({
   loanBaseRatePct: z.number().min(0).max(100),
   savingsTerms: z.array(SavingsRateTermConfigSchema),
+  accountTierThresholds: AccountTierThresholdsSchema,
 });
 export type InterestRateConfigDto = z.infer<typeof InterestRateConfigDtoSchema>;
 
 export const UpdateInterestRateConfigRequestSchema = z.object({
   loanBaseRatePct: z.number().min(0).max(100),
   savingsTerms: z.array(SavingsRateTermConfigSchema).min(1),
+  accountTierThresholds: AccountTierThresholdsSchema.optional(),
 });
 export type UpdateInterestRateConfigRequest = z.infer<typeof UpdateInterestRateConfigRequestSchema>;

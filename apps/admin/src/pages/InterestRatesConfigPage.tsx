@@ -9,14 +9,27 @@ type SavingsTerm = {
   label: string;
 };
 
+type AccountTierThresholds = {
+  standard: number;
+  silver: number;
+  gold: number;
+  platinum: number;
+  diamond: number;
+};
+
 type InterestRateConfig = {
   loanBaseRatePct: number;
   savingsTerms: SavingsTerm[];
+  accountTierThresholds?: AccountTierThresholds;
 };
 
 function parseNum(v: string, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function fmtVnd(n: number) {
+  return `${Math.trunc(Number(n || 0)).toLocaleString('vi-VN')} ₫`;
 }
 
 export function InterestRatesConfigPage() {
@@ -28,6 +41,13 @@ export function InterestRatesConfigPage() {
 
   const [loanBaseRatePct, setLoanBaseRatePct] = useState<string>('5');
   const [terms, setTerms] = useState<SavingsTerm[]>([]);
+  const [tier, setTier] = useState<AccountTierThresholds>({
+    standard: 0,
+    silver: 50_000_000,
+    gold: 200_000_000,
+    platinum: 1_000_000_000,
+    diamond: 5_000_000_000,
+  });
   const [status, setStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
@@ -44,6 +64,14 @@ export function InterestRatesConfigPage() {
           label: String(t.label ?? ''),
         })),
     );
+    const th = data.accountTierThresholds;
+    setTier({
+      standard: 0,
+      silver: Number(th?.silver ?? 50_000_000),
+      gold: Number(th?.gold ?? 200_000_000),
+      platinum: Number(th?.platinum ?? 1_000_000_000),
+      diamond: Number(th?.diamond ?? 5_000_000_000),
+    });
   }, [data]);
 
   const savingsPreview = useMemo(() => {
@@ -66,11 +94,11 @@ export function InterestRatesConfigPage() {
       }),
     onSuccess: (res) => {
       qc.setQueryData(['admin', 'interest-rates'], res);
-      setStatus({ type: 'ok', text: 'Đã lưu cấu hình lãi suất vay & gửi tiết kiệm.' });
+      setStatus({ type: 'ok', text: 'Đã lưu cấu hình lãi suất, tiết kiệm và ngưỡng cấp bậc tài khoản.' });
       setTimeout(() => setStatus(null), 3500);
     },
     onError: (e: any) => {
-      const msg = e?.problem?.detail || e?.message || 'Không thể lưu cấu hình lãi suất.';
+      const msg = e?.problem?.detail || e?.message || 'Không thể lưu cấu hình.';
       setStatus({ type: 'err', text: msg });
     },
   });
@@ -114,7 +142,14 @@ export function InterestRatesConfigPage() {
       setStatus({ type: 'err', text: 'Cần ít nhất một kỳ hạn tiết kiệm.' });
       return;
     }
-    mutation.mutate({ loanBaseRatePct: loan, savingsTerms: normalized });
+    const tierPayload: AccountTierThresholds = {
+      standard: 0,
+      silver: Math.max(0, Math.trunc(parseNum(String(tier.silver), 0))),
+      gold: Math.max(0, Math.trunc(parseNum(String(tier.gold), 0))),
+      platinum: Math.max(0, Math.trunc(parseNum(String(tier.platinum), 0))),
+      diamond: Math.max(0, Math.trunc(parseNum(String(tier.diamond), 0))),
+    };
+    mutation.mutate({ loanBaseRatePct: loan, savingsTerms: normalized, accountTierThresholds: tierPayload });
   }
 
   return (
@@ -161,9 +196,45 @@ export function InterestRatesConfigPage() {
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">2. Cấp bậc tài khoản (ngưỡng đánh giá)</h2>
+            <p className="text-xs text-slate-600 mt-1">
+              Cấp bậc tài khoản được tính dựa trên: <b>tài sản ròng</b> (tiền mặt + tiết kiệm − nợ vay) + <b>giá trị bất động sản hiện có</b> (bao gồm đất/công trình tỉnh) + <b>giá trị doanh nghiệp hiện có</b> (định giá công ty sở hữu, không tính công ty phá sản). Cấu hình ngưỡng tối thiểu (VND) cho từng hạng.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {([
+              { key: 'standard', label: 'Thường', disabled: true },
+              { key: 'silver', label: 'Bạc', disabled: false },
+              { key: 'gold', label: 'Vàng', disabled: false },
+              { key: 'platinum', label: 'Bạch Kim', disabled: false },
+              { key: 'diamond', label: 'Kim Cương', disabled: false },
+            ] as const).map((item) => (
+              <label key={item.key} className="block rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                <span className="text-xs font-semibold text-slate-700">{item.label}</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={item.key === 'standard' ? 0 : tier[item.key]}
+                  disabled={item.disabled}
+                  onChange={(e) => {
+                    if (item.key === 'standard') return;
+                    setTier((prev) => ({ ...prev, [item.key]: Math.max(0, Math.trunc(parseNum(e.target.value, 0))) } as AccountTierThresholds));
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm disabled:bg-slate-100"
+                />
+                <div className="mt-1 text-[10px] text-slate-500">≥ {fmtVnd(item.key === 'standard' ? 0 : tier[item.key])}</div>
+              </label>
+            ))}
+          </div>
+          <div className="text-[11px] text-slate-500">Gợi ý: giữ ngưỡng tăng dần (Thường ≤ Bạc ≤ Vàng ≤ Bạch Kim ≤ Kim Cương) để phân hạng rõ ràng.</div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <h2 className="text-sm font-semibold text-emerald-700 uppercase tracking-wider">2. Lãi suất gửi tiết kiệm (theo kỳ hạn)</h2>
+              <h2 className="text-sm font-semibold text-emerald-700 uppercase tracking-wider">3. Lãi suất gửi tiết kiệm (theo kỳ hạn)</h2>
               <p className="text-xs text-slate-600 mt-1">
                 Cấu hình các kỳ hạn gửi tiết kiệm, lãi suất %/năm và mức phạt rút trước hạn (% trên lãi/giá trị theo quy tắc hệ thống). <b>Kỳ hạn 0 tháng</b> = không kỳ hạn (linh hoạt).
               </p>
@@ -272,6 +343,14 @@ export function InterestRatesConfigPage() {
               if (data) {
                 setLoanBaseRatePct(String(data.loanBaseRatePct ?? 5));
                 setTerms((data.savingsTerms ?? []).slice().sort((a,b)=>a.termMonths-b.termMonths));
+                const th = data.accountTierThresholds;
+                setTier({
+                  standard: 0,
+                  silver: Number(th?.silver ?? 50_000_000),
+                  gold: Number(th?.gold ?? 200_000_000),
+                  platinum: Number(th?.platinum ?? 1_000_000_000),
+                  diamond: Number(th?.diamond ?? 5_000_000_000),
+                });
               }
               setStatus(null);
             }}
@@ -284,7 +363,7 @@ export function InterestRatesConfigPage() {
             disabled={mutation.isPending}
             className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-slate-900 hover:bg-amber-400 disabled:opacity-60"
           >
-            {mutation.isPending ? 'Đang lưu...' : 'Lưu cấu hình lãi suất'}
+            {mutation.isPending ? 'Đang lưu...' : 'Lưu cấu hình'}
           </button>
         </div>
       </form>

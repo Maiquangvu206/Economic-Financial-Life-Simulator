@@ -822,8 +822,11 @@ export class BankingService {
     if (target.id === character.id) {
       throw AppError.badRequest('Không thể tra cứu/chuyển khoản cho chính tài khoản của bạn.');
     }
-    const netWorth = await this.charactersRepository.getNetWorthMinor(target.id);
-    const tier = resolveAccountTier(netWorth);
+    const [tierValue, thresholds] = await Promise.all([
+      this.charactersRepository.getAccountTierValueMinor(target.id),
+      this.charactersRepository.getAccountTierThresholds(),
+    ]);
+    const tier = resolveAccountTier(tierValue, thresholds);
     return {
       accountNumber: target.account_number,
       cccdMasked: target.cccd ? maskCccd(target.cccd) : undefined,

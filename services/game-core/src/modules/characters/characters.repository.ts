@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { Db } from '../../shared/db/tx.js';
 import type { MaritalStatus } from '@efls/contracts';
 import { pool } from '../../shared/db/pool.js';
+import { DEFAULT_ACCOUNT_TIER_THRESHOLDS, normalizeAccountTierThresholds, type AccountTierThresholds } from '../../shared/banking/accountTier.js';
 
 export interface CharacterRow {
   id: string;
@@ -119,6 +120,35 @@ export class CharactersRepository {
       [characterId],
     );
     return Number(result.rows[0]?.net_worth ?? 0);
+  }
+
+  async getAccountTierValueMinor(characterId: string, db: Db = this.db): Promise<number> {
+    // Giá trị xếp hạng cấp bậc tài khoản: tài sản ròng + bất động sản hiện có + doanh nghiệp hiện có
+    const result = await db.query<{ tier_value: string }>(
+      `SELECT (
+         COALESCE(c.cash_minor, 0)
+         + COALESCE((SELECT SUM(sd.balance_minor) FROM savings_deposits sd WHERE sd.character_id = c.id AND sd.status = 'active'), 0)
+         - COALESCE((SELECT SUM(l.outstanding_minor) FROM loans l WHERE l.borrower_id = c.id AND l.status IN ('active','grace','defaulted')), 0)
+         + COALESCE((SELECT SUM(p.current_value_minor) FROM properties p WHERE p.owner_character_id = c.id AND p.status IN ('owned','listed')), 0)
+         + COALESCE((SELECT SUM(pl.current_value_minor) FROM province_land_properties pl WHERE pl.owner_character_id = c.id AND pl.status = 'owned'), 0)
+         + COALESCE((SELECT SUM(co.valuation_minor) FROM companies co WHERE co.owner_character_id = c.id AND co.status <> 'bankrupt'), 0)
+       )::bigint AS tier_value
+       FROM characters c
+       WHERE c.id = $1`,
+      [characterId],
+    );
+    return Number(result.rows[0]?.tier_value ?? 0);
+  }
+
+  async getAccountTierThresholds(db: Db = this.db): Promise<AccountTierThresholds> {
+    try {
+      const r = await db.query<{ macro: any }>(`SELECT macro FROM game_state WHERE id = 1`);
+      const macro = r.rows[0]?.macro && typeof r.rows[0].macro === 'object' ? r.rows[0].macro : {};
+      const thresholds = (macro as any)?.accountTierConfig?.thresholds;
+      return normalizeAccountTierThresholds(thresholds ?? DEFAULT_ACCOUNT_TIER_THRESHOLDS);
+    } catch {
+      return { ...DEFAULT_ACCOUNT_TIER_THRESHOLDS };
+    }
   }
 
   async listProvinces(db: Db = this.db): Promise<ProvinceRow[]> {
