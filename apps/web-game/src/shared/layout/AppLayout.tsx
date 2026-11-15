@@ -31,13 +31,20 @@ const NAV_ITEMS = [
   { to: '/real-estate', label: 'Bất động sản', symbol: '⌂' },
   { to: '/business', label: 'Doanh nghiệp', symbol: '◇' },
   { to: '/stocks', label: 'Chứng khoán', symbol: '↗' },
-  { to: '/education', label: 'Giáo dục', symbol: '🎓' },
   { to: '/law', label: 'Pháp lý', symbol: '§' },
   { to: '/politics', label: 'Chính trị', symbol: '⚖' },
   { to: '/underworld', label: 'Chợ đen', symbol: '☠' },
   { to: '/gift-codes', label: 'Mã quà tặng', symbol: '🎁' },
   { to: '/recap', label: 'Offline Recap', symbol: '◷' },
 ];
+
+function getActiveDays(createdAt?: string | null) {
+  if (!createdAt) return null;
+  const t = new Date(createdAt).getTime();
+  if (Number.isNaN(t)) return null;
+  const diff = Date.now() - t;
+  return Math.max(1, Math.floor(diff / 86_400_000) + 1);
+}
 
 const SEASON_LABELS: Record<string, { label: string; icon: string; badgeCls: string }> = {
   spring: { label: 'Mùa Xuân', icon: '🌸', badgeCls: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
@@ -72,7 +79,7 @@ export function AppLayout() {
   const clearSession = useSessionStore((state) => state.clearSession);
   const {
     netWorth, cash, heatLevel, energy, year, month, day, hour, minute,
-    isPaused, season, period, activeHoliday, education,
+    isPaused, season, period, activeHoliday,
     lastHolidayLetter, claimHolidayGift, dismissHolidayLetter, tickTime, setSeason, setGameState,
   } = useGameStore();
   const queryClient = useQueryClient();
@@ -348,8 +355,10 @@ export function AppLayout() {
           </div>
           <p className="text-sm font-semibold text-slate-900">Mô phỏng Kinh tế & Cuộc sống</p>
           <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
-            <span>Học vấn:</span>
-            <span className="font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">{education.nameVi}</span>
+            <span>Số ngày hoạt động:</span>
+            <span className="font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+              {getActiveDays(me?.createdAt) ?? '—'} ngày
+            </span>
           </div>
         </div>
 
@@ -379,12 +388,8 @@ export function AppLayout() {
             <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">{ROLE_LABEL[user?.role ?? 'player'] ?? 'Công dân'}</span>
           </div>
           <div className="flex items-center justify-between text-[11px]">
-            <span>Trường tốt nghiệp:</span>
-            <span className="text-slate-600">{education.schoolName}</span>
-          </div>
-          <div className="flex items-center justify-between text-[11px]">
-            <span>Chứng chỉ:</span>
-            <span className="text-amber-700">{education.certificates[0] || 'Chưa có'}</span>
+            <span>Số ngày hoạt động:</span>
+            <span className="font-medium text-slate-700">{getActiveDays(me?.createdAt) ?? '—'} ngày</span>
           </div>
           <button type="button" onClick={handleLogout} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600">
             Đăng xuất
