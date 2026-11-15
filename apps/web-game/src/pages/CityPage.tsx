@@ -557,7 +557,7 @@ export function CityPage() {
           </div>
           <div className="h-full">
             <Panel title="Chọn tỉnh / thành phố" borderColor="emerald">
-              <div className="max-h-full space-y-0.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
+              <div className="max-h-[420px] space-y-0.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
                 {(provinces ?? []).map((p, index) => {
                   const isHome = character?.birthplace === p.code;
                   const anchorX = (index % 16) * 2;
