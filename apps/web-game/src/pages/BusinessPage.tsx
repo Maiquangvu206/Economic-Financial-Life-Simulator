@@ -645,12 +645,10 @@ export function BusinessPage() {
               <div>
                 <label className="text-[11px] uppercase tracking-wider text-slate-600">Địa điểm / cơ sở công ty (bắt buộc)</label>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Chọn <b>đất nền đang sở hữu</b> (liên kết bản đồ/Thành phố, cả Hà Nội và các tỉnh) để xây dựng công ty, hoặc chọn <b>bất động sản đã xây dựng thuộc công ty khác</b> (liên kết Bất động sản) để đặt trụ sở.
+                  Chọn <b>đất nền đang sở hữu</b> (bao gồm đất trống hoặc trụ sở đã hợp thửa ≥ 2 ô liền nhau và xây dựng “Công ty”) hoặc chọn <b>bất động sản đã xây dựng thuộc công ty khác</b> để đặt trụ sở.
                 </p>
               </div>
               <div className="flex flex-wrap justify-end gap-1.5 shrink-0">
-                <Link to="/" className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Mở Thành phố/Bản đồ</Link>
-                <Link to="/real-estate" className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Mở Bất động sản</Link>
                 <button type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ['corporations', 'premises-options'] })} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Làm mới</button>
               </div>
             </div>
@@ -707,7 +705,7 @@ export function BusinessPage() {
 
             {!premisesLoading && (premisesOptions?.land?.length ?? 0) === 0 && (premisesOptions?.companyProperties?.length ?? 0) === 0 && (
               <p className="text-[11px] text-amber-700">
-                Chưa có địa điểm khả dụng. Mua/đấu giá và sở hữu <b>đất nền trống</b> tại <Link to="/" className="underline font-medium">Thành phố/Bản đồ</Link> hoặc sử dụng <b>bất động sản đã xây dựng thuộc công ty khác</b> trong <Link to="/real-estate" className="underline font-medium">Bất động sản</Link>.
+                Chưa có địa điểm khả dụng. Hãy sở hữu đất nền/trụ sở công ty (đã hợp thửa và xây dựng) hoặc sử dụng bất động sản đã xây dựng thuộc công ty khác.
               </p>
             )}
           </div>
