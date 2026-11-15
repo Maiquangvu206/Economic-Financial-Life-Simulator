@@ -2,11 +2,14 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import jwt, { type JwtPayload, type SignOptions } from 'jsonwebtoken';
 import type {
+  AccountProfileResponse,
+  ChangePasswordRequest,
   LoginRequest,
   RegisterRequest,
   SessionUser,
   SsoHandoffResponse,
   TokenPair,
+  UpdateAccountProfileRequest,
 } from '@efls/contracts';
 import { env } from '../../config/env.js';
 import { AppError } from '../../shared/http/errors.js';
@@ -162,6 +165,54 @@ export class AuthService {
     }
     ensureAccountActive(user);
     return issueTokens(user);
+  }
+
+  async changePassword(userId: string, input: ChangePasswordRequest): Promise<{ ok: true; message: string }> {
+    const user = await this.repository.findById(userId);
+    if (!user) throw AppError.unauthorized('User no longer exists');
+    ensureAccountActive(user);
+
+    const matches = await bcrypt.compare(input.currentPassword, user.password_hash);
+    if (!matches) {
+      throw AppError.badRequest('Mật khẩu hiện tại không chính xác.');
+    }
+    if (input.currentPassword === input.newPassword) {
+      throw AppError.badRequest('Mật khẩu mới phải khác mật khẩu hiện tại.');
+    }
+
+    const passwordHash = await bcrypt.hash(input.newPassword, 12);
+    await this.repository.updatePassword(userId, passwordHash);
+    return { ok: true, message: 'Đã đổi mật khẩu thành công.' };
+  }
+
+  async updateProfile(userId: string, input: UpdateAccountProfileRequest): Promise<AccountProfileResponse> {
+    const current = await this.repository.findById(userId);
+    if (!current) throw AppError.unauthorized('User no longer exists');
+    ensureAccountActive(current);
+
+    try {
+      const updated = await this.repository.updateAccountProfile({
+        userId,
+        email: input.email?.trim(),
+        username: input.username?.trim(),
+        fullName: input.fullName?.trim(),
+      });
+      return {
+        user: toSessionUser(updated),
+        message: 'Đã cập nhật thông tin tài khoản.',
+      };
+    } catch (e: any) {
+      if (e?.code === 'conflict_email' || e?.message === 'email_taken') {
+        throw AppError.conflict('email_taken', 'Email đã được sử dụng.');
+      }
+      if (e?.code === 'conflict_username' || e?.message === 'username_taken') {
+        throw AppError.conflict('username_taken', 'Tên đăng nhập đã được sử dụng.');
+      }
+      if (e?.code === 'not_found') {
+        throw AppError.notFound('Tài khoản');
+      }
+      throw e;
+    }
   }
 
   private verifyRefreshToken(refreshToken: string): RefreshPayload {

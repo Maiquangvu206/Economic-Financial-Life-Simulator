@@ -58,3 +58,26 @@ export const SsoExchangeRequestSchema = z.object({
   code: z.string().min(1),
 });
 export type SsoExchangeRequest = z.infer<typeof SsoExchangeRequestSchema>;
+
+export const ChangePasswordRequestSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(8).max(128),
+});
+export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequestSchema>;
+
+export const UpdateAccountProfileRequestSchema = z
+  .object({
+    username: z.string().min(3).max(32).optional(),
+    email: z.string().email().optional(),
+    fullName: z.string().min(2).max(80).optional(),
+  })
+  .refine((v) => v.username != null || v.email != null || v.fullName != null, {
+    message: 'Cần cung cấp ít nhất một trường để cập nhật.',
+  });
+export type UpdateAccountProfileRequest = z.infer<typeof UpdateAccountProfileRequestSchema>;
+
+export const AccountProfileResponseSchema = z.object({
+  user: SessionUserSchema,
+  message: z.string().optional(),
+});
+export type AccountProfileResponse = z.infer<typeof AccountProfileResponseSchema>;

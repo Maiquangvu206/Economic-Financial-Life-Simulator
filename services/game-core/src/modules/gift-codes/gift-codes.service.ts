@@ -192,9 +192,11 @@ export class GiftCodesService {
 
       const amountMinor = Number(g.reward_cash_minor ?? 0);
       if (amountMinor > 0) {
+        // Đảm bảo tài khoản sổ cái tiền mặt tồn tại với số dư hiện tại, rồi cộng thưởng nhất quán
         await (client as any).query(
-          `INSERT INTO ledger_accounts (owner_type, owner_id, kind, balance_minor)
-           VALUES ('character', $1, 'cash', 0)
+          `INSERT INTO ledger_accounts (id, owner_type, owner_id, kind, balance_minor, is_system)
+           SELECT gen_random_uuid(), 'character', c.id, 'cash', c.cash_minor, false
+           FROM characters c WHERE c.id = $1
            ON CONFLICT (owner_type, owner_id, kind, currency) DO NOTHING`,
           [character.id],
         );

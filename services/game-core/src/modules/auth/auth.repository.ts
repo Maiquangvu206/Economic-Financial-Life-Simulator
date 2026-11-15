@@ -79,6 +79,88 @@ export class AuthRepository {
     return result.rows[0]?.exists ?? false;
   }
 
+  async updatePassword(userId: string, passwordHash: string): Promise<void> {
+    await pool.query(`UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, [userId, passwordHash]);
+  }
+
+  async updateAccountProfile(input: {
+    userId: string;
+    email?: string;
+    username?: string;
+    fullName?: string;
+  }): Promise<UserRow> {
+    const client: PoolClient = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (input.email != null) {
+        const taken = await client.query<{ id: string }>(
+          `SELECT id FROM users WHERE lower(email) = lower($1) AND id <> $2 LIMIT 1`,
+          [input.email, input.userId],
+        );
+        if (taken.rows[0]) {
+          const err = new Error('email_taken');
+          (err as any).code = 'conflict_email';
+          throw err;
+        }
+      }
+      if (input.username != null) {
+        const taken = await client.query<{ id: string }>(
+          `SELECT id FROM users WHERE lower(username) = lower($1) AND id <> $2 LIMIT 1`,
+          [input.username, input.userId],
+        );
+        if (taken.rows[0]) {
+          const err = new Error('username_taken');
+          (err as any).code = 'conflict_username';
+          throw err;
+        }
+      }
+
+      const sets: string[] = [];
+      const params: any[] = [input.userId];
+      if (input.email != null) {
+        params.push(input.email.trim().toLowerCase());
+        sets.push(`email = $${params.length}`);
+      }
+      if (input.username != null) {
+        params.push(input.username.trim());
+        sets.push(`username = $${params.length}`);
+      }
+      sets.push(`updated_at = now()`);
+
+      const userRes = await client.query<UserRow>(
+        `UPDATE users SET ${sets.join(', ')}
+         WHERE id = $1
+         RETURNING id, email, username, password_hash, role, created_at, status, ban_reason, banned_until`,
+        params,
+      );
+      const user = userRes.rows[0];
+      if (!user) {
+        const err = new Error('not_found');
+        (err as any).code = 'not_found';
+        throw err;
+      }
+
+      if (input.fullName != null) {
+        const name = input.fullName.trim();
+        if (name) {
+          await client.query(
+            `UPDATE characters SET full_name = $2, updated_at = now() WHERE user_id = $1`,
+            [input.userId, name],
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      return user;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   async createWithCharacter(input: NewUserInput): Promise<{ user: UserRow; characterId: string }> {
     const client: PoolClient = await pool.connect();
     const userId = crypto.randomUUID();

@@ -293,10 +293,20 @@ export function PlayersPage() {
                     <td className="py-2.5 px-3 text-right font-mono">{p.heatLevel}</td>
                     <td className="py-2.5 px-3">
                       <div className="flex flex-wrap gap-1">
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'grant_aid')} className="rounded-lg bg-emerald-50 border border-emerald-200 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">Cứu trợ</button>
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'fine')} className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50">Phạt</button>
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'ban')} className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50">Hạn chế</button>
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'unban')} className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">Gỡ</button>
+                        <button disabled={busy!=null} onClick={() => doAction(p.id,'grant_aid', p.fullName)} className="rounded-lg bg-emerald-50 border border-emerald-200 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">Cứu trợ</button>
+                        <button disabled={busy!=null} onClick={() => doAction(p.id,'fine', p.fullName)} className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50">Phạt</button>
+                        <button disabled={busy!=null} onClick={() => doAction(p.id,'ban', p.fullName)} className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50">Hạn chế</button>
+                        <button disabled={busy!=null} onClick={() => doAction(p.id,'unban', p.fullName)} className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">Gỡ</button>
+                        {isSuperAdmin && (
+                          <button
+                            disabled={busy!=null}
+                            onClick={() => doAction(p.id,'force_delete', `${p.fullName}${p.email ? ` (${p.email})` : ''}`)}
+                            className="rounded-lg bg-red-700 border border-red-800 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-600 disabled:opacity-50"
+                            title="Chỉ super admin: xóa cưỡng chế khi phát hiện bất thường (không thể hoàn tác)"
+                          >
+                            Xóa cưỡng chế
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

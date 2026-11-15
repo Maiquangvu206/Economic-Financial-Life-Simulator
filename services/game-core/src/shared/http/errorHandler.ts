@@ -38,11 +38,29 @@ export function errorHandler(
     return;
   }
 
+  // Lỗi parse/body từ express/body-parser, JSON sai, payload quá lớn, v.v.
+  const httpErr = error as { status?: number; statusCode?: number; type?: string; expose?: boolean; message?: string };
+  const status = Number(httpErr?.statusCode ?? httpErr?.status ?? 0);
+  if (status >= 400 && status < 500) {
+    const isJsonParse = httpErr?.type === 'entity.parse.failed' || /JSON/i.test(httpErr?.message ?? '');
+    const detail = httpErr?.expose ? httpErr.message : isJsonParse ? 'Dữ liệu gửi lên không hợp lệ (JSON).' : 'Yêu cầu không hợp lệ.';
+    res.status(status).json({
+      type: `https://efls.game/errors/http_${status}`,
+      title: status === 400 ? 'Bad request' : status === 413 ? 'Payload too large' : 'Request error',
+      status,
+      detail,
+      code: isJsonParse ? 'invalid_json' : 'bad_request',
+      requestId,
+    });
+    return;
+  }
+
   logger.error({ err: error, requestId }, 'Unhandled error');
   res.status(500).json({
     type: 'https://efls.game/errors/internal',
-    title: 'Internal server error',
+    title: 'Lỗi hệ thống',
     status: 500,
+    detail: 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.',
     code: 'internal_error',
     requestId,
   });
