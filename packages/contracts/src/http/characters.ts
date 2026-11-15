@@ -50,9 +50,21 @@ export const EligibleSuccessorDtoSchema = z.object({
 });
 export type EligibleSuccessorDto = z.infer<typeof EligibleSuccessorDtoSchema>;
 
-export const SuccessionRequestSchema = z.object({
-  successorId: IdSchema.nullable().optional(),
-});
+export const SuccessionRequestSchema = z
+  .object({
+    successorId: IdSchema.nullable().optional(),
+    /** Họ tên nhân vật mới khi bắt đầu cuộc đời mới (không chọn hậu duệ). Tên nhân vật được cố định sau khi tạo/sinh. */
+    newCharacterFullName: z.string().trim().min(2).max(80).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if ((v.successorId == null || v.successorId === '') && !v.newCharacterFullName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Vui lòng nhập họ tên cho nhân vật mới khi bắt đầu cuộc đời mới.',
+        path: ['newCharacterFullName'],
+      });
+    }
+  });
 export type SuccessionRequest = z.infer<typeof SuccessionRequestSchema>;
 
 export const AccountLookupDtoSchema = z.object({

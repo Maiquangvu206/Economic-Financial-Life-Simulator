@@ -74,10 +74,9 @@ export const UpdateAccountProfileRequestSchema = z
   .object({
     username: z.string().min(3).max(32).optional(),
     email: z.string().email().optional(),
-    fullName: z.string().min(2).max(80).optional(),
   })
-  .refine((v) => v.username != null || v.email != null || v.fullName != null, {
-    message: 'Cần cung cấp ít nhất một trường để cập nhật.',
+  .refine((v) => v.username != null || v.email != null, {
+    message: 'Cần cung cấp ít nhất tên đăng nhập hoặc email để cập nhật.',
   });
 export type UpdateAccountProfileRequest = z.infer<typeof UpdateAccountProfileRequestSchema>;
 

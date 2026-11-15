@@ -195,11 +195,10 @@ export class AuthService {
         userId,
         email: input.email?.trim(),
         username: input.username?.trim(),
-        fullName: input.fullName?.trim(),
       });
       return {
         user: toSessionUser(updated),
-        message: 'Đã cập nhật thông tin tài khoản.',
+        message: 'Đã cập nhật thông tin tài khoản (tên nhân vật là định danh cố định, không thể thay đổi).',
       };
     } catch (e: any) {
       if (e?.code === 'conflict_email' || e?.message === 'email_taken') {

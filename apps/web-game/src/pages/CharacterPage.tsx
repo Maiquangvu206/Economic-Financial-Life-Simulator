@@ -42,7 +42,6 @@ export function CharacterPage() {
   const [profileForm, setProfileForm] = useState({
     username: '',
     email: '',
-    fullName: '',
   });
   const [pwForm, setPwForm] = useState({
     currentPassword: '',
@@ -54,9 +53,8 @@ export function CharacterPage() {
     setProfileForm({
       username: sessionUser?.username ?? '',
       email: sessionUser?.email ?? '',
-      fullName: character?.fullName ?? '',
     });
-  }, [sessionUser?.username, sessionUser?.email, character?.fullName]);
+  }, [sessionUser?.username, sessionUser?.email]);
 
   async function copyCccd() {
     if (!character?.cccd) return;
@@ -77,17 +75,15 @@ export function CharacterPage() {
 
   const updateProfile = useMutation({
     mutationFn: async () => {
-      const body: { username?: string; email?: string; fullName?: string } = {};
+      const body: { username?: string; email?: string } = {};
       const username = profileForm.username.trim();
       const email = profileForm.email.trim().toLowerCase();
-      const fullName = profileForm.fullName.trim();
 
       if (username && username !== sessionUser?.username) body.username = username;
       if (email && email !== sessionUser?.email) body.email = email;
-      if (fullName && fullName !== character?.fullName) body.fullName = fullName;
 
-      if (!body.username && !body.email && !body.fullName) {
-        throw new Error('Bạn chưa thay đổi thông tin nào.');
+      if (!body.username && !body.email) {
+        throw new Error('Bạn chưa thay đổi thông tin tài khoản nào.');
       }
       return apiRequest<AccountProfileResponse>('/api/v1/auth/profile', {
         method: 'PATCH',
@@ -138,9 +134,8 @@ export function CharacterPage() {
   const profileChanged = useMemo(() => {
     const u = profileForm.username.trim();
     const e = profileForm.email.trim().toLowerCase();
-    const f = profileForm.fullName.trim();
-    return (u && u !== (sessionUser?.username ?? '')) || (e && e !== (sessionUser?.email ?? '')) || (f && f !== (character?.fullName ?? ''));
-  }, [profileForm, sessionUser?.username, sessionUser?.email, character?.fullName]);
+    return (u && u !== (sessionUser?.username ?? '')) || (e && e !== (sessionUser?.email ?? ''));
+  }, [profileForm, sessionUser?.username, sessionUser?.email]);
 
   if (isLoading) {
     return (
@@ -179,7 +174,7 @@ export function CharacterPage() {
     <div className="space-y-5">
       <PageHeader
         title={`Tổng quan: ${character.fullName ?? '—'}`}
-        description="Thẻ căn cước công dân, thông tin tài khoản và bảo mật (đổi thông tin, đổi mật khẩu)."
+        description="Thẻ căn cước công dân, thông tin tài khoản và bảo mật. Tên nhân vật là định danh cố định, không thể thay đổi."
       />
 
       {/* Thẻ CCCD */}
@@ -251,11 +246,21 @@ export function CharacterPage() {
       {/* Cài đặt tài khoản */}
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-3xl border border-slate-200 bg-white/80 p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">Đổi thông tin tài khoản</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Thông tin tài khoản</h2>
           <p className="mt-1 text-[11px] text-slate-600">
-            Cập nhật tên đăng nhập, email hoặc tên hiển thị nhân vật. CCCD và nơi sinh là định danh cố định.
+            Cập nhật tên đăng nhập hoặc email. <b>Họ tên nhân vật, CCCD và nơi sinh là định danh cố định</b> và không thể thay đổi; tên nhân vật chỉ được
+            xác định khi nhân vật được sinh ra/tạo mới hoặc khi bạn chọn/kế thừa sang nhân vật tiếp theo (cuộc đời mới).
           </p>
           <form onSubmit={onSubmitProfile} className="mt-4 space-y-3 text-sm">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-700">Họ và tên nhân vật (cố định)</label>
+              <input
+                value={character.fullName ?? ''}
+                disabled
+                readOnly
+                className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700"
+              />
+            </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-700">Tên đăng nhập (username)</label>
               <input
@@ -275,17 +280,6 @@ export function CharacterPage() {
                 onChange={(e) => setProfileForm((s) => ({ ...s, email: e.target.value }))}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 autoComplete="email"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-700">Họ và tên hiển thị (nhân vật)</label>
-              <input
-                value={profileForm.fullName}
-                onChange={(e) => setProfileForm((s) => ({ ...s, fullName: e.target.value }))}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                minLength={2}
-                maxLength={80}
-                autoComplete="name"
               />
             </div>
             <div className="flex items-center justify-between gap-3 pt-1">

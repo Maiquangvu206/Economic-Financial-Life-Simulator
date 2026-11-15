@@ -67,7 +67,11 @@ export class SuccessionService {
   }
 
   /** Thực thi kế thừa & cuộc đời mới (Clean-Slate). */
-  async executeSuccession(userId: string, successorId?: string | null) {
+  async executeSuccession(
+    userId: string,
+    successorId?: string | null,
+    newCharacterFullName?: string | null,
+  ) {
     return withTransaction(async (client) => {
       const oldChar = await requireCharacterByUserId(client, userId);
       // chỉ cho phép khi đã chết
@@ -122,18 +126,23 @@ export class SuccessionService {
       // Bước 2: chuyển quyền điều khiển hoặc tạo nhân vật mới 18 tuổi
       let activeCharacterId: string;
       if (successor) {
+        // Kế thừa sang hậu duệ: tên nhân vật giữ nguyên (tên lấy khi sinh ra/nhận nuôi), không thể thay đổi
         await client.query(`UPDATE characters SET user_id = $2, updated_at = now() WHERE id = $1`, [successor.id, userId]);
         activeCharacterId = successor.id;
       } else {
-        // tạo nhân vật mới (cuộc đời mới hoàn toàn)
+        // Tạo nhân vật mới (cuộc đời mới hoàn toàn): tên được đặt tại thời điểm sinh/tạo và cố định
+        const fullName = (newCharacterFullName ?? '').trim();
+        if (fullName.length < 2) {
+          throw AppError.badRequest('Vui lòng nhập họ tên hợp lệ cho nhân vật mới (tối thiểu 2 ký tự).');
+        }
         const birthplace = '001';
         const cccd = await this.uniqueCccd(client, birthplace, 18);
         const accountNumber = await this.uniqueAccountNumber(client);
         const created = await (client as any).query(
           `INSERT INTO characters (id,user_id,full_name,account_number,cccd,birthplace,age,health_energy,cash_minor,credit_score,heat_level,is_alive,marital_status,location_x,location_y)
-           VALUES (gen_random_uuid(), $1, 'Nhân vật mới', $2, $3, $4, 18, 100, 500000, 650, 0, true, 'single', 0, 2)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 18, 100, 500000, 650, 0, true, 'single', 0, 2)
            RETURNING id`,
-          [userId, accountNumber, cccd, birthplace],
+          [userId, fullName, accountNumber, cccd, birthplace],
         );
         activeCharacterId = created.rows[0]!.id;
       }

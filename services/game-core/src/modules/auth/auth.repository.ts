@@ -83,11 +83,14 @@ export class AuthRepository {
     await pool.query(`UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, [userId, passwordHash]);
   }
 
+  /**
+   * Cập nhật thông tin tài khoản (username/email). Tên nhân vật (full_name) là định danh cố định,
+   * chỉ được xác định khi nhân vật được sinh ra/tạo mới hoặc khi kế thừa/chọn nhân vật tiếp theo.
+   */
   async updateAccountProfile(input: {
     userId: string;
     email?: string;
     username?: string;
-    fullName?: string;
   }): Promise<UserRow> {
     const client: PoolClient = await pool.connect();
     try {
@@ -139,16 +142,6 @@ export class AuthRepository {
         const err = new Error('not_found');
         (err as any).code = 'not_found';
         throw err;
-      }
-
-      if (input.fullName != null) {
-        const name = input.fullName.trim();
-        if (name) {
-          await client.query(
-            `UPDATE characters SET full_name = $2, updated_at = now() WHERE user_id = $1`,
-            [input.userId, name],
-          );
-        }
       }
 
       await client.query('COMMIT');

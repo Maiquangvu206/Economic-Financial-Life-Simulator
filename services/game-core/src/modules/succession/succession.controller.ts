@@ -12,8 +12,15 @@ export class SuccessionController {
 
   execute = async (req: Request, res: Response) => {
     const userId = requireActorId(req);
-    const { successorId } = (req.body ?? {}) as { successorId?: string | null };
-    const result = await this.service.executeSuccession(userId, successorId ?? null);
+    const { successorId, newCharacterFullName } = (req.body ?? {}) as {
+      successorId?: string | null;
+      newCharacterFullName?: string | null;
+    };
+    const result = await this.service.executeSuccession(
+      userId,
+      successorId ?? null,
+      newCharacterFullName ?? null,
+    );
     res.json(result);
   };
 
