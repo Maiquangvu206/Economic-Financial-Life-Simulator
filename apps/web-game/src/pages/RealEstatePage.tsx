@@ -6,6 +6,7 @@ import type {
   AuctionOverviewDto,
   PropertyDto,
   PropertySaleOfferDto,
+  ProvinceDto,
   RealEstateOverviewDto,
 } from '@efls/contracts';
 import { Panel } from '../shared/ui/Panel';
@@ -17,6 +18,12 @@ import { GameInput } from '../shared/ui/GameInput';
 import { formatMoney, formatCompact } from '../shared/lib/format';
 import { apiRequest, ApiError } from '../shared/api/httpClient';
 import { useToast } from '../shared/ui/Toast';
+
+type UnifiedProperty = PropertyDto & {
+  __source: 'core' | 'province-land';
+  __provinceCode?: string;
+  __provinceName?: string;
+};
 
 function statusBadge(status: PropertyDto['status']) {
   switch (status) {
@@ -31,32 +38,46 @@ function statusBadge(status: PropertyDto['status']) {
   }
 }
 
-function propertyTypeLabel(type: PropertyDto['propertyType']) {
-  const map: Record<PropertyDto['propertyType'], string> = {
+function propertyTypeLabel(t: PropertyDto['propertyType']): string {
+  const map: Record<string, string> = {
     apartment: 'Căn hộ',
-    house: 'Nhà ở',
+    house: 'Nhà phố',
     office: 'Văn phòng',
-    warehouse: 'Kho hàng',
+    warehouse: 'Kho bãi',
     port_berth: 'Bến cảng',
     land: 'Đất nền',
     shop: 'Cửa hàng',
-    garage: 'Gara',
+    garage: 'Nhà để xe',
     mini_apartment: 'Chung cư mini',
-    boutique_hotel: 'Khách sạn boutique',
+    boutique_hotel: 'Khách sạn mini',
     shopping_center: 'Trung tâm thương mại',
-    office_tower: 'Tòa tháp văn phòng',
+    office_tower: 'Tòa nhà văn phòng',
   };
-  return map[type];
+  return map[t] ?? t;
 }
 
-function errorMessage(err: unknown, fallback: string) {
-  if (err instanceof ApiError) return err.problem?.detail || err.message || fallback;
-  if (err instanceof Error) return err.message || fallback;
-  return fallback;
+function isBuilt(p: PropertyDto): boolean {
+  return !!(p.constructionOption || p.mergedIntoPropertyId || p.constructionBuiltAt);
 }
 
 export function RealEstatePage() {
+  const [buyTarget, setBuyTarget] = useState<UnifiedProperty | null>(null);
+  const [listTarget, setListTarget] = useState<UnifiedProperty | null>(null);
+  const [listPrice, setListPrice] = useState('');
+  const [saleNotes, setSaleNotes] = useState('');
+  const [rentTermsTarget, setRentTermsTarget] = useState<UnifiedProperty | null>(null);
+  const [rentPrice, setRentPrice] = useState('');
+  const [rentDeposit, setRentDeposit] = useState('');
+  const [rentNotes, setRentNotes] = useState('');
+  const [rentActive, setRentActive] = useState(false);
+  const [offerTarget, setOfferTarget] = useState<UnifiedProperty | null>(null);
+  const [offerAmount, setOfferAmount] = useState('');
+  const [offerMsg, setOfferMsg] = useState('');
+  const [bidTarget, setBidTarget] = useState<AuctionDto | null>(null);
+  const [bidAmount, setBidAmount] = useState('');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const { toast } = useToast();
+
   const {
     data: overview,
     isLoading,
@@ -71,305 +92,438 @@ export function RealEstatePage() {
     isLoading: auctionsLoading,
     refetch: refetchAuctions,
   } = useQuery<AuctionOverviewDto>({
-    queryKey: ['auctions'],
+    queryKey: ['auctions', 'overview'],
     queryFn: () => apiRequest<AuctionOverviewDto>('/api/v1/auctions'),
+  });
+
+  const { data: provinces = [] } = useQuery<ProvinceDto[]>({
+    queryKey: ['characters', 'provinces'],
+    queryFn: () => apiRequest<ProvinceDto[]>('/api/v1/characters/provinces'),
+  });
+
+  const provinceNameByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of provinces) m.set(p.code, p.name);
+    return m;
+  }, [provinces]);
+
+  const {
+    data: provinceLandAll = [],
+    isLoading: provinceLandLoading,
+    refetch: refetchProvinceLandAll,
+  } = useQuery<UnifiedProperty[]>({
+    queryKey: ['province-land', 'all', provinces.map((p) => p.code).join(',')],
+    enabled: provinces.length > 0,
+    queryFn: async () => {
+      const results = await Promise.all(
+        provinces.map(async (prov) => {
+          try {
+            const res = await apiRequest<{ provinceCode: string; properties: PropertyDto[] }>(
+              `/api/v1/province-land/properties?province=${encodeURIComponent(prov.code)}`,
+            );
+            return (res.properties ?? []).map((p) => ({
+              ...p,
+              province: prov.name || p.province || prov.code,
+              __source: 'province-land' as const,
+              __provinceCode: prov.code,
+              __provinceName: prov.name,
+            }));
+          } catch {
+            return [] as UnifiedProperty[];
+          }
+        }),
+      );
+      return results.flat();
+    },
   });
 
   const auctions = auctionOverview?.auctions ?? [];
 
-  const [buyTarget, setBuyTarget] = useState<PropertyDto | null>(null);
-  const [listTarget, setListTarget] = useState<PropertyDto | null>(null);
-  const [rentTermsTarget, setRentTermsTarget] = useState<PropertyDto | null>(null);
-  const [offerTarget, setOfferTarget] = useState<PropertyDto | null>(null);
-  const [bidTarget, setBidTarget] = useState<AuctionDto | null>(null);
-
-  const [listPrice, setListPrice] = useState('');
-  const [saleNotes, setSaleNotes] = useState('');
-  const [rentPrice, setRentPrice] = useState('');
-  const [rentDeposit, setRentDeposit] = useState('');
-  const [rentNotes, setRentNotes] = useState('');
-  const [rentActive, setRentActive] = useState(false);
-  const [offerAmount, setOfferAmount] = useState('');
-  const [offerMsg, setOfferMsg] = useState('');
-  const [bidAmount, setBidAmount] = useState('');
-  const [loadingAction, setLoadingAction] = useState<string | null>(null);
-
-  const owned = useMemo(() => overview?.properties.filter((p) => p.isMine) ?? [], [overview]);
-  const forSale = useMemo(
-    () =>
-      overview?.properties.filter(
-        (p) => !p.isMine && (p.status === 'unowned' || p.status === 'listed'),
-      ) ?? [],
-    [overview],
-  );
-  const forRent = useMemo(
-    () =>
-      overview?.properties.filter(
-        (p) => !p.isMine && p.rentListingActive && p.monthlyRent.amount > 0 && p.status !== 'auction',
-      ) ?? [],
-    [overview],
-  );
-  const leasedByMe = useMemo(
-    () => overview?.properties.filter((p) => p.leasedByMe && p.activeLease) ?? [],
-    [overview],
-  );
-
-  // Thửa đất/công trình đã có chủ và đã xây dựng: cho phép đề xuất mua (không cần chờ rao bán/đấu giá)
-  const builtOfferable = useMemo(
-    () =>
-      overview?.properties.filter(
-        (p) =>
-          !p.isMine &&
-          !!p.ownerCharacterId &&
-          p.status !== 'auction' &&
-          !!(p.constructionOption || p.constructionBuiltAt),
-      ) ?? [],
-    [overview],
-  );
-
-  const isBusy = (id: string) => loadingAction === id;
-
-  async function runAction(id: string, fn: () => Promise<void>, success?: string) {
-    setLoadingAction(id);
+  async function runAction(key: string, action: () => Promise<void>, successMsg: string) {
+    setActionLoading(key);
     try {
-      await fn();
-      if (success) toast({ title: 'Thành công', description: success, variant: 'success' });
-      void refetch();
-      void refetchAuctions();
-    } catch (e) {
-      const msg = errorMessage(e, 'Có lỗi xảy ra.');
-      toast({ title: 'Không thực hiện được', description: msg, variant: 'error' });
-      console.error('real-estate action failed', e);
+      await action();
+      await Promise.all([refetch(), refetchAuctions(), refetchProvinceLandAll()]);
+      toast({ title: successMsg, variant: 'success' });
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.problem?.detail ?? err.problem?.title ?? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Đã có lỗi xảy ra';
+      toast({ title: msg, variant: 'error' });
     } finally {
-      setLoadingAction(null);
+      setActionLoading(null);
     }
   }
 
-  function openList(p: PropertyDto) {
+  function isBusy(key: string) {
+    return actionLoading === key;
+  }
+
+  const coreProperties: UnifiedProperty[] = useMemo(
+    () => (overview?.properties ?? []).map((p) => ({ ...p, __source: 'core' as const })),
+    [overview],
+  );
+
+  const allProperties: UnifiedProperty[] = useMemo(() => {
+    const merged = [...coreProperties, ...provinceLandAll];
+    // de-dupe by id (safety)
+    const seen = new Set<string>();
+    return merged.filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  }, [coreProperties, provinceLandAll]);
+
+  const owned = useMemo(() => allProperties.filter((p) => p.isMine), [allProperties]);
+  const forSale = useMemo(
+    () =>
+      allProperties.filter(
+        (p) => !p.isMine && (p.status === 'unowned' || p.status === 'listed'),
+      ),
+    [allProperties],
+  );
+  const forRent = useMemo(
+    () =>
+      allProperties.filter(
+        (p) => !p.isMine && p.rentListingActive && p.monthlyRent.amount > 0 && p.status !== 'auction',
+      ),
+    [allProperties],
+  );
+  const leasedByMe = useMemo(
+    () => allProperties.filter((p) => p.leasedByMe && p.activeLease),
+    [allProperties],
+  );
+  const builtOfferable = useMemo(
+    () =>
+      allProperties.filter((p) => {
+        if (p.isMine) return false;
+        if (!p.ownerCharacterId) return false;
+        if (p.status === 'auction') return false;
+        return isBuilt(p);
+      }),
+    [allProperties],
+  );
+
+  const incomingOffers = useMemo(() => {
+    const items: Array<{ offer: PropertySaleOfferDto; property: UnifiedProperty }> = [];
+    for (const p of allProperties) {
+      if (!p.isMine) continue;
+      for (const o of p.offers ?? []) {
+        if (o.status === 'pending' && o.sellerCharacterId) items.push({ offer: o, property: p });
+      }
+    }
+    return items;
+  }, [allProperties]);
+
+  const portfolioValue = useMemo(
+    () => owned.reduce((sum, p) => sum + (p.currentValue?.amount ?? 0), 0),
+    [owned],
+  );
+  const monthlyRentIncome = useMemo(
+    () => owned.reduce((sum, p) => sum + (p.monthlyRent?.amount ?? 0), 0),
+    [owned],
+  );
+
+  const openList = (p: UnifiedProperty) => {
     setListTarget(p);
     setListPrice(String(p.askingPrice?.amount ?? p.currentValue.amount));
     setSaleNotes(p.saleNotes ?? '');
-  }
-  function openRentTerms(p: PropertyDto) {
+  };
+  const openRentTerms = (p: UnifiedProperty) => {
     setRentTermsTarget(p);
     setRentPrice(String(p.monthlyRent.amount || 0));
     setRentDeposit(String(p.rentDeposit.amount || 0));
     setRentNotes(p.rentNotes ?? '');
-    setRentActive(p.rentListingActive);
-  }
-  function openOffer(p: PropertyDto) {
+    setRentActive(p.rentListingActive || p.monthlyRent.amount > 0);
+  };
+  const openOffer = (p: UnifiedProperty) => {
     setOfferTarget(p);
     setOfferAmount(String(p.askingPrice?.amount ?? p.currentValue.amount));
     setOfferMsg('');
-  }
-  function openBid(a: AuctionDto) {
+  };
+  const openBid = (a: AuctionDto) => {
+    const suggested = a.currentBid.amount + Math.max(1, Math.round(a.currentBid.amount * 0.05));
     setBidTarget(a);
-    setBidAmount(String(a.currentBid.amount + 1000));
+    setBidAmount(String(suggested));
+  };
+
+  const provinceLabel = (p: UnifiedProperty) =>
+    p.__provinceName || provinceNameByCode.get(p.__provinceCode ?? '') || p.province || '—';
+
+  async function respondOfferUnified(offerId: string, action: 'accept' | 'reject' | 'cancel', property: UnifiedProperty) {
+    if (property.__source === 'province-land') {
+      const prov = property.__provinceCode ?? '001';
+      await apiRequest(`/api/v1/province-land/offers/respond?province=${encodeURIComponent(prov)}`, {
+        method: 'POST',
+        body: JSON.stringify({ offerId, action, provinceCode: prov }),
+      });
+    } else {
+      await apiRequest('/api/v1/real-estate/offers/respond', {
+        method: 'POST',
+        body: JSON.stringify({ offerId, action }),
+      });
+    }
+  }
+
+  async function demolishUnified(property: UnifiedProperty) {
+    if (property.__source === 'province-land') {
+      const prov = property.__provinceCode ?? '001';
+      await apiRequest(`/api/v1/province-land/demolish?province=${encodeURIComponent(prov)}`, {
+        method: 'POST',
+        body: JSON.stringify({ propertyId: property.id, provinceCode: prov }),
+      });
+    } else {
+      await apiRequest('/api/v1/real-estate/demolish', {
+        method: 'POST',
+        body: JSON.stringify({ propertyId: property.id }),
+      });
+    }
+  }
+
+  async function makeOfferUnified(property: UnifiedProperty, amount: number, message?: string) {
+    if (property.__source === 'province-land') {
+      const prov = property.__provinceCode ?? '001';
+      await apiRequest(`/api/v1/province-land/offers?province=${encodeURIComponent(prov)}`, {
+        method: 'POST',
+        body: JSON.stringify({ propertyId: property.id, amount: { amount, currency: 'VND' }, message, provinceCode: prov }),
+      });
+    } else {
+      await apiRequest('/api/v1/real-estate/offers', {
+        method: 'POST',
+        body: JSON.stringify({ propertyId: property.id, amount: { amount, currency: 'VND' }, message }),
+      });
+    }
   }
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <PageHeader title="Bất động sản" description="Quản lý nhà đất, cho thuê và đấu giá tại Việt Nam." />
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
-        <p className="mt-4 text-sm text-slate-600">Đang tải danh sách bất động sản...</p>
+      <div className="flex items-center justify-center h-64 text-sm text-slate-500 animate-pulse">
+        Đang tải dữ liệu bất động sản…
+      </div>
+    );
+  }
+
+  if (!overview) {
+    return (
+      <div className="flex items-center justify-center h-64 text-sm text-slate-500">
+        Không thể tải dữ liệu bất động sản.
       </div>
     );
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6 pb-8">
       <PageHeader
         title="Bất động sản"
-        description="Mua bán, cho thuê, trao đổi/chốt giá và đấu giá nhà đất. Giao dịch được kiểm tra số dư và xác thực bằng VNĐ."
+        description={`Tổng hợp tất cả tỉnh/thành (gồm đất lõi và đất/công trình tỉnh) để thống nhất với trang Thành phố.${provinceLandLoading ? ' Đang tải thêm dữ liệu tỉnh…' : ''}`}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard label="Tài sản của bạn" value={overview?.ownedCount ?? 0} hint="Số bất động sản sở hữu" tone="positive" />
-        <StatCard label="Giá trị danh mục" value={formatMoney(overview?.portfolioValue.amount ?? 0)} hint="Tổng giá trị hiện tại" />
-        <StatCard label="Thu thuê tháng" value={formatMoney(overview?.monthlyRentIncome.amount ?? 0)} hint="Tiền thuê đang nhận (ước tính)" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Tài sản sở hữu" value={String(owned.length)} hint="Tổng (mọi tỉnh)" />
+        <StatCard label="Giá trị danh mục" value={formatCompact(portfolioValue)} hint="Tổng giá trị (mọi tỉnh)" />
+        <StatCard label="Thu nhập thuê/tháng" value={formatMoney(monthlyRentIncome)} hint="Ước tính" tone={monthlyRentIncome > 0 ? 'positive' : 'default'} />
+        <StatCard label="Đang bán (listing)" value={String(forSale.filter((p) => p.status === 'listed').length)} hint="Toàn hệ thống (bạn xem được)" tone="warning" />
       </div>
 
-      {owned.length > 0 && (
-        <Panel title="Bất động sản của bạn (quản lý)">
+      {incomingOffers.length > 0 && (
+        <Panel title="Đề nghị mua cần xử lý (người bán)" borderColor="amber">
           <div className="space-y-3">
-            {owned.map((p) => (
-              <div key={p.id} className="p-3 rounded-xl border border-slate-200 bg-white/50 space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-slate-800">{p.name}</span>
-                      <Badge variant="default">{propertyTypeLabel(p.propertyType)}</Badge>
-                      {statusBadge(p.status)}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-600">
-                      <span className="font-medium">Lô:</span> {p.lotNumber || '—'} · <span className="font-medium">Tỉnh/TP:</span> {p.province || '—'}
-                    </div>
-                    <div className="text-xs text-slate-500">Tọa độ ({p.location.x}, {p.location.y}) · Vùng: {p.zoneType}</div>
-                    <div className="mt-1 text-sm font-mono text-emerald-700">Giá trị: {formatCompact(p.currentValue.amount)}</div>
-                    <div className="text-xs text-slate-600 flex flex-wrap items-center gap-2">
-                      <span>Giá thuê niêm yết: <span className="font-mono">{formatMoney(p.monthlyRent.amount)}</span>/tháng</span>
-                      {p.rentListingActive ? <Badge variant="success">Đang mở cho thuê</Badge> : <Badge variant="default">Chưa mở cho thuê</Badge>}
-                      {p.rentDeposit.amount > 0 && <span>Cọc: {formatMoney(p.rentDeposit.amount)}</span>}
-                      {p.activeLease ? <Badge variant="warning">Đang có người thuê</Badge> : null}
-                    </div>
-                    {p.activeLease && (
-                      <div className="text-[11px] text-emerald-700 space-y-0.5">
-                        <div>Hợp đồng thuê: {p.activeLease.tenantName || 'Người thuê'} · {formatMoney(p.activeLease.monthlyRent.amount)}/tháng · bắt đầu {new Date(p.activeLease.startedAt).toLocaleDateString('vi-VN')} · kỳ tới {new Date(p.activeLease.nextDueAt).toLocaleDateString('vi-VN')}{p.activeLease.endsAt ? ` · hết hạn ${new Date(p.activeLease.endsAt).toLocaleDateString('vi-VN')}` : ''}</div>
-                        {typeof p.activeLease.deposit?.amount === 'number' && <div>Cọc: {formatMoney(p.activeLease.deposit.amount)}</div>}
-                      </div>
-                    )}
-                    {p.rentNotes && <div className="text-[11px] text-slate-500">Ghi chú thuê: {p.rentNotes}</div>}
-                    {(p.status === 'listed' || p.askingPrice) && (
-                      <div className="text-xs text-amber-700">
-                        Đang đăng bán: {formatMoney(p.askingPrice?.amount ?? p.currentValue.amount)} {p.saleNotes ? `· ${p.saleNotes}` : ''}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-2 shrink-0">
-                    <GameButton variant="outline" size="sm" onClick={() => openRentTerms(p)}>Bảng giá thuê</GameButton>
-                    {(p.status === 'owned' || p.status === 'listed') && (
-                      <GameButton variant="outline" size="sm" onClick={() => openList(p)}>
-                        {p.status === 'listed' ? 'Cập nhật đăng bán' : 'Đặt bán/rao giá'}
-                      </GameButton>
-                    )}
-                    {p.status === 'listed' && (
-                      <GameButton
-                        variant="outline"
-                        size="sm"
-                        disabled={isBusy(`unlist-${p.id}`)}
-                        onClick={() => runAction(
-                          `unlist-${p.id}`,
-                          async () => {
-                            await apiRequest('/api/v1/real-estate/unlist', {
-                              method: 'POST',
-                              body: JSON.stringify({ propertyId: p.id }),
-                            });
-                          },
-                          'Đã ngưng bán bất động sản.',
-                        )}
-                      >
-                        Ngưng bán
-                      </GameButton>
-                    )}
-                    {(p.constructionOption || p.mergedIntoPropertyId || p.mergeGroupId) && p.status === 'owned' && (
-                      <GameButton
-                        variant="outline"
-                        size="sm"
-                        disabled={isBusy(`demolish-${p.id}`)}
-                        onClick={() => {
-                          if (!window.confirm('Phá dỡ công trình/hủy hợp thửa để trả về đất nền? (Các lô trong cụm sẽ được tách lại; đề xuất mua đang chờ sẽ bị hủy)')) return;
-                          void runAction(
-                            `demolish-${p.id}`,
-                            async () => {
-                              await apiRequest('/api/v1/real-estate/demolish', {
-                                method: 'POST',
-                                body: JSON.stringify({ propertyId: p.id }),
-                              });
-                            },
-                            'Đã phá dỡ công trình/hủy hợp thửa. Tài sản đã trở về đất nền.',
-                          );
-                        }}
-                      >
-                        Phá dỡ / Đất nền
-                      </GameButton>
-                    )}
-                    {p.activeLease && p.isMine && (
-                      <GameButton
-                        variant="outline"
-                        size="sm"
-                        disabled={isBusy(`terminate-${p.id}`)}
-                        onClick={() => {
-                          if (!window.confirm('Hủy hợp đồng thuê trước hạn với tư cách chủ sở hữu?\n\nLưu ý: bạn sẽ mất cọc (hoàn lại cọc cho người thuê) và phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.')) return;
-                          void runAction(
-                            `terminate-${p.id}`,
-                            async () => {
-                              await apiRequest('/api/v1/real-estate/lease/terminate', {
-                                method: 'POST',
-                                body: JSON.stringify({ propertyId: p.id }),
-                              });
-                            },
-                            'Đã hủy hợp đồng thuê trước hạn (chủ sở hữu).',
-                          );
-                        }}
-                      >
-                        Hủy hợp đồng thuê
-                      </GameButton>
-                    )}
-                  </div>
+            {incomingOffers.map(({ offer, property: p }) => (
+              <div key={offer.id} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
+                <div>
+                  <div className="font-semibold text-slate-800">{p.name} <span className="text-xs text-slate-500">({provinceLabel(p)})</span></div>
+                  <div className="text-xs text-slate-600">Đề nghị từ {offer.buyerName || 'Người mua'} · <span className="font-mono font-semibold">{formatMoney(offer.amount.amount)}</span></div>
+                  {offer.message && <div className="text-xs text-slate-500 mt-1">"{offer.message}"</div>}
                 </div>
-                {(p.offers ?? []).length > 0 && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-2">
-                    <p className="text-xs font-semibold text-amber-900 mb-1">Đề nghị mua / trao đổi giá (chờ xử lý)</p>
-                    <div className="space-y-1">
-                      {(p.offers ?? []).map((o) => (
-                        <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                          <span>{o.buyerName || 'Người mua'} đề nghị <span className="font-mono font-semibold">{formatMoney(o.amount.amount)}</span>{o.message ? ` — "${o.message}"` : ''}</span>
-                          <div className="flex gap-1">
-                            <GameButton size="sm" variant="primary" disabled={isBusy(o.id)} onClick={() => runAction(o.id, () => apiRequest(`/api/v1/real-estate/offers/respond`, { method: 'POST', body: JSON.stringify({ offerId: o.id, action: 'accept' }) }).then(()=>{}), 'Đã chấp nhận đề nghị và chốt giá bán.')}>Chấp nhận (chốt giá)</GameButton>
-                            <GameButton size="sm" variant="outline" disabled={isBusy(o.id)} onClick={() => runAction(o.id, () => apiRequest(`/api/v1/real-estate/offers/respond`, { method: 'POST', body: JSON.stringify({ offerId: o.id, action: 'reject' }) }).then(()=>{}), 'Đã từ chối đề nghị.')}>Từ chối</GameButton>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <div className="flex gap-2 shrink-0">
+                  <GameButton size="sm" variant="primary" disabled={isBusy(offer.id)} onClick={() => runAction(offer.id, () => respondOfferUnified(offer.id, 'accept', p), 'Đã chấp nhận đề nghị. Quyền sở hữu/cụm đã được chuyển.')}>Chấp nhận</GameButton>
+                  <GameButton size="sm" variant="outline" disabled={isBusy(offer.id)} onClick={() => runAction(offer.id, () => respondOfferUnified(offer.id, 'reject', p), 'Đã từ chối đề nghị.')}>Từ chối</GameButton>
+                </div>
               </div>
             ))}
           </div>
         </Panel>
       )}
 
-      <Panel title="Sẵn sàng mua / trao đổi giá">
-        <div className="space-y-3">
-          {forSale.length > 0 ? forSale.map((p) => (
-            <div key={p.id} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-slate-800">{p.name}</span>
-                  <Badge variant="default">{propertyTypeLabel(p.propertyType)}</Badge>
-                  {statusBadge(p.status)}
-                </div>
-                <div className="mt-1 text-xs text-slate-600">Lô: {p.lotNumber || '—'} · Tỉnh/TP: {p.province || '—'} · ({p.location.x},{p.location.y}) · {p.zoneType}</div>
-                <div className="mt-2 flex flex-wrap items-baseline gap-2">
-                  <span className="font-mono text-lg font-bold text-emerald-700">{formatMoney((p.askingPrice?.amount ?? p.purchasePrice.amount))}</span>
-                  {p.askingPrice && <span className="text-xs text-slate-500">Giá niêm yết {formatMoney(p.askingPrice.amount)}</span>}
-                </div>
-                {p.saleNotes && <p className="text-[11px] text-slate-500 mt-1">Ghi chú bán: {p.saleNotes}</p>}
-                {(p.offers ?? []).some((o) => o.isMine && o.status === 'pending') && (
-                  <div className="mt-1 flex flex-wrap gap-2 text-xs items-center">
-                    <span className="text-amber-700">Bạn đã gửi đề nghị, chờ người bán phản hồi.</span>
-                    {(p.offers ?? []).filter((o) => o.isMine && o.status === 'pending').map((o) => (
-                      <GameButton key={o.id} size="sm" variant="outline" disabled={isBusy(o.id)} onClick={() => runAction(o.id, () => apiRequest(`/api/v1/real-estate/offers/respond`, { method: 'POST', body: JSON.stringify({ offerId: o.id, action: 'cancel' }) }).then(()=>{}), 'Đã hủy đề nghị.')}>Hủy đề nghị</GameButton>
-                    ))}
+      <Panel title="Bất động sản của bạn (tất cả tỉnh/thành)" borderColor="emerald">
+        {owned.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-4">Bạn chưa sở hữu bất động sản nào. Hãy mua đất hoặc thắng đấu giá trên trang Thành phố.</p>
+        ) : (
+          <div className="space-y-3">
+            {owned.map((p) => (
+              <div key={`${p.__source}-${p.id}`} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-800">{p.name}</span>
+                    <Badge variant="default">{propertyTypeLabel(p.propertyType)}</Badge>
+                    {statusBadge(p.status)}
+                    {p.__source === 'province-land' && <Badge variant="default">Tỉnh: {provinceLabel(p)}</Badge>}
+                    {isBuilt(p) && <Badge variant="success">Có công trình</Badge>}
+                    {p.rentListingActive && <Badge variant="success">Đang cho thuê (niêm yết)</Badge>}
+                    {p.leasedByMe && <Badge variant="success">Bạn đang thuê</Badge>}
                   </div>
-                )}
+                  <div className="mt-1 text-xs text-slate-600">Lô: {p.lotNumber || '—'} · Tỉnh/TP: {provinceLabel(p)} · ({p.location.x},{p.location.y}) · {p.zoneType}</div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                    <span>Giá trị: <span className="font-mono text-emerald-700">{formatMoney(p.currentValue.amount)}</span></span>
+                    {p.__source === 'core' && <span>Giá thuê/tháng: <span className="font-mono">{formatMoney(p.monthlyRent.amount)}</span></span>}
+                    {p.askingPrice && <span>Giá bán: <span className="font-mono text-amber-700">{formatMoney(p.askingPrice.amount)}</span></span>}
+                    {p.rentDeposit.amount > 0 && <span>Cọc: {formatMoney(p.rentDeposit.amount)}</span>}
+                    {p.activeLease ? <Badge variant="warning">Đang có người thuê</Badge> : null}
+                  </div>
+                  {p.activeLease && (
+                    <div className="text-[11px] text-emerald-700 space-y-0.5 mt-1">
+                      <div>Hợp đồng thuê: {p.activeLease.tenantName || 'Người thuê'} · {formatMoney(p.activeLease.monthlyRent.amount)}/tháng · bắt đầu {new Date(p.activeLease.startedAt).toLocaleDateString('vi-VN')} · kỳ tới {new Date(p.activeLease.nextDueAt).toLocaleDateString('vi-VN')}{p.activeLease.endsAt ? ` · hết hạn ${new Date(p.activeLease.endsAt).toLocaleDateString('vi-VN')}` : ''}</div>
+                      {typeof p.activeLease.deposit?.amount === 'number' && <div>Cọc: {formatMoney(p.activeLease.deposit.amount)}</div>}
+                    </div>
+                  )}
+                  {p.rentNotes && <div className="text-[11px] text-slate-500">Ghi chú thuê: {p.rentNotes}</div>}
+                  {p.saleNotes && <div className="text-[11px] text-slate-500">Ghi chú bán: {p.saleNotes}</div>}
+                  {(p.offers ?? []).some((o) => o.status === 'pending') && (
+                    <div className="mt-1 text-[11px] text-amber-700">{(p.offers ?? []).filter((o) => o.status === 'pending').length} đề nghị mua đang chờ (xem mục "Đề nghị mua cần xử lý").</div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 shrink-0">
+                  {p.__source === 'core' && (
+                    <>
+                      <GameButton variant="outline" size="sm" onClick={() => openRentTerms(p)}>Bảng giá thuê</GameButton>
+                      {(p.status === 'owned' || p.status === 'listed') && (
+                        <GameButton variant="outline" size="sm" onClick={() => openList(p)}>
+                          {p.status === 'listed' ? 'Cập nhật đăng bán' : 'Đặt bán/rao giá'}
+                        </GameButton>
+                      )}
+                      {p.status === 'listed' && (
+                        <GameButton
+                          variant="outline"
+                          size="sm"
+                          disabled={isBusy(`unlist-${p.id}`)}
+                          onClick={() => runAction(
+                            `unlist-${p.id}`,
+                            async () => {
+                              await apiRequest('/api/v1/real-estate/unlist', {
+                                method: 'POST',
+                                body: JSON.stringify({ propertyId: p.id }),
+                              });
+                            },
+                            'Đã ngưng bán bất động sản.',
+                          )}
+                        >
+                          Ngưng bán
+                        </GameButton>
+                      )}
+                    </>
+                  )}
+                  {(p.constructionOption || p.mergedIntoPropertyId || p.mergeGroupId) && p.status === 'owned' && (
+                    <GameButton
+                      variant="outline"
+                      size="sm"
+                      disabled={isBusy(`demolish-${p.__source}-${p.id}`)}
+                      onClick={() => {
+                        if (!window.confirm('Phá dỡ công trình/hủy hợp thửa để trả về đất nền? (Các lô trong cụm sẽ được tách lại; đề xuất mua đang chờ sẽ bị hủy)')) return;
+                        void runAction(
+                          `demolish-${p.__source}-${p.id}`,
+                          () => demolishUnified(p),
+                          'Đã phá dỡ công trình/hủy hợp thửa. Tài sản đã trở về đất nền.',
+                        );
+                      }}
+                    >
+                      Phá dỡ / Đất nền
+                    </GameButton>
+                  )}
+                  {p.__source === 'core' && p.activeLease && p.isMine && (
+                    <GameButton
+                      variant="outline"
+                      size="sm"
+                      disabled={isBusy(`terminate-${p.id}`)}
+                      onClick={() => {
+                        if (!window.confirm('Hủy hợp đồng thuê trước hạn với tư cách chủ sở hữu?\n\nLưu ý: bạn sẽ mất cọc (hoàn lại cọc cho người thuê) và phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.')) return;
+                        void runAction(
+                          `terminate-${p.id}`,
+                          async () => {
+                            await apiRequest('/api/v1/real-estate/lease/terminate', {
+                              method: 'POST',
+                              body: JSON.stringify({ propertyId: p.id }),
+                            });
+                          },
+                          'Đã hủy hợp đồng thuê trước hạn (chủ sở hữu).',
+                        );
+                      }}
+                    >
+                      Hủy hợp đồng thuê
+                    </GameButton>
+                  )}
+                  {p.__source === 'province-land' && (
+                    <span className="text-[11px] text-slate-500 text-right">Quản lý xây dựng/đề xuất chi tiết trên bản đồ Thành phố (tỉnh tương ứng).</span>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-col gap-2 shrink-0">
-                <GameButton variant="primary" size="sm" disabled={isBusy(p.id)} onClick={() => setBuyTarget(p)}>Mua</GameButton>
-                {p.ownerCharacterId && p.status !== 'auction' && (
-                  <GameButton variant="outline" size="sm" onClick={() => openOffer(p)}>
-                    {p.status === 'listed' ? 'Gửi đề nghị giá' : 'Đề xuất mua'}
-                  </GameButton>
-                )}
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      <Panel title="Bất động sản đang rao bán" borderColor="amber">
+        {forSale.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-4">Hiện không có bất động sản nào đang rao bán.</p>
+        ) : (
+          <div className="space-y-3">
+            {forSale.map((p) => (
+              <div key={`${p.__source}-sale-${p.id}`} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-800">{p.name}</span>
+                    <Badge variant="default">{propertyTypeLabel(p.propertyType)}</Badge>
+                    {statusBadge(p.status)}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-600">Lô: {p.lotNumber || '—'} · Tỉnh/TP: {provinceLabel(p)} · ({p.location.x},{p.location.y}) · {p.zoneType}</div>
+                  <div className="mt-2 flex flex-wrap items-baseline gap-2">
+                    <span className="font-mono text-lg font-bold text-emerald-700">{formatMoney(p.askingPrice?.amount ?? p.purchasePrice.amount)}</span>
+                    {p.askingPrice && <span className="text-xs text-slate-500">(niêm yết; giá gốc {formatMoney(p.purchasePrice.amount)})</span>}
+                    {p.status === 'unowned' && <span className="text-xs text-slate-500">(chưa có chủ)</span>}
+                  </div>
+                  {p.saleNotes && <div className="mt-1 text-xs text-slate-500">Ghi chú: {p.saleNotes}</div>}
+                  {(p.offers ?? []).some((o) => o.isMine && o.status === 'pending') && (
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs items-center">
+                      <span className="text-amber-700">Bạn đã gửi đề nghị, chờ người bán phản hồi.</span>
+                      {(p.offers ?? []).filter((o) => o.isMine && o.status === 'pending').map((o) => (
+                        <GameButton key={o.id} size="sm" variant="outline" disabled={isBusy(o.id)} onClick={() => runAction(o.id, () => respondOfferUnified(o.id, 'cancel', p), 'Đã hủy đề nghị.')}>Hủy đề nghị</GameButton>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 shrink-0">
+                  {p.__source === 'core' && (
+                    <GameButton variant="primary" size="sm" onClick={() => setBuyTarget(p)} disabled={isBusy(p.id)}>
+                      Mua ngay
+                    </GameButton>
+                  )}
+                  {p.ownerCharacterId && p.status !== 'auction' && (
+                    <GameButton variant="outline" size="sm" onClick={() => openOffer(p)}>
+                      Đề nghị giá
+                    </GameButton>
+                  )}
+                </div>
               </div>
-            </div>
-          )) : <div className="text-center py-4 text-xs text-slate-500">Không có bất động sản nào đang sẵn sàng mua.</div>}
-        </div>
+            ))}
+          </div>
+        )}
       </Panel>
 
       {leasedByMe.length > 0 && (
         <Panel title="Bất động sản bạn đang thuê (hợp đồng thuê)" borderColor="emerald">
           <div className="space-y-3">
             {leasedByMe.map((p) => (
-              <div key={`leased-${p.id}`} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
+              <div key={`leased-${p.__source}-${p.id}`} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-slate-800">{p.name}</span>
                     <Badge variant="default">{propertyTypeLabel(p.propertyType)}</Badge>
                     <Badge variant="success">Đang thuê</Badge>
                   </div>
-                  <div className="mt-1 text-xs text-slate-600">Lô: {p.lotNumber || '—'} · {p.province || '—'} · ({p.location.x},{p.location.y})</div>
+                  <div className="mt-1 text-xs text-slate-600">Lô: {p.lotNumber || '—'} · {provinceLabel(p)} · ({p.location.x},{p.location.y})</div>
                   {p.activeLease && (
                     <div className="mt-1 text-xs text-slate-700 space-y-0.5">
                       <div>Thuê: <span className="font-mono font-semibold">{formatMoney(p.activeLease.monthlyRent.amount)}</span>/tháng · bắt đầu {new Date(p.activeLease.startedAt).toLocaleDateString('vi-VN')} · kỳ tới {new Date(p.activeLease.nextDueAt).toLocaleDateString('vi-VN')}{p.activeLease.endsAt ? ` · hết hạn ${new Date(p.activeLease.endsAt).toLocaleDateString('vi-VN')}` : ''}</div>
@@ -379,26 +533,28 @@ export function RealEstatePage() {
                   <div className="mt-1 text-[11px] text-amber-700">Hủy trước hạn: bên hủy sẽ <b>mất cọc</b> và phải <b>thanh toán 50% số tiền thuê còn lại</b> tính đến khi hết hợp đồng.</div>
                 </div>
                 <div className="flex flex-col gap-2 shrink-0">
-                  <GameButton
-                    variant="outline"
-                    size="sm"
-                    disabled={isBusy(`terminate-tenant-${p.id}`)}
-                    onClick={() => {
-                      if (!window.confirm('Hủy hợp đồng thuê trước hạn với tư cách người thuê?\n\nLưu ý: bạn sẽ mất cọc và phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.')) return;
-                      void runAction(
-                        `terminate-tenant-${p.id}`,
-                        async () => {
-                          await apiRequest('/api/v1/real-estate/lease/terminate', {
-                            method: 'POST',
-                            body: JSON.stringify({ propertyId: p.id }),
-                          });
-                        },
-                        'Đã hủy hợp đồng thuê trước hạn (người thuê).',
-                      );
-                    }}
-                  >
-                    Hủy hợp đồng thuê
-                  </GameButton>
+                  {p.__source === 'core' && (
+                    <GameButton
+                      variant="outline"
+                      size="sm"
+                      disabled={isBusy(`terminate-tenant-${p.id}`)}
+                      onClick={() => {
+                        if (!window.confirm('Hủy hợp đồng thuê trước hạn với tư cách người thuê?\n\nLưu ý: bạn sẽ mất cọc và phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.')) return;
+                        void runAction(
+                          `terminate-tenant-${p.id}`,
+                          async () => {
+                            await apiRequest('/api/v1/real-estate/lease/terminate', {
+                              method: 'POST',
+                              body: JSON.stringify({ propertyId: p.id }),
+                            });
+                          },
+                          'Đã hủy hợp đồng thuê trước hạn (người thuê).',
+                        );
+                      }}
+                    >
+                      Hủy hợp đồng thuê
+                    </GameButton>
+                  )}
                 </div>
               </div>
             ))}
@@ -410,7 +566,7 @@ export function RealEstatePage() {
         <Panel title="Công trình đã xây dựng (có thể đề xuất mua)" borderColor="emerald">
           <div className="space-y-3">
             {builtOfferable.map((p) => (
-              <div key={`built-${p.id}`} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
+              <div key={`built-${p.__source}-${p.id}`} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-slate-800">{p.name}</span>
@@ -418,7 +574,7 @@ export function RealEstatePage() {
                     {statusBadge(p.status)}
                     <Badge variant="success">Đã có công trình</Badge>
                   </div>
-                  <div className="mt-1 text-xs text-slate-600">Lô: {p.lotNumber || '—'} · Tỉnh/TP: {p.province || '—'} · ({p.location.x},{p.location.y}) · {p.zoneType}</div>
+                  <div className="mt-1 text-xs text-slate-600">Lô: {p.lotNumber || '—'} · Tỉnh/TP: {provinceLabel(p)} · ({p.location.x},{p.location.y}) · {p.zoneType}</div>
                   <div className="mt-1 text-xs text-slate-600">Công trình: <span className="font-medium">{p.constructionLabel || p.constructionOption || '—'}</span></div>
                   <div className="mt-2 flex flex-wrap items-baseline gap-2">
                     <span className="font-mono text-lg font-bold text-emerald-700">{formatMoney(p.currentValue.amount)}</span>
@@ -428,7 +584,7 @@ export function RealEstatePage() {
                     <div className="mt-1 flex flex-wrap gap-2 text-xs items-center">
                       <span className="text-amber-700">Bạn đã gửi đề xuất mua, chờ chủ sở hữu phản hồi.</span>
                       {(p.offers ?? []).filter((o) => o.isMine && o.status === 'pending').map((o) => (
-                        <GameButton key={o.id} size="sm" variant="outline" disabled={isBusy(o.id)} onClick={() => runAction(o.id, () => apiRequest(`/api/v1/real-estate/offers/respond`, { method: 'POST', body: JSON.stringify({ offerId: o.id, action: 'cancel' }) }).then(()=>{}), 'Đã hủy đề xuất mua.')}>Hủy đề xuất</GameButton>
+                        <GameButton key={o.id} size="sm" variant="outline" disabled={isBusy(o.id)} onClick={() => runAction(o.id, () => respondOfferUnified(o.id, 'cancel', p), 'Đã hủy đề xuất mua.')}>Hủy đề xuất</GameButton>
                       ))}
                     </div>
                   )}
@@ -447,7 +603,7 @@ export function RealEstatePage() {
       <Panel title="Bảng giá cho thuê" borderColor="emerald">
         <div className="space-y-3">
           {forRent.length > 0 ? forRent.map((p) => (
-            <div key={p.id} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
+            <div key={`${p.__source}-rent-${p.id}`} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold text-slate-800">{p.name}</span>
@@ -455,20 +611,24 @@ export function RealEstatePage() {
                   {p.status === 'listed' && <Badge variant="warning">Đang rao bán</Badge>}
                   {p.activeLease && <Badge variant="success">Đã có người thuê</Badge>}
                 </div>
-                <div className="text-xs text-slate-600">Lô: {p.lotNumber || '—'} · {p.province || '—'}</div>
+                <div className="text-xs text-slate-600">Lô: {p.lotNumber || '—'} · {provinceLabel(p)}</div>
                 <div className="mt-1 text-sm"><span className="text-slate-600">Giá thuê:</span> <span className="font-mono font-semibold">{formatMoney(p.monthlyRent.amount)}/tháng</span>{p.rentDeposit.amount > 0 && <span className="text-xs text-slate-500"> · Cọc {formatMoney(p.rentDeposit.amount)}</span>}</div>
                 {p.rentNotes && <div className="text-[11px] text-slate-500">Điều khoản: {p.rentNotes}</div>}
                 {p.activeLease && !p.leasedByMe && <div className="text-[11px] text-slate-500">Hiện đang được thuê bởi {p.activeLease.tenantName || 'người khác'}.</div>}
               </div>
-              <GameButton variant="primary" size="sm" disabled={isBusy(p.id) || p.leasedByMe || !!p.activeLease} onClick={() => runAction(p.id, async () => { await apiRequest(`/api/v1/real-estate/rent`, { method: 'POST', body: JSON.stringify({ propertyId: p.id }) }); }, `Thuê thành công: đã thanh toán ${formatMoney(p.monthlyRent.amount + p.rentDeposit.amount)} (thuê ${formatMoney(p.monthlyRent.amount)}${p.rentDeposit.amount > 0 ? ` + cọc ${formatMoney(p.rentDeposit.amount)}` : ''}).`)}>
-                {isBusy(p.id) ? 'Đang xử lý…' : p.leasedByMe ? 'Bạn đang thuê' : p.activeLease ? 'Đã có người thuê' : 'Thuê theo bảng giá'}
-              </GameButton>
+              {p.__source === 'core' ? (
+                <GameButton variant="primary" size="sm" disabled={isBusy(p.id) || p.leasedByMe || !!p.activeLease} onClick={() => runAction(p.id, async () => { await apiRequest(`/api/v1/real-estate/rent`, { method: 'POST', body: JSON.stringify({ propertyId: p.id }) }); }, `Thuê thành công: đã thanh toán ${formatMoney(p.monthlyRent.amount + p.rentDeposit.amount)} (thuê ${formatMoney(p.monthlyRent.amount)}${p.rentDeposit.amount > 0 ? ` + cọc ${formatMoney(p.rentDeposit.amount)}` : ''}).`)}>
+                  {isBusy(p.id) ? 'Đang xử lý…' : p.leasedByMe ? 'Bạn đang thuê' : p.activeLease ? 'Đã có người thuê' : 'Thuê theo bảng giá'}
+                </GameButton>
+              ) : (
+                <span className="text-[11px] text-slate-500">Cho thuê đất tỉnh chưa hỗ trợ tại đây.</span>
+              )}
             </div>
           )) : <div className="text-center py-4 text-xs text-slate-500">Chưa có bất động sản nào mở cho thuê với bảng giá.</div>}
         </div>
       </Panel>
 
-      <Panel title="Đấu giá phát mãi (bất động sản đang được đấu giá thực tế)" borderColor="amber">
+      <Panel title="Đấu giá phát mãi (tất cả phiên đang mở)" borderColor="amber">
         <div className="space-y-3">
           {auctionsLoading ? (
             <div className="text-center py-4 text-xs text-slate-500 animate-pulse">Đang tải phiên đấu giá…</div>
@@ -498,33 +658,33 @@ export function RealEstatePage() {
         </div>
       </Panel>
 
-      {/* Buy */}
+      {/* Buy (core only) */}
       <Modal open={!!buyTarget} onClose={() => setBuyTarget(null)} title="Mua bất động sản">
         {buyTarget && (
           <div className="space-y-3">
             <div className="text-sm"><span className="text-slate-600">Tài sản:</span> <span className="font-medium">{buyTarget.name}</span></div>
-            <div className="text-xs text-slate-600">Lô {buyTarget.lotNumber || '—'} · {buyTarget.province || '—'} · ({buyTarget.location.x},{buyTarget.location.y})</div>
+            <div className="text-xs text-slate-600">Lô {buyTarget.lotNumber || '—'} · {provinceLabel(buyTarget)} · ({buyTarget.location.x},{buyTarget.location.y})</div>
             <div className="flex justify-between text-sm"><span className="text-slate-600">Giá mua</span><span className="font-mono text-emerald-700 font-semibold">{formatMoney((buyTarget.askingPrice?.amount ?? buyTarget.purchasePrice.amount))}</span></div>
             <p className="text-[11px] text-slate-500">Hệ thống sẽ kiểm tra số dư. Nếu không đủ tiền, bạn sẽ nhận thông báo.</p>
-            <GameButton variant="primary" loading={isBusy(buyTarget.id)} disabled={isBusy(buyTarget.id)} onClick={() => runAction(buyTarget.id, async () => { await apiRequest('/api/v1/real-estate/buy', { method: 'POST', body: JSON.stringify({ propertyId: buyTarget.id }) }); setBuyTarget(null); }, 'Mua bất động sản thành công.')}>Xác nhận mua</GameButton>
+            <GameButton variant="primary" loading={isBusy(buyTarget.id)} disabled={isBusy(buyTarget.id) || buyTarget.__source !== 'core'} onClick={() => runAction(buyTarget.id, async () => { await apiRequest('/api/v1/real-estate/buy', { method: 'POST', body: JSON.stringify({ propertyId: buyTarget.id }) }); setBuyTarget(null); }, 'Mua bất động sản thành công.')}>Xác nhận mua</GameButton>
           </div>
         )}
       </Modal>
 
-      {/* List / sale */}
+      {/* List / sale (core only) */}
       <Modal open={!!listTarget} onClose={() => setListTarget(null)} title="Đăng bán / trao đổi giá">
         {listTarget && (
           <div className="space-y-3">
-            <div className="text-sm font-medium">{listTarget.name} · Lô {listTarget.lotNumber || '—'} · {listTarget.province || '—'}</div>
+            <div className="text-sm font-medium">{listTarget.name} · Lô {listTarget.lotNumber || '—'} · {provinceLabel(listTarget)}</div>
             <GameInput label="Giá bán niêm yết (VNĐ)" type="number" value={listPrice} onChange={(e) => setListPrice(e.target.value)} />
             <GameInput label="Ghi chú/điều khoản trao đổi" value={saleNotes} onChange={(e) => setSaleNotes(e.target.value)} placeholder="VD: có thương lượng, bao gồm nội thất..." />
             <p className="text-[11px] text-slate-500">Người mua có thể mua đúng giá hoặc gửi đề nghị để trao đổi/chốt giá với bạn.</p>
-            <GameButton variant="primary" loading={isBusy(listTarget.id)} disabled={isBusy(listTarget.id)} onClick={() => { const v = Number(listPrice); if (!Number.isFinite(v) || v <= 0) { toast({ title: 'Giá không hợp lệ', variant: 'error' }); return; } runAction(listTarget.id, async () => { await apiRequest('/api/v1/real-estate/list', { method: 'POST', body: JSON.stringify({ propertyId: listTarget.id, askingPrice: { amount: Math.round(v), currency: 'VND' }, saleNotes: saleNotes || undefined }) }); setListTarget(null); }, 'Đã đăng bán/rao giá bất động sản.'); }}>Đăng bán</GameButton>
+            <GameButton variant="primary" loading={isBusy(listTarget.id)} disabled={isBusy(listTarget.id) || listTarget.__source !== 'core'} onClick={() => { const v = Number(listPrice); if (!Number.isFinite(v) || v <= 0) { toast({ title: 'Giá không hợp lệ', variant: 'error' }); return; } runAction(listTarget.id, async () => { await apiRequest('/api/v1/real-estate/list', { method: 'POST', body: JSON.stringify({ propertyId: listTarget.id, askingPrice: { amount: Math.round(v), currency: 'VND' }, saleNotes: saleNotes || undefined }) }); setListTarget(null); }, 'Đã đăng bán/rao giá bất động sản.'); }}>Đăng bán</GameButton>
           </div>
         )}
       </Modal>
 
-      {/* Rent terms management */}
+      {/* Rent terms management (core only) */}
       <Modal open={!!rentTermsTarget} onClose={() => setRentTermsTarget(null)} title="Bảng giá & quản lý cho thuê">
         {rentTermsTarget && (
           <div className="space-y-3">
@@ -533,7 +693,7 @@ export function RealEstatePage() {
             <GameInput label="Giá thuê/tháng (VNĐ)" type="number" value={rentPrice} onChange={(e) => setRentPrice(e.target.value)} />
             <GameInput label="Tiền đặt cọc (VNĐ)" type="number" value={rentDeposit} onChange={(e) => setRentDeposit(e.target.value)} />
             <GameInput label="Ghi chú/điều khoản thuê" value={rentNotes} onChange={(e) => setRentNotes(e.target.value)} placeholder="VD: tối thiểu 3 tháng, không nuôi thú..." />
-            <GameButton variant="primary" loading={isBusy(rentTermsTarget.id)} disabled={isBusy(rentTermsTarget.id)} onClick={() => { const mr = Number(rentPrice)||0; const dep = Number(rentDeposit)||0; runAction(rentTermsTarget.id, async () => { await apiRequest('/api/v1/real-estate/rent-terms', { method: 'POST', body: JSON.stringify({ propertyId: rentTermsTarget.id, monthlyRentMinor: Math.round(mr), rentDepositMinor: Math.round(dep), rentListingActive: rentActive, rentNotes: rentNotes || null }) }); setRentTermsTarget(null); }, 'Đã cập nhật bảng giá/điều khoản cho thuê.'); }}>Lưu bảng giá</GameButton>
+            <GameButton variant="primary" loading={isBusy(rentTermsTarget.id)} disabled={isBusy(rentTermsTarget.id) || rentTermsTarget.__source !== 'core'} onClick={() => { const mr = Number(rentPrice)||0; const dep = Number(rentDeposit)||0; runAction(rentTermsTarget.id, async () => { await apiRequest('/api/v1/real-estate/rent-terms', { method: 'POST', body: JSON.stringify({ propertyId: rentTermsTarget.id, monthlyRentMinor: Math.round(mr), rentDepositMinor: Math.round(dep), rentListingActive: rentActive, rentNotes: rentNotes || null }) }); setRentTermsTarget(null); }, 'Đã cập nhật bảng giá/điều khoản cho thuê.'); }}>Lưu bảng giá</GameButton>
           </div>
         )}
       </Modal>
@@ -543,10 +703,11 @@ export function RealEstatePage() {
         {offerTarget && (
           <div className="space-y-3">
             <div className="text-sm">BĐS: <span className="font-medium">{offerTarget.name}</span> · Giá niêm yết: {formatMoney(offerTarget.askingPrice?.amount ?? offerTarget.currentValue.amount)}</div>
+            <div className="text-xs text-slate-600">Tỉnh/TP: {provinceLabel(offerTarget)} {offerTarget.__source === 'province-land' ? '(đất/công trình tỉnh)' : '(lõi)'}</div>
             <GameInput label="Số tiền đề nghị (VNĐ)" type="number" value={offerAmount} onChange={(e) => setOfferAmount(e.target.value)} />
             <GameInput label="Lời nhắn trao đổi" value={offerMsg} onChange={(e) => setOfferMsg(e.target.value)} placeholder="VD: đề nghị chốt giá..." />
             <p className="text-[11px] text-slate-500">Người bán sẽ xem và có thể chấp nhận (chốt giá), từ chối hoặc tiếp tục trao đổi.</p>
-            <GameButton variant="primary" loading={isBusy(offerTarget.id)} disabled={isBusy(offerTarget.id)} onClick={() => { const v = Number(offerAmount); if (!Number.isFinite(v) || v <= 0) { toast({ title: 'Số tiền không hợp lệ', variant: 'error' }); return; } runAction(offerTarget.id, async () => { await apiRequest('/api/v1/real-estate/offers', { method: 'POST', body: JSON.stringify({ propertyId: offerTarget.id, amount: { amount: Math.round(v), currency: 'VND' }, message: offerMsg || undefined }) }); setOfferTarget(null); }, 'Đã gửi đề nghị. Chờ người bán phản hồi/chốt giá.'); }}>Gửi đề nghị</GameButton>
+            <GameButton variant="primary" loading={isBusy(offerTarget.id)} disabled={isBusy(offerTarget.id)} onClick={() => { const v = Number(offerAmount); if (!Number.isFinite(v) || v <= 0) { toast({ title: 'Số tiền không hợp lệ', variant: 'error' }); return; } runAction(offerTarget.id, async () => { await makeOfferUnified(offerTarget, Math.round(v), offerMsg || undefined); setOfferTarget(null); }, 'Đã gửi đề nghị. Chờ người bán phản hồi/chốt giá.'); }}>Gửi đề nghị</GameButton>
           </div>
         )}
       </Modal>
