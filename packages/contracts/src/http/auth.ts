@@ -32,6 +32,8 @@ export const SessionUserSchema = z.object({
   role: UserRoleSchema,
   status: AccountStatusSchema.default('active'),
   restrictionReason: z.string().nullable().optional(),
+  /** Thời gian tạo tài khoản (thực tế), dùng cho "số ngày hoạt động" của tài khoản. */
+  createdAt: z.string().datetime().optional(),
 });
 export type SessionUser = z.infer<typeof SessionUserSchema>;
 

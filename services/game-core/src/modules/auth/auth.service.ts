@@ -50,6 +50,7 @@ function toSessionUser(user: UserRow): SessionUser {
     role: user.role,
     status,
     restrictionReason: status === 'restricted' ? (user.ban_reason ?? null) : null,
+    createdAt: user.created_at instanceof Date ? user.created_at.toISOString() : new Date(user.created_at as any).toISOString(),
   };
 }
 

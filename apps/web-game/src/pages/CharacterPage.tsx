@@ -241,7 +241,7 @@ export function CharacterPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Tài sản ròng" value={formatMoney(character.netWorth?.amount ?? 0)} hint="Tổng tài sản − tổng nợ" tone="positive" />
-        <StatCard label="Số ngày hoạt động" value={`${getActiveDays(character.createdAt)} ngày`} hint="Tính từ khi nhân vật được tạo" />
+        <StatCard label="Ngày sống (nhân vật)" value={`${getActiveDays(character.createdAt)} ngày`} hint="Số ngày sống của nhân vật hiện tại (tính từ khi nhân vật được tạo/kế thừa)" />
         <StatCard label="Credit Score" value={character.creditScore ?? 0} hint="Tín dụng & hạn mức vay" />
         <StatCard label="Heat Level" value={`${character.heatLevel ?? 0} / 100`} hint="Mức truy nã ngầm" />
         <StatCard label="Sức khỏe / Năng lượng" value={`${character.healthEnergy ?? 0} / 100`} hint="Càng thấp càng cần nghỉ" />

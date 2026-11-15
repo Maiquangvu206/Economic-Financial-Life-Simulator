@@ -358,7 +358,7 @@ export function AppLayout() {
           <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
             <span>Số ngày hoạt động:</span>
             <span className="font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-              {getActiveDays(me?.createdAt) ?? '—'} ngày
+              {getActiveDays(user?.createdAt ?? me?.createdAt) ?? '—'} ngày
             </span>
           </div>
         </div>
@@ -390,7 +390,7 @@ export function AppLayout() {
           </div>
           <div className="flex items-center justify-between text-[11px]">
             <span>Số ngày hoạt động:</span>
-            <span className="font-medium text-slate-700">{getActiveDays(me?.createdAt) ?? '—'} ngày</span>
+            <span className="font-medium text-slate-700">{getActiveDays(user?.createdAt ?? me?.createdAt) ?? '—'} ngày</span>
           </div>
           <button type="button" onClick={handleLogout} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600">
             Đăng xuất
