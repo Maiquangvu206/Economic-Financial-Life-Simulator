@@ -145,6 +145,7 @@ export function CityPage() {
         constructionBuiltAt: p.constructionBuiltAt ?? null,
         mergedIntoPropertyId: p.mergedIntoPropertyId ?? null,
         mergeGroupId: p.mergeGroupId ?? null,
+        offers: p.offers ?? [],
         provinceSource: 'core',
       }));
     } else if (provinceLand?.properties) {
@@ -168,6 +169,7 @@ export function CityPage() {
         constructionBuiltAt: p.constructionBuiltAt ?? null,
         mergedIntoPropertyId: p.mergedIntoPropertyId ?? null,
         mergeGroupId: p.mergeGroupId ?? null,
+        offers: p.offers ?? [],
         provinceSource: 'province-land',
         location: p.location,
       }));
@@ -259,11 +261,10 @@ export function CityPage() {
   const [bidding, setBidding] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
 
-  async function handleProvinceLandOffer() {
+  async function handlePurchaseOffer() {
     if (!selected?.property) return;
     const p = selected.property as any;
     const isProvinceLand = p.provinceSource === 'province-land' || activeProvince !== '001';
-    if (!isProvinceLand) return;
     const amount = Math.round(Number(offerAmount) || 0);
     if (amount <= 0) {
       setOfferError('Nhập số tiền đề xuất hợp lệ.');
@@ -273,19 +274,30 @@ export function CityPage() {
     setOfferError(null);
     setOfferOk(null);
     try {
-      await apiRequest(`/api/v1/province-land/offers?province=${encodeURIComponent(activeProvince)}`, {
-        method: 'POST',
-        body: JSON.stringify({
-          propertyId: p.id,
-          amount: { amount, currency: 'VND' },
-          message: offerMsg.trim() || undefined,
-          provinceCode: activeProvince,
-        }),
-      });
+      if (isProvinceLand) {
+        await apiRequest(`/api/v1/province-land/offers?province=${encodeURIComponent(activeProvince)}`, {
+          method: 'POST',
+          body: JSON.stringify({
+            propertyId: p.id,
+            amount: { amount, currency: 'VND' },
+            message: offerMsg.trim() || undefined,
+            provinceCode: activeProvince,
+          }),
+        });
+      } else {
+        await apiRequest('/api/v1/real-estate/offers', {
+          method: 'POST',
+          body: JSON.stringify({
+            propertyId: p.id,
+            amount: { amount, currency: 'VND' },
+            message: offerMsg.trim() || undefined,
+          }),
+        });
+      }
       setOfferOk('Đã gửi đề xuất mua. Chờ chủ sở hữu phản hồi.');
       setOfferAmount('');
       setOfferMsg('');
-      await refetchProvinceLand();
+      await Promise.all([refetchProvinceLand(), refetchRealEstate()]);
     } catch (caught) {
       setOfferError(caught instanceof Error ? caught.message : 'Không thể gửi đề xuất mua.');
     } finally {
@@ -293,15 +305,25 @@ export function CityPage() {
     }
   }
 
-  async function handleProvinceLandOfferRespond(offerId: string, action: 'accept' | 'reject' | 'cancel') {
+  async function handlePurchaseOfferRespond(offerId: string, action: 'accept' | 'reject' | 'cancel') {
+    if (!selected?.property) return;
+    const p = selected.property as any;
+    const isProvinceLand = p.provinceSource === 'province-land' || activeProvince !== '001';
     setOfferLoading(true);
     setOfferError(null);
     setOfferOk(null);
     try {
-      await apiRequest(`/api/v1/province-land/offers/respond?province=${encodeURIComponent(activeProvince)}`, {
-        method: 'POST',
-        body: JSON.stringify({ offerId, action, provinceCode: activeProvince }),
-      });
+      if (isProvinceLand) {
+        await apiRequest(`/api/v1/province-land/offers/respond?province=${encodeURIComponent(activeProvince)}`, {
+          method: 'POST',
+          body: JSON.stringify({ offerId, action, provinceCode: activeProvince }),
+        });
+      } else {
+        await apiRequest('/api/v1/real-estate/offers/respond', {
+          method: 'POST',
+          body: JSON.stringify({ offerId, action }),
+        });
+      }
       setOfferOk(action === 'accept' ? 'Đã chấp nhận đề xuất mua.' : action === 'reject' ? 'Đã từ chối đề xuất.' : 'Đã hủy đề xuất.');
       await Promise.all([refetchProvinceLand(), refetchCharacter(), refetchRealEstate(), refetchMap()]);
     } catch (caught) {
@@ -724,7 +746,6 @@ export function CityPage() {
                                                                 const p: any = selected?.property;
                                                                 if (!p) return null;
                                                                 const isProvinceLand = p.provinceSource === 'province-land' || activeProvince !== '001';
-                                                                if (!isProvinceLand) return null;
                                                                 const isBuilt = !!(p.constructionOption || p.constructionBuiltAt || p.mergedIntoPropertyId);
                                                                 const myPendingOffers = (p.offers ?? []).filter((o: any) => o.isMine && o.status === 'pending');
                                                                 const incomingPendingOffers = (p.offers ?? []).filter((o: any) => !o.isMine && o.status === 'pending' && p.isMine);
@@ -732,7 +753,9 @@ export function CityPage() {
                                                                 if (!canPropose && incomingPendingOffers.length === 0 && myPendingOffers.length === 0) return null;
                                                                 return (
                                                                   <div className="flex w-full flex-col gap-2 rounded-lg border border-sky-200 bg-sky-50/70 p-2">
-                                                                    <div className="text-[11px] font-semibold text-sky-800">Đề xuất mua (đất/công trình tỉnh)</div>
+                                                                    <div className="text-[11px] font-semibold text-sky-800">
+                                                                      {isProvinceLand ? 'Đề xuất mua (đất/công trình tỉnh)' : 'Đề xuất mua (công trình/BĐS)'}
+                                                                    </div>
                                                                     {canPropose && (
                                                                       <div className="flex flex-wrap items-center gap-2">
                                                                         <input
@@ -753,7 +776,7 @@ export function CityPage() {
                                                                         <button
                                                                           type="button"
                                                                           disabled={offerLoading}
-                                                                          onClick={() => void handleProvinceLandOffer()}
+                                                                          onClick={() => void handlePurchaseOffer()}
                                                                           className="rounded-lg bg-sky-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-sky-700 disabled:opacity-60"
                                                                         >
                                                                           {offerLoading ? 'Đang gửi…' : 'Đề xuất mua'}
@@ -768,7 +791,7 @@ export function CityPage() {
                                                                             <button
                                                                               type="button"
                                                                               disabled={offerLoading}
-                                                                              onClick={() => void handleProvinceLandOfferRespond(o.id, 'cancel')}
+                                                                              onClick={() => void handlePurchaseOfferRespond(o.id, 'cancel')}
                                                                               className="rounded-md border border-slate-300 bg-white px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
                                                                             >
                                                                               Hủy đề xuất
@@ -786,7 +809,7 @@ export function CityPage() {
                                                                             <button
                                                                               type="button"
                                                                               disabled={offerLoading}
-                                                                              onClick={() => void handleProvinceLandOfferRespond(o.id, 'accept')}
+                                                                              onClick={() => void handlePurchaseOfferRespond(o.id, 'accept')}
                                                                               className="rounded-md bg-emerald-600 px-2 py-0.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                                                                             >
                                                                               Chấp nhận
@@ -794,7 +817,7 @@ export function CityPage() {
                                                                             <button
                                                                               type="button"
                                                                               disabled={offerLoading}
-                                                                              onClick={() => void handleProvinceLandOfferRespond(o.id, 'reject')}
+                                                                              onClick={() => void handlePurchaseOfferRespond(o.id, 'reject')}
                                                                               className="rounded-md border border-slate-300 bg-white px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
                                                                             >
                                                                               Từ chối
