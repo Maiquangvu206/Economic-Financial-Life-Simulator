@@ -485,7 +485,7 @@ export function BusinessPage() {
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Panel title="Công ty của tôi" borderColor="emerald">
           {myCompanies.length === 0 ? (
             <p className="text-sm text-slate-500">
@@ -505,12 +505,12 @@ export function BusinessPage() {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-slate-800">{c.name}</span>
-                    {statusBadge(c.status)}
+                    <span className="font-medium text-slate-800 break-words">{c.name}</span>
+                    <span className="shrink-0">{statusBadge(c.status)}</span>
                   </div>
-                  <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
-                    <span>{industryLabel(c.industry)}</span>
-                    <span>{formatCompact(c.valuation.amount)}</span>
+                  <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-500">
+                    <span className="truncate">{industryLabel(c.industry)}</span>
+                    <span className="shrink-0">{formatCompact(c.valuation.amount)}</span>
                   </div>
                 </button>
               ))}
@@ -518,13 +518,13 @@ export function BusinessPage() {
           )}
         </Panel>
 
-        <div className="xl:col-span-2">
+        <div className="min-w-0 xl:col-span-2">
           <Panel title="Thị trường doanh nghiệp" borderColor="default">
             {companies.length === 0 ? (
               <p className="text-sm text-slate-500">Chưa có công ty nào được thành lập.</p>
             ) : (
               <div className="overflow-auto max-h-[60vh]">
-                <table className="min-w-full text-sm">
+                <table className="min-w-[680px] w-full text-sm">
                   <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="py-2 pr-3">Công ty</th>
@@ -628,37 +628,35 @@ export function BusinessPage() {
         open={!!selectedId}
         onClose={() => setSelectedId(null)}
         title={selectedCompany ? `Công ty: ${selectedCompany.name}` : 'Chi tiết công ty'}
+        size="2xl"
       >
         {!selectedCompany ? (
           <p className="text-sm text-slate-500">
             {detailLoading ? 'Đang tải...' : 'Không tìm thấy công ty.'}
           </p>
         ) : (
-          <div className="max-h-[72vh] space-y-4 overflow-y-auto pr-1">
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="text-slate-500">Ngành</div>
-              <div className="font-medium">{industryLabel(selectedCompany.industry)}</div>
-              <div className="text-slate-500">Chủ sở hữu</div>
-              <div className="font-medium">{selectedCompany.ownerName}</div>
-              <div className="text-slate-500">Trạng thái</div>
-              <div>{statusBadge(selectedCompany.status)}</div>
-              <div className="text-slate-500">Định giá</div>
-              <div className="font-mono">{formatMoney(selectedCompany.valuation.amount)}</div>
-              <div className="text-slate-500">Quỹ công ty</div>
-              <div className="font-mono">{formatMoney(selectedCompany.cash.amount)}</div>
-              <div className="text-slate-500">Mã CK</div>
-              <div className="font-mono">{selectedCompany.tickerSymbol ?? '—'}</div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 text-sm sm:grid-cols-2">
+              <div className="flex justify-between gap-2 sm:block"><span className="text-slate-500">Ngành</span><div className="font-medium text-right sm:text-left">{industryLabel(selectedCompany.industry)}</div></div>
+              <div className="flex justify-between gap-2 sm:block"><span className="text-slate-500">Chủ sở hữu</span><div className="font-medium text-right sm:text-left break-words">{selectedCompany.ownerName}</div></div>
+              <div className="flex justify-between gap-2 sm:block"><span className="text-slate-500">Trạng thái</span><div>{statusBadge(selectedCompany.status)}</div></div>
+              <div className="flex justify-between gap-2 sm:block"><span className="text-slate-500">Mã CK</span><div className="font-mono">{selectedCompany.tickerSymbol ?? '—'}</div></div>
+              <div className="flex justify-between gap-2 sm:block"><span className="text-slate-500">Định giá</span><div className="font-mono text-right sm:text-left">{formatMoney(selectedCompany.valuation.amount)}</div></div>
+              <div className="flex justify-between gap-2 sm:block"><span className="text-slate-500">Quỹ công ty</span><div className="font-mono text-right sm:text-left">{formatMoney(selectedCompany.cash.amount)}</div></div>
             </div>
 
             <div className="space-y-2 rounded-xl border border-slate-200 p-3">
               <p className="text-xs font-semibold text-slate-700">Đầu tư vốn</p>
-              <div className="flex gap-2">
-                <GameInput
-                  type="number"
-                  min={1}
-                  value={investAmount}
-                  onChange={(e) => setInvestAmount(e.target.value)}
-                />
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div className="flex-1">
+                  <GameInput
+                    label="Số tiền (VND)"
+                    type="number"
+                    min={1}
+                    value={investAmount}
+                    onChange={(e) => setInvestAmount(e.target.value)}
+                  />
+                </div>
                 <GameButton
                   variant="primary"
                   onClick={() => investCompany.mutate(selectedCompany.id)}
@@ -727,7 +725,7 @@ export function BusinessPage() {
                   </p>
                   {hrAccLoading && <span className="text-[11px] text-slate-500">Đang tải...</span>}
                 </div>
-                <div className="grid gap-2 sm:grid-cols-[1fr_100px_auto] items-end">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_110px_auto] sm:items-end">
                   <GameInput
                     label="Nhu cầu/vị trí"
                     value={roleFocus}
@@ -746,6 +744,7 @@ export function BusinessPage() {
                     variant="primary"
                     onClick={() => createHiringPlan.mutate(selectedCompany.id)}
                     disabled={createHiringPlan.isPending || selectedCompany.status === 'bankrupt'}
+                    className="w-full sm:w-auto"
                   >
                     {createHiringPlan.isPending ? 'AI đang sắp...' : 'Nhờ AI đề xuất'}
                   </GameButton>
@@ -1144,7 +1143,7 @@ export function BusinessPage() {
             {canManage && selectedCompany.status === 'active' && (
               <div className="space-y-2 rounded-xl border border-slate-200 p-3">
                 <p className="text-xs font-semibold text-slate-700">IPO (chủ sở hữu)</p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   <GameInput
                     label="Mã CK"
                     value={ipoSymbol}
@@ -1178,23 +1177,24 @@ export function BusinessPage() {
               (selectedCompany.status === 'active' || selectedCompany.status === 'ipo') && (
                 <div className="space-y-2 rounded-xl border border-slate-200 p-3">
                   <p className="text-xs font-semibold text-slate-700">Cổ tức (chủ sở hữu)</p>
-                  <div className="flex gap-2">
-                    <GameInput
-                      label="Số tiền / cổ phiếu"
-                      type="number"
-                      min={1}
-                      value={divPerShare}
-                      onChange={(e) => setDivPerShare(e.target.value)}
-                    />
-                    <div className="flex items-end">
-                      <GameButton
-                        variant="outline"
-                        onClick={() => payDividend.mutate(selectedCompany.id)}
-                        disabled={payDividend.isPending}
-                      >
-                        {payDividend.isPending ? '...' : 'Phát cổ tức'}
-                      </GameButton>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <div className="flex-1">
+                      <GameInput
+                        label="Số tiền / cổ phiếu"
+                        type="number"
+                        min={1}
+                        value={divPerShare}
+                        onChange={(e) => setDivPerShare(e.target.value)}
+                      />
                     </div>
+                    <GameButton
+                      variant="outline"
+                      onClick={() => payDividend.mutate(selectedCompany.id)}
+                      disabled={payDividend.isPending}
+                      className="w-full sm:w-auto"
+                    >
+                      {payDividend.isPending ? '...' : 'Phát cổ tức'}
+                    </GameButton>
                   </div>
                 </div>
               )}
@@ -1224,8 +1224,8 @@ export function BusinessPage() {
               ) : topShareholders.length === 0 ? (
                 <p className="text-xs text-slate-500">Chưa có dữ liệu cổ đông.</p>
               ) : (
-                <div className="overflow-auto max-h-[60vh]">
-                  <table className="min-w-full text-xs">
+                <div className="overflow-auto max-h-[50vh]">
+                  <table className="min-w-[360px] w-full text-xs">
                     <thead className="text-left uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="py-1 pr-2">Cổ đông</th>
