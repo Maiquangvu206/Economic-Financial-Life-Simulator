@@ -40,10 +40,12 @@ export interface LeaseRow {
   tenantCharacterId: string;
   tenantName: string | null;
   monthlyRentMinor: string;
+  depositMinor: string;
   status: string;
   startedAt: Date;
   endsAt: Date | null;
   nextDueAt: Date;
+  termMonths: number | null;
 }
 
 export interface PropertySaleOfferRow {
@@ -106,8 +108,11 @@ export class RealEstateRepository {
     const result = await this.db.query<LeaseRow>(
       `SELECT l.id, l.property_id AS "propertyId", l.tenant_character_id AS "tenantCharacterId",
               c.full_name AS "tenantName",
-              l.monthly_rent_minor AS "monthlyRentMinor", l.status, l.started_at AS "startedAt",
-              l.ends_at AS "endsAt", l.next_due_at AS "nextDueAt"
+              l.monthly_rent_minor AS "monthlyRentMinor",
+              COALESCE(l.deposit_minor, 0) AS "depositMinor",
+              l.status, l.started_at AS "startedAt",
+              l.ends_at AS "endsAt", l.next_due_at AS "nextDueAt",
+              COALESCE(l.term_months, 12) AS "termMonths"
        FROM leases l
        LEFT JOIN characters c ON c.id = l.tenant_character_id
        WHERE l.tenant_character_id = $1 AND l.status = 'active'`,
@@ -121,14 +126,35 @@ export class RealEstateRepository {
     const result = await this.db.query<LeaseRow>(
       `SELECT l.id, l.property_id AS "propertyId", l.tenant_character_id AS "tenantCharacterId",
               c.full_name AS "tenantName",
-              l.monthly_rent_minor AS "monthlyRentMinor", l.status, l.started_at AS "startedAt",
-              l.ends_at AS "endsAt", l.next_due_at AS "nextDueAt"
+              l.monthly_rent_minor AS "monthlyRentMinor",
+              COALESCE(l.deposit_minor, 0) AS "depositMinor",
+              l.status, l.started_at AS "startedAt",
+              l.ends_at AS "endsAt", l.next_due_at AS "nextDueAt",
+              COALESCE(l.term_months, 12) AS "termMonths"
        FROM leases l
        LEFT JOIN characters c ON c.id = l.tenant_character_id
        WHERE l.property_id = ANY($1::uuid[]) AND l.status = 'active'`,
       [propertyIds],
     );
     return result.rows;
+  }
+
+  async findActiveLeaseByPropertyId(client: Db, propertyId: string): Promise<LeaseRow | null> {
+    const result = await client.query<LeaseRow>(
+      `SELECT l.id, l.property_id AS "propertyId", l.tenant_character_id AS "tenantCharacterId",
+              c.full_name AS "tenantName",
+              l.monthly_rent_minor AS "monthlyRentMinor",
+              COALESCE(l.deposit_minor, 0) AS "depositMinor",
+              l.status, l.started_at AS "startedAt",
+              l.ends_at AS "endsAt", l.next_due_at AS "nextDueAt",
+              COALESCE(l.term_months, 12) AS "termMonths"
+       FROM leases l
+       LEFT JOIN characters c ON c.id = l.tenant_character_id
+       WHERE l.property_id = $1 AND l.status = 'active'
+       LIMIT 1`,
+      [propertyId],
+    );
+    return result.rows[0] ?? null;
   }
 
   async hasActiveLease(client: Db, propertyId: string): Promise<boolean> {
@@ -266,11 +292,36 @@ export class RealEstateRepository {
     propertyId: string,
     tenantCharacterId: string,
     monthlyRentMinor: number,
+    depositMinor: number,
+    termMonths = 12,
   ): Promise<void> {
     await client.query(
-      `INSERT INTO leases (id, property_id, tenant_character_id, monthly_rent_minor, status, next_due_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, 'active', now() + interval '1 month')`,
-      [propertyId, tenantCharacterId, monthlyRentMinor],
+      `INSERT INTO leases (id, property_id, tenant_character_id, monthly_rent_minor, deposit_minor, term_months, status, started_at, next_due_at, ends_at)
+       VALUES (
+         gen_random_uuid(), $1, $2, $3, $4, $5, 'active', now(), now() + interval '1 month',
+         now() + (($5::text || ' months')::interval)
+       )`,
+      [propertyId, tenantCharacterId, monthlyRentMinor, depositMinor, Math.max(1, Math.floor(termMonths))],
+    );
+  }
+
+  async terminateLease(
+    client: Db,
+    leaseId: string,
+    terminatedByCharacterId: string,
+    penaltyMinor: number,
+    note: string,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE leases
+       SET status = 'ended',
+           ends_at = COALESCE(ends_at, now()),
+           terminated_at = now(),
+           terminated_by_character_id = $2,
+           termination_penalty_minor = $3,
+           termination_note = $4
+       WHERE id = $1 AND status = 'active'`,
+      [leaseId, terminatedByCharacterId, Math.max(0, Math.floor(penaltyMinor)), note],
     );
   }
 

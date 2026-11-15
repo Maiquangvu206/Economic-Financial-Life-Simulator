@@ -128,11 +128,17 @@ export class RealEstateService {
         const lease = leaseByProp.get(p.id);
         const activeLease = lease
           ? {
+              id: lease.id,
+              propertyId: lease.propertyId,
               tenantCharacterId: lease.tenantCharacterId,
               tenantName: lease.tenantName,
               monthlyRent: money(Number(lease.monthlyRentMinor)),
+              deposit: money(Number((lease as any).depositMinor ?? 0)),
               startedAt: lease.startedAt.toISOString(),
               nextDueAt: lease.nextDueAt.toISOString(),
+              endsAt: lease.endsAt ? lease.endsAt.toISOString() : null,
+              termMonths: Number((lease as any).termMonths ?? 12),
+              canTerminate: character.id === lease.tenantCharacterId || character.id === p.ownerCharacterId,
             }
           : null;
         return toPropertyDto(
@@ -350,10 +356,26 @@ export class RealEstateService {
         });
       }
 
-      await this.repository.rent(client, propertyId, character.id, monthlyRent);
+      await this.repository.rent(client, propertyId, character.id, monthlyRent, deposit, 12);
       const updated = await this.repository.findById(propertyId, client);
       if (!updated) throw new Error('Bất động sản biến mất trong khi cho thuê');
-      return toPropertyDto(updated, character.id, true);
+      const active = await this.repository.findActiveLeaseByPropertyId(client, propertyId);
+      const activeLease = active
+        ? {
+            id: active.id,
+            propertyId: active.propertyId,
+            tenantCharacterId: active.tenantCharacterId,
+            tenantName: active.tenantName,
+            monthlyRent: money(Number(active.monthlyRentMinor)),
+            deposit: money(Number(active.depositMinor ?? 0)),
+            startedAt: active.startedAt.toISOString(),
+            nextDueAt: active.nextDueAt.toISOString(),
+            endsAt: active.endsAt ? active.endsAt.toISOString() : null,
+            termMonths: Number(active.termMonths ?? 12),
+            canTerminate: true,
+          }
+        : null;
+      return toPropertyDto(updated, character.id, true, [], activeLease);
     });
   }
 
@@ -645,6 +667,88 @@ export class RealEstateService {
 
       await this.repository.cancelPendingOffersForProperties(client, rows.map((r) => r.id));
       await this.repository.demolishToLand(client, rows.map((r) => r.id));
+
+      return this.getOverview(userId);
+    });
+  }
+
+  async terminateLease(userId: string, propertyId: string): Promise<RealEstateOverviewDto> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const property = await this.repository.findById(propertyId, client);
+      if (!property) throw AppError.notFound('Property');
+      const lease = await this.repository.findActiveLeaseByPropertyId(client, propertyId);
+      if (!lease) throw AppError.badRequest('Bất động sản này hiện không có hợp đồng thuê đang hoạt động.');
+
+      const ownerId = property.ownerCharacterId;
+      if (!ownerId) throw AppError.badRequest('Bất động sản chưa có chủ sở hữu hợp lệ.');
+      const isTenant = lease.tenantCharacterId === character.id;
+      const isOwner = ownerId === character.id;
+      if (!isTenant && !isOwner) {
+        throw AppError.forbidden('Chỉ chủ sở hữu hoặc người thuê mới có thể hủy hợp đồng thuê.');
+      }
+
+      const now = Date.now();
+      const endsAtMs = lease.endsAt ? new Date(lease.endsAt).getTime() : (new Date(lease.startedAt).getTime() + Number(lease.termMonths ?? 12) * 30 * 24 * 60 * 60 * 1000);
+      const remainingMs = Math.max(0, endsAtMs - now);
+      const remainingMonths = Math.ceil(remainingMs / (30 * 24 * 60 * 60 * 1000));
+      const monthlyRent = Number(lease.monthlyRentMinor);
+      const depositMinor = Number(lease.depositMinor ?? 0);
+      const remainingDue = Math.max(0, monthlyRent * remainingMonths);
+      const penalty = Math.round(remainingDue * 0.5);
+
+      const cancellerId = character.id;
+      const otherId = isTenant ? ownerId : lease.tenantCharacterId;
+
+      const cancellerRow = await client.query<{ cash_minor: string }>(`SELECT cash_minor FROM characters WHERE id = $1`, [cancellerId]);
+      const cancellerCash = toMinor(cancellerRow.rows[0]?.cash_minor ?? 0);
+
+      if (isTenant) {
+        // Người thuê hủy: mất cọc (chủ sở hữu giữ, đã nhận trước) + trả 50% tiền thuê còn lại đến hết hạn.
+        this.ensureFunds(cancellerCash, penalty);
+        if (penalty > 0) {
+          await ledger.transfer(client, {
+            from: { ownerType: 'character', ownerId: cancellerId },
+            to: { ownerType: 'character', ownerId: ownerId },
+            amountMinor: penalty,
+            kind: 'lease_termination_penalty',
+            description: `Phạt hủy hợp đồng thuê trước hạn (người thuê) BĐS ${propertyId}`,
+            referenceType: 'lease',
+            referenceId: lease.id,
+          });
+        }
+      } else {
+        // Chủ sở hữu hủy: mất cọc (hoàn cọc cho người thuê) + trả 50% tiền thuê còn lại đến hết hạn.
+        const ownerPayment = depositMinor + penalty;
+        this.ensureFunds(cancellerCash, ownerPayment);
+        if (ownerPayment > 0) {
+          await ledger.transfer(client, {
+            from: { ownerType: 'character', ownerId: ownerId },
+            to: { ownerType: 'character', ownerId: lease.tenantCharacterId },
+            amountMinor: ownerPayment,
+            kind: 'lease_termination_compensation',
+            description: `Bồi thường hủy hợp đồng thuê trước hạn (chủ sở hữu) BĐS ${propertyId}`,
+            referenceType: 'lease',
+            referenceId: lease.id,
+          });
+        }
+      }
+
+      const note = isTenant
+        ? `Người thuê hủy trước hạn: mất cọc ${depositMinor.toLocaleString('vi-VN')} ₫ (chủ giữ), phạt 50% tiền thuê còn lại ${penalty.toLocaleString('vi-VN')} ₫ (còn ${remainingMonths} tháng).`
+        : `Chủ sở hữu hủy trước hạn: hoàn cọc ${depositMinor.toLocaleString('vi-VN')} ₫ + bồi thường 50% tiền thuê còn lại ${penalty.toLocaleString('vi-VN')} ₫ (còn ${remainingMonths} tháng).`;
+      await this.repository.terminateLease(client, lease.id, cancellerId, penalty, note);
+
+      const otherUser = await client.query<{ user_id: string }>(`SELECT user_id FROM characters WHERE id = $1`, [otherId]);
+      if (otherUser.rows[0]?.user_id) {
+        await notify(client as any, {
+          userId: otherUser.rows[0].user_id,
+          kind: 'real_estate',
+          title: 'Hợp đồng thuê đã bị hủy trước hạn',
+          body: note,
+          payload: { propertyId, leaseId: lease.id, terminatedBy: cancellerId },
+        });
+      }
 
       return this.getOverview(userId);
     });

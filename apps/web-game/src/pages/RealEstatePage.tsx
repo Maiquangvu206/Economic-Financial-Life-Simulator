@@ -109,6 +109,10 @@ export function RealEstatePage() {
       ) ?? [],
     [overview],
   );
+  const leasedByMe = useMemo(
+    () => overview?.properties.filter((p) => p.leasedByMe && p.activeLease) ?? [],
+    [overview],
+  );
 
   // Thửa đất/công trình đã có chủ và đã xây dựng: cho phép đề xuất mua (không cần chờ rao bán/đấu giá)
   const builtOfferable = useMemo(
@@ -210,8 +214,9 @@ export function RealEstatePage() {
                       {p.activeLease ? <Badge variant="warning">Đang có người thuê</Badge> : null}
                     </div>
                     {p.activeLease && (
-                      <div className="text-[11px] text-emerald-700">
-                        Hợp đồng thuê: {p.activeLease.tenantName || 'Người thuê'} · {formatMoney(p.activeLease.monthlyRent.amount)}/tháng · bắt đầu {new Date(p.activeLease.startedAt).toLocaleDateString('vi-VN')} · kỳ tới {new Date(p.activeLease.nextDueAt).toLocaleDateString('vi-VN')}
+                      <div className="text-[11px] text-emerald-700 space-y-0.5">
+                        <div>Hợp đồng thuê: {p.activeLease.tenantName || 'Người thuê'} · {formatMoney(p.activeLease.monthlyRent.amount)}/tháng · bắt đầu {new Date(p.activeLease.startedAt).toLocaleDateString('vi-VN')} · kỳ tới {new Date(p.activeLease.nextDueAt).toLocaleDateString('vi-VN')}{p.activeLease.endsAt ? ` · hết hạn ${new Date(p.activeLease.endsAt).toLocaleDateString('vi-VN')}` : ''}</div>
+                        {typeof p.activeLease.deposit?.amount === 'number' && <div>Cọc: {formatMoney(p.activeLease.deposit.amount)}</div>}
                       </div>
                     )}
                     {p.rentNotes && <div className="text-[11px] text-slate-500">Ghi chú thuê: {p.rentNotes}</div>}
@@ -267,6 +272,28 @@ export function RealEstatePage() {
                         }}
                       >
                         Phá dỡ / Đất nền
+                      </GameButton>
+                    )}
+                    {p.activeLease && p.isMine && (
+                      <GameButton
+                        variant="outline"
+                        size="sm"
+                        disabled={isBusy(`terminate-${p.id}`)}
+                        onClick={() => {
+                          if (!window.confirm('Hủy hợp đồng thuê trước hạn với tư cách chủ sở hữu?\n\nLưu ý: bạn sẽ mất cọc (hoàn lại cọc cho người thuê) và phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.')) return;
+                          void runAction(
+                            `terminate-${p.id}`,
+                            async () => {
+                              await apiRequest('/api/v1/real-estate/lease/terminate', {
+                                method: 'POST',
+                                body: JSON.stringify({ propertyId: p.id }),
+                              });
+                            },
+                            'Đã hủy hợp đồng thuê trước hạn (chủ sở hữu).',
+                          );
+                        }}
+                      >
+                        Hủy hợp đồng thuê
                       </GameButton>
                     )}
                   </div>
@@ -330,6 +357,54 @@ export function RealEstatePage() {
           )) : <div className="text-center py-4 text-xs text-slate-500">Không có bất động sản nào đang sẵn sàng mua.</div>}
         </div>
       </Panel>
+
+      {leasedByMe.length > 0 && (
+        <Panel title="Bất động sản bạn đang thuê (hợp đồng thuê)" borderColor="emerald">
+          <div className="space-y-3">
+            {leasedByMe.map((p) => (
+              <div key={`leased-${p.id}`} className="flex items-start justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-800">{p.name}</span>
+                    <Badge variant="default">{propertyTypeLabel(p.propertyType)}</Badge>
+                    <Badge variant="success">Đang thuê</Badge>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-600">Lô: {p.lotNumber || '—'} · {p.province || '—'} · ({p.location.x},{p.location.y})</div>
+                  {p.activeLease && (
+                    <div className="mt-1 text-xs text-slate-700 space-y-0.5">
+                      <div>Thuê: <span className="font-mono font-semibold">{formatMoney(p.activeLease.monthlyRent.amount)}</span>/tháng · bắt đầu {new Date(p.activeLease.startedAt).toLocaleDateString('vi-VN')} · kỳ tới {new Date(p.activeLease.nextDueAt).toLocaleDateString('vi-VN')}{p.activeLease.endsAt ? ` · hết hạn ${new Date(p.activeLease.endsAt).toLocaleDateString('vi-VN')}` : ''}</div>
+                      {typeof p.activeLease.deposit?.amount === 'number' && <div>Tiền cọc đã đặt: {formatMoney(p.activeLease.deposit.amount)}</div>}
+                    </div>
+                  )}
+                  <div className="mt-1 text-[11px] text-amber-700">Hủy trước hạn: bên hủy sẽ <b>mất cọc</b> và phải <b>thanh toán 50% số tiền thuê còn lại</b> tính đến khi hết hợp đồng.</div>
+                </div>
+                <div className="flex flex-col gap-2 shrink-0">
+                  <GameButton
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy(`terminate-tenant-${p.id}`)}
+                    onClick={() => {
+                      if (!window.confirm('Hủy hợp đồng thuê trước hạn với tư cách người thuê?\n\nLưu ý: bạn sẽ mất cọc và phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.')) return;
+                      void runAction(
+                        `terminate-tenant-${p.id}`,
+                        async () => {
+                          await apiRequest('/api/v1/real-estate/lease/terminate', {
+                            method: 'POST',
+                            body: JSON.stringify({ propertyId: p.id }),
+                          });
+                        },
+                        'Đã hủy hợp đồng thuê trước hạn (người thuê).',
+                      );
+                    }}
+                  >
+                    Hủy hợp đồng thuê
+                  </GameButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
 
       {builtOfferable.length > 0 && (
         <Panel title="Công trình đã xây dựng (có thể đề xuất mua)" borderColor="emerald">

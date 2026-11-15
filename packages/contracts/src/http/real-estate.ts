@@ -53,11 +53,17 @@ export const PropertySaleOfferDtoSchema = z.object({
 export type PropertySaleOfferDto = z.infer<typeof PropertySaleOfferDtoSchema>;
 
 export const ActiveLeaseInfoDtoSchema = z.object({
+  id: IdSchema.optional(),
+  propertyId: IdSchema.optional(),
   tenantCharacterId: IdSchema,
   tenantName: z.string().nullable().optional(),
   monthlyRent: MoneySchema,
+  deposit: MoneySchema.optional(),
   startedAt: z.string().datetime(),
   nextDueAt: z.string().datetime(),
+  endsAt: z.string().datetime().nullable().optional(),
+  termMonths: z.number().int().positive().optional(),
+  canTerminate: z.boolean().optional(),
 });
 export type ActiveLeaseInfoDto = z.infer<typeof ActiveLeaseInfoDtoSchema>;
 
@@ -147,6 +153,12 @@ export const RentPropertyRequestSchema = z.object({
   propertyId: IdSchema,
 });
 export type RentPropertyRequest = z.infer<typeof RentPropertyRequestSchema>;
+
+/** Hủy hợp đồng thuê trước hạn (chủ sở hữu hoặc người thuê). */
+export const TerminateLeaseRequestSchema = z.object({
+  propertyId: IdSchema,
+});
+export type TerminateLeaseRequest = z.infer<typeof TerminateLeaseRequestSchema>;
 
 /** Gửi đề nghị mua/trao đổi giá. */
 export const MakePropertyOfferRequestSchema = z.object({
