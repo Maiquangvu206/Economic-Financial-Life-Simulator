@@ -189,3 +189,49 @@ export const CareersOverviewExtDtoSchema = CareersOverviewDtoSchema.extend({
   tuitionPaidTotal: z.number(),
 });
 export type CareersOverviewExtDto = z.infer<typeof CareersOverviewExtDtoSchema>;
+
+// --- Recruitment (job board for company postings) ---
+export const RecruitmentJobDtoSchema = z.object({
+  id: IdSchema,
+  title: z.string(),
+  industry: IndustryTypeSchema,
+  baseSalary: MoneySchema,
+  requiredDegree: z.string().nullable(),
+  minCreditScore: z.number().int(),
+  energyCost: z.number().int(),
+  openings: z.number().int(),
+  companyId: IdSchema.nullable(),
+  companyName: z.string().nullable(),
+  ownerCharacterId: IdSchema.nullable(),
+  ownerName: z.string().nullable(),
+  eligible: z.boolean(),
+  blocker: z.string().nullable(),
+  canApply: z.boolean(),
+  isMine: z.boolean(),
+});
+export type RecruitmentJobDto = z.infer<typeof RecruitmentJobDtoSchema>;
+
+export const RecruitmentOverviewDtoSchema = z.object({
+  jobs: z.array(RecruitmentJobDtoSchema),
+  employment: EmploymentDtoSchema.nullable(),
+  canPostJobs: z.boolean(),
+  canApplyJobs: z.boolean(),
+  applyBlocker: z.string().nullable(),
+  myCompanies: z.array(z.object({ id: IdSchema, name: z.string(), status: z.string() })),
+});
+export type RecruitmentOverviewDto = z.infer<typeof RecruitmentOverviewDtoSchema>;
+
+export const CreateRecruitmentJobRequestSchema = z.object({
+  companyId: IdSchema,
+  title: z.string().min(2).max(120),
+  industry: IndustryTypeSchema,
+  baseSalary: MoneySchema,
+  requiredDegree: z.string().nullable().optional(),
+  minCreditScore: z.number().int().min(0).max(1000).optional(),
+  energyCost: z.number().int().min(0).max(100).optional(),
+  openings: z.number().int().min(1).max(999).optional(),
+});
+export type CreateRecruitmentJobRequest = z.infer<typeof CreateRecruitmentJobRequestSchema>;
+
+export const ApplyRecruitmentJobRequestSchema = z.object({ jobId: IdSchema });
+export type ApplyRecruitmentJobRequest = z.infer<typeof ApplyRecruitmentJobRequestSchema>;

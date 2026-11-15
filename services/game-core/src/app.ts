@@ -19,6 +19,7 @@ import { stockMarketRouter } from './modules/stock-market/stock-market.routes.js
 import { socialRouter } from './modules/social/social.routes.js';
 import { lawRouter } from './modules/law/law.routes.js';
 import { educationRouter } from './modules/education/education.routes.js';
+import { recruitmentRouter } from './modules/recruitment/recruitment.routes.js';
 import { taxRouter } from './modules/tax/tax.routes.js';
 import { underworldRouter } from './modules/underworld/underworld.routes.js';
 import { npcRouter } from './modules/npc/npc.routes.js';
@@ -103,6 +104,7 @@ export function createApp(): Express {
   app.use('/api/v1/social', socialRouter);
   app.use('/api/v1/law', lawRouter);
   app.use('/api/v1/education', educationRouter);
+  app.use('/api/v1/recruitment', recruitmentRouter);
   app.use('/api/v1/tax', taxRouter);
   app.use('/api/v1/underworld', underworldRouter);
   app.use('/api/v1/npc', npcRouter);

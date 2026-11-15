@@ -52,6 +52,7 @@ export interface PremisesOptionRow {
   id: string;
   label: string;
   provinceCode: string | null;
+  provinceName: string | null;
   propertyType: string | null;
   x: number | null;
   y: number | null;
@@ -185,8 +186,9 @@ export class CorporationRepository {
     const coreLand = await db.query<PremisesOptionRow>(
       `SELECT 'land_core'::text AS type,
               p.id,
-              ('Đất nền (Hà Nội) - ' || COALESCE(p.lot_number, p.id::text) || CASE WHEN n.name IS NOT NULL AND n.name <> '' THEN ' (' || n.name || ')' ELSE '' END) AS label,
+              ('Đất nền (Hà Nội) - ' || COALESCE(p.lot_number, p.id::text) || CASE WHEN n.name IS NOT NULL AND n.name <> '' THEN ' - ' || n.name ELSE '' END || CASE WHEN n.x IS NOT NULL AND n.y IS NOT NULL THEN ' [' || n.x || ',' || n.y || ']' ELSE '' END) AS label,
               '001'::text AS "provinceCode",
+              'Thành phố Hà Nội'::text AS "provinceName",
               p.property_type AS "propertyType",
               n.x, n.y,
               NULL::uuid AS "hostCompanyId",
@@ -206,8 +208,9 @@ export class CorporationRepository {
     const provinceLand = await db.query<PremisesOptionRow>(
       `SELECT 'land_province'::text AS type,
               plp.id,
-              ('Đất nền ' || COALESCE(pr.name, plp.province_code) || ' - ' || plp.node_name || ' (' || plp.node_x || ',' || plp.node_y || ')') AS label,
+              ('Đất nền - ' || COALESCE(pr.name, plp.province_code) || ' - ' || plp.node_name || ' [' || plp.node_x || ',' || plp.node_y || ']') AS label,
               plp.province_code AS "provinceCode",
+              pr.name AS "provinceName",
               plp.property_type AS "propertyType",
               plp.node_x AS x,
               plp.node_y AS y,
@@ -221,15 +224,16 @@ export class CorporationRepository {
          AND plp.hq_company_id IS NULL
          AND plp.merged_into_property_id IS NULL
          AND (plp.construction_option IS NULL OR plp.construction_option = '')
-       ORDER BY plp.updated_at DESC, plp.id`,
+       ORDER BY pr.name NULLS LAST, plp.updated_at DESC, plp.id`,
       [characterId],
     );
 
     const companyProps = await db.query<PremisesOptionRow>(
       `SELECT 'company_property'::text AS type,
               p.id,
-              ('Trụ sở tại ' || c.name || ' - ' || COALESCE(n.name, p.lot_number, p.property_type, p.id::text)) AS label,
+              ('Trụ sở tại ' || c.name || ' - ' || COALESCE(n.name, p.lot_number, p.property_type, p.id::text) || CASE WHEN n.x IS NOT NULL AND n.y IS NOT NULL THEN ' [' || n.x || ',' || n.y || ']' ELSE '' END) AS label,
               NULL::text AS "provinceCode",
+              NULL::text AS "provinceName",
               p.property_type AS "propertyType",
               n.x, n.y,
               c.id AS "hostCompanyId",

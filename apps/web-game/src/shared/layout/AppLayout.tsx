@@ -28,6 +28,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Thành phố', symbol: '▦', end: true },
   { to: '/character', label: 'Nhân vật', symbol: '🪪' },
   { to: '/education', label: 'Giáo dục', symbol: '🎓' },
+  { to: '/recruitment', label: 'Tuyển dụng', symbol: '💼' },
   { to: '/finance', label: 'Tài chính', symbol: '₫' },
   { to: '/real-estate', label: 'Bất động sản', symbol: '⌂' },
   { to: '/business', label: 'Doanh nghiệp', symbol: '◇' },
