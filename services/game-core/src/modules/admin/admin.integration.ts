@@ -8,7 +8,8 @@ import { publishToUser, publishToAllUsers } from '../../shared/realtime/publish.
 import { AuthRepository } from '../auth/auth.repository.js';
 import { underworldService } from '../underworld/underworld.service.js';
 import { adjustStateFund, creditStateFund, debitStateFund, getStateFundBalance } from '../../shared/state-fund/stateFund.js';
-import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest, AdminTriggerSweepRequest, UpdateInterestRateConfigRequest, InterestRateConfigDto, AdjustStateFundRequest } from '@efls/contracts';
+import { supportCompaniesFromStateFund } from '../../shared/state-fund/supportCompanies.js';
+import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest, AdminTriggerSweepRequest, UpdateInterestRateConfigRequest, InterestRateConfigDto, AdjustStateFundRequest, SupportCompaniesFromStateFundRequest } from '@efls/contracts';
 
 function ensureAdmin(req: Request): void {
   if (req.actorRole !== 'admin' && req.actorRole !== 'moderator') {
@@ -839,4 +840,77 @@ export async function adminAdjustStateFund(req: Request, res: Response): Promise
 
   await writeActionLog(pool as any, req.actorId, 'state_fund.adjust', { deltaMinor, reason });
   await getStateFundSnapshot(req, res);
+}
+
+export async function adminSupportCompaniesFromStateFund(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const body = req.body as SupportCompaniesFromStateFundRequest;
+  const scope = body.scope === 'all' ? 'all' : 'selected';
+  const amountPerCompanyMinor = Math.trunc(Number(body.amountPerCompanyMinor));
+  const reason = String(body.reason ?? '').trim();
+  const companyIds = Array.isArray(body.companyIds) ? body.companyIds : [];
+  if (!Number.isFinite(amountPerCompanyMinor) || amountPerCompanyMinor <= 0) {
+    throw AppError.badRequest('Số tiền hỗ trợ mỗi công ty không hợp lệ.');
+  }
+  if (reason.length < 3) throw AppError.badRequest('Vui lòng nhập lý do hỗ trợ (tối thiểu 3 ký tự).');
+  if (scope === 'selected' && companyIds.length === 0) {
+    throw AppError.badRequest('Vui lòng chọn ít nhất một công ty hoặc dùng phạm vi toàn bộ.');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    let result;
+    try {
+      result = await supportCompaniesFromStateFund(client as any, {
+        scope,
+        companyIds,
+        amountPerCompanyMinor,
+        reason,
+        actorType: 'admin',
+        actorId: req.actorId ?? null,
+        refType: 'admin',
+        refId: req.actorId ?? null,
+      });
+    } catch (e: any) {
+      const msg = String(e?.message ?? '');
+      if (msg.includes('STATE_FUND_INSUFFICIENT')) throw AppError.conflict('state_fund_insufficient', 'Quỹ đất nước không đủ để hỗ trợ các công ty theo mức đã chọn.');
+      if (msg.includes('NO_ELIGIBLE_COMPANIES') || msg.includes('NO_COMPANIES')) throw AppError.badRequest('Không tìm thấy công ty hợp lệ để hỗ trợ (đang hoạt động/IPO).');
+      if (msg.includes('INVALID_AMOUNT')) throw AppError.badRequest('Số tiền hỗ trợ không hợp lệ.');
+      throw e;
+    }
+    await client.query('COMMIT');
+
+    await writeActionLog(pool as any, req.actorId, 'state_fund.support_companies', {
+      scope,
+      companyIds: scope === 'selected' ? companyIds : undefined,
+      amountPerCompanyMinor,
+      supportedCompanies: result.supportedCompanies,
+      totalSpentMinor: result.totalSpentMinor,
+      boostedTickers: result.boostedTickers,
+      reason,
+    });
+    try {
+      await publishToAllUsers('notification', {
+        kind: 'market',
+        title: 'Quỹ đất nước hỗ trợ doanh nghiệp',
+        body: `Quỹ đất nước đã hỗ trợ ${result.supportedCompanies} công ty (${amountPerCompanyMinor.toLocaleString('vi-VN')} ₫/công ty), tổng ${result.totalSpentMinor.toLocaleString('vi-VN')} ₫. Biến động/thanh khoản thị trường có thể tăng.`,
+        at: Date.now(),
+      });
+    } catch { /* ignore */ }
+
+    res.json({
+      ok: true,
+      supportedCompanies: result.supportedCompanies,
+      amountPerCompanyMinor: result.amountPerCompanyMinor,
+      totalSpentMinor: result.totalSpentMinor,
+      boostedTickers: result.boostedTickers,
+      balanceAfter: money(result.balanceAfter),
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }

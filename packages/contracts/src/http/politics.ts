@@ -105,6 +105,7 @@ export type DonateRequest = z.infer<typeof DonateRequestSchema>;
 export const MayorPolicyActionTypeSchema = z.enum([
   'adjust_ot_rate',
   'treasury_welfare_bonus',
+  'support_companies',
 ]);
 export type MayorPolicyActionType = z.infer<typeof MayorPolicyActionTypeSchema>;
 
@@ -115,6 +116,10 @@ export const MayorPolicyActionRequestSchema = z.object({
   // treasury_welfare_bonus
   amountPerCitizen: z.number().int().nonnegative().optional(),
   maxCitizens: z.number().int().positive().optional(),
+  // support_companies (from state fund): support selected companies or all active/ipo
+  companyIds: z.array(IdSchema).max(200).optional(),
+  supportAllCompanies: z.boolean().optional(),
+  amountPerCompanyMinor: z.number().int().positive().optional(),
   reason: z.string().max(500).optional(),
 });
 export type MayorPolicyActionRequest = z.infer<typeof MayorPolicyActionRequestSchema>;

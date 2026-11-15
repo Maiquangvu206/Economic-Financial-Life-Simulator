@@ -4,7 +4,7 @@ import { PageHeader } from '@efls/ui';
 import { AdminStat } from '../shared/ui/AdminStat';
 import { formatCompact, formatMoney } from '../shared/lib/format';
 import { adminRequest } from '../shared/api/httpClient';
-import type { MacroSnapshotDto, StateFundSnapshotDto } from '@efls/contracts';
+import type { MacroSnapshotDto, StateFundSnapshotDto, SupportCompaniesFromStateFundResponse } from '@efls/contracts';
 
 export function MacroDashboardPage() {
   const qc = useQueryClient();
@@ -17,6 +17,12 @@ export function MacroDashboardPage() {
   const [delta, setDelta] = useState('');
   const [reason, setReason] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
+
+  const [supportScope, setSupportScope] = useState<'all' | 'selected'>('all');
+  const [supportCompanyIds, setSupportCompanyIds] = useState('');
+  const [supportAmount, setSupportAmount] = useState('');
+  const [supportReason, setSupportReason] = useState('');
+  const [supportMsg, setSupportMsg] = useState<string | null>(null);
 
   const adjustFund = useMutation({
     mutationFn: (body: { deltaMinor: number; reason: string }) =>
@@ -32,6 +38,23 @@ export function MacroDashboardPage() {
     },
     onError: (e: any) => {
       setMsg(e?.problem?.detail || e?.message || 'Không thể điều chỉnh quỹ đất nước.');
+    },
+  });
+
+  const supportCompanies = useMutation({
+    mutationFn: (body: { scope: 'all' | 'selected'; companyIds?: string[]; amountPerCompanyMinor: number; reason: string }) =>
+      adminRequest<SupportCompaniesFromStateFundResponse>('/api/v1/admin/state-fund/support-companies', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async (res) => {
+      setSupportMsg(`Đã hỗ trợ ${res.supportedCompanies} công ty (${formatMoney(res.amountPerCompanyMinor)} ₫/CT), tổng ${formatMoney(res.totalSpentMinor)} ₫. Ticker được tác động: ${res.boostedTickers}. Số dư quỹ: ${formatMoney(res.balanceAfter.amount)} ₫`);
+      setSupportAmount('');
+      setSupportReason('');
+      await qc.invalidateQueries({ queryKey: ['admin', 'macro', 'snapshot'] });
+    },
+    onError: (e: any) => {
+      setSupportMsg(e?.problem?.detail || e?.message || 'Không thể hỗ trợ công ty từ quỹ đất nước.');
     },
   });
 
@@ -133,6 +156,85 @@ export function MacroDashboardPage() {
               {adjustFund.isPending ? 'Đang cập nhật...' : 'Cập nhật quỹ'}
             </button>
             {msg && <div className="text-xs text-slate-700">{msg}</div>}
+          </form>
+
+          <form
+            className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const amount = Math.trunc(Number(supportAmount));
+              if (!Number.isFinite(amount) || amount <= 0 || supportReason.trim().length < 3) {
+                setSupportMsg('Nhập số tiền hỗ trợ mỗi công ty (> 0) và lý do (≥ 3 ký tự).');
+                return;
+              }
+              const ids = supportCompanyIds.split(',').map((s) => s.trim()).filter(Boolean);
+              if (supportScope === 'selected' && ids.length === 0) {
+                setSupportMsg('Nhập ít nhất một ID công ty (phân tách bằng dấu phẩy) hoặc chọn "Toàn bộ".');
+                return;
+              }
+              supportCompanies.mutate({
+                scope: supportScope,
+                companyIds: supportScope === 'selected' ? ids : undefined,
+                amountPerCompanyMinor: amount,
+                reason: supportReason.trim(),
+              });
+            }}
+          >
+            <div className="text-xs font-semibold text-slate-700">Hỗ trợ công ty từ quỹ (tăng biến động/thanh khoản sàn)</div>
+            <p className="text-[11px] text-slate-600">Chi từ quỹ đất nước vào quỹ công ty (active/IPO) và tác động biến động/khối lượng ticker niêm yết (nếu có). Có thể chỉ định công ty hoặc toàn bộ.</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="text-xs text-slate-700">
+                Phạm vi
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
+                  value={supportScope}
+                  onChange={(e) => setSupportScope(e.target.value as 'all' | 'selected')}
+                >
+                  <option value="all">Toàn bộ công ty (active/IPO)</option>
+                  <option value="selected">Chỉ định công ty</option>
+                </select>
+              </label>
+              <label className="text-xs text-slate-700">
+                Số tiền mỗi công ty (VNĐ)
+                <input
+                  type="number"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
+                  value={supportAmount}
+                  onChange={(e) => setSupportAmount(e.target.value)}
+                  placeholder="VD: 50000000"
+                />
+              </label>
+              {supportScope === 'selected' && (
+                <label className="text-xs text-slate-700 sm:col-span-2">
+                  ID công ty (UUID, phân tách bằng dấu phẩy)
+                  <textarea
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
+                    rows={2}
+                    value={supportCompanyIds}
+                    onChange={(e) => setSupportCompanyIds(e.target.value)}
+                    placeholder="uuid-1, uuid-2, ..."
+                  />
+                </label>
+              )}
+              <label className="text-xs text-slate-700 sm:col-span-2">
+                Lý do
+                <input
+                  type="text"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
+                  value={supportReason}
+                  onChange={(e) => setSupportReason(e.target.value)}
+                  placeholder="Lý do hỗ trợ doanh nghiệp / kích hoạt biến động..."
+                />
+              </label>
+            </div>
+            <button
+              type="submit"
+              disabled={supportCompanies.isPending}
+              className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {supportCompanies.isPending ? 'Đang hỗ trợ...' : 'Hỗ trợ công ty từ quỹ'}
+            </button>
+            {supportMsg && <div className="text-xs text-slate-700">{supportMsg}</div>}
           </form>
         </section>
 

@@ -7,9 +7,9 @@ import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharac
 import {
   ledger,
   SYSTEM_ESCROW_ID,
-  SYSTEM_GOVERNMENT_ID,
   SYSTEM_MARKET_ID,
 } from '../../shared/ledger/ledger.service.js';
+import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { enqueueDomainEvent } from '../../shared/events/eventBus.js';
 import { notify } from '../notifications/notification.service.js';
 import { callAiService } from '../../shared/ai/aiClient.js';
@@ -237,14 +237,20 @@ export class UnderworldService {
         const balance = await ledger.getBalance(client, 'character', character.id);
         const payable = Math.min(fine, balance);
         if (payable > 0) {
-          await ledger.transfer(client, {
-            from: { ownerType: 'character', ownerId: character.id },
-            to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
-            amountMinor: payable,
-            kind: 'crime_fine',
-            description: `Phạt hình sự: ${cfg.name}`,
-            referenceType: 'crime',
-          });
+          await creditStateFund(
+            client,
+            { ownerType: 'character', ownerId: character.id, kind: 'cash' },
+            payable,
+            {
+              amountMinor: payable,
+              reasonCode: 'crime_fine',
+              description: `Phạt hình sự: ${cfg.name} vào quỹ đất nước`,
+              refType: 'crime',
+              actorType: 'system',
+              ledgerKind: 'crime_fine',
+              ledgerDescription: `Phạt hình sự: ${cfg.name}`,
+            },
+          );
         }
         await client.query(
           `INSERT INTO criminal_records
@@ -585,15 +591,21 @@ export class UnderworldService {
            VALUES (gen_random_uuid(), $1, 'government', 'fraud', 90, 'trial')`,
           [targetCharacterId],
         );
-        await ledger.transfer(client, {
-          from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
-          to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
+        await creditStateFund(
+          client,
+          { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID, kind: 'cash' },
           amountMinor,
-          kind: 'sting_seizure',
-          description: 'Tịch thu tiền đánh dấu',
-          referenceType: 'sting',
-          referenceId: targetCharacterId,
-        });
+          {
+            amountMinor,
+            reasonCode: 'sting_seizure',
+            description: 'Tịch thu tiền đánh dấu vào quỹ đất nước',
+            refType: 'sting',
+            refId: targetCharacterId,
+            actorType: 'system',
+            ledgerKind: 'sting_seizure',
+            ledgerDescription: 'Tịch thu tiền đánh dấu',
+          },
+        );
       } else {
         await ledger.transfer(client, {
           from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
@@ -666,15 +678,21 @@ export class UnderworldService {
     const fine = Math.max(0, Math.round(balance * 0.1));
     const prisonDays = 30;
     if (fine > 0) {
-      await ledger.transfer(client, {
-        from: { ownerType: 'character', ownerId: characterId },
-        to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID },
-        amountMinor: fine,
-        kind: 'sweep_fine',
-        description: opts?.auto ? 'Đại án Công an: phạt càn quét (tự động)' : 'Đại án Công an: phạt càn quét',
-        referenceType: 'sweep',
-        referenceId: characterId,
-      });
+      await creditStateFund(
+        client,
+        { ownerType: 'character', ownerId: characterId, kind: 'cash' },
+        fine,
+        {
+          amountMinor: fine,
+          reasonCode: 'underworld_sweep_fine',
+          description: (opts?.auto ? 'Đại án Công an: phạt càn quét (tự động)' : 'Đại án Công an: phạt càn quét') + ' vào quỹ đất nước',
+          refType: 'sweep',
+          refId: characterId,
+          actorType: 'system',
+          ledgerKind: 'sweep_fine',
+          ledgerDescription: opts?.auto ? 'Đại án Công an: phạt càn quét (tự động)' : 'Đại án Công an: phạt càn quét',
+        },
+      );
     }
     await client.query(
       `INSERT INTO criminal_records

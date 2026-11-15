@@ -28,6 +28,26 @@ export const StateFundSnapshotDtoSchema = z.object({
 });
 export type StateFundSnapshotDto = z.infer<typeof StateFundSnapshotDtoSchema>;
 
+export const SupportCompaniesFromStateFundRequestSchema = z.object({
+  /** 'all' = all active/ipo companies, 'selected' = companyIds */
+  scope: z.enum(['all', 'selected']).default('selected'),
+  companyIds: z.array(IdSchema).max(200).optional(),
+  /** Amount (VND) per company to transfer from state fund */
+  amountPerCompanyMinor: z.number().int().positive().max(10_000_000_000),
+  reason: z.string().min(3).max(500),
+});
+export type SupportCompaniesFromStateFundRequest = z.infer<typeof SupportCompaniesFromStateFundRequestSchema>;
+
+export const SupportCompaniesFromStateFundResponseSchema = z.object({
+  ok: z.literal(true),
+  supportedCompanies: z.number().int().nonnegative(),
+  amountPerCompanyMinor: z.number().int().nonnegative(),
+  totalSpentMinor: z.number().int().nonnegative(),
+  boostedTickers: z.number().int().nonnegative(),
+  balanceAfter: MoneySchema,
+});
+export type SupportCompaniesFromStateFundResponse = z.infer<typeof SupportCompaniesFromStateFundResponseSchema>;
+
 export const MacroEventTypeSchema = z.enum([
   'banking_crisis',
   'pandemic',
