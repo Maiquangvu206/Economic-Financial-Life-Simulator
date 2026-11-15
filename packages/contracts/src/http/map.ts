@@ -57,9 +57,11 @@ export const SetMapRoadRequestSchema = z.object({
 });
 export type SetMapRoadRequest = z.infer<typeof SetMapRoadRequestSchema>;
 
-/** PUT /api/v1/map — quản trị viên lưu bản đồ, xử lý đồng thời theo phiên bản. */
+/** PUT /api/v1/map — quản trị viên lưu cấu hình/bản đồ, xử lý đồng thời theo phiên bản. */
 export const PutMapRequestSchema = z.object({
   version: z.number().int().nonnegative(),
+  /** Mã tỉnh/thành cần cấu hình (bỏ trống = 001/Hà Nội). */
+  provinceCode: z.string().min(1).max(10).optional(),
   nodes: z.array(UpdateMapNodeRequestSchema).optional(),
   roads: z.array(SetMapRoadRequestSchema).optional(),
 });

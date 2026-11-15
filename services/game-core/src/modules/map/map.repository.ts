@@ -131,6 +131,54 @@ export class MapRepository {
     );
     return result.rows[0] ?? null;
   }
+
+  // --- Per-province land price config (bản đồ sinh động, không lưu map_nodes) ---
+
+  async getProvinceMeta(db: Db, provinceCode: string): Promise<{ version: number }> {
+    const r = await db.query<{ version: number }>(
+      `SELECT version FROM map_province_meta WHERE province_code = $1`,
+      [provinceCode],
+    );
+    return { version: r.rows[0]?.version ?? 1 };
+  }
+
+  async getProvinceLandPrices(db: Db, provinceCode: string): Promise<Map<string, number>> {
+    const r = await db.query<{ x: number; y: number; land_price_minor: string }>(
+      `SELECT x, y, land_price_minor FROM map_province_land_prices WHERE province_code = $1`,
+      [provinceCode],
+    );
+    const map = new Map<string, number>();
+    for (const row of r.rows) map.set(`${row.x}-${row.y}`, Number(row.land_price_minor));
+    return map;
+  }
+
+  async upsertProvinceLandPrices(
+    db: Db,
+    provinceCode: string,
+    nodes: Array<{ x: number; y: number; landPriceMinor: number }>,
+  ): Promise<void> {
+    for (const n of nodes) {
+      await db.query(
+        `INSERT INTO map_province_land_prices (province_code, x, y, land_price_minor)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (province_code, x, y) DO UPDATE
+         SET land_price_minor = EXCLUDED.land_price_minor, updated_at = now()`,
+        [provinceCode, n.x, n.y, n.landPriceMinor],
+      );
+    }
+  }
+
+  async bumpProvinceVersion(db: Db, provinceCode: string): Promise<number> {
+    const r = await db.query<{ version: number }>(
+      `INSERT INTO map_province_meta (province_code, version)
+       VALUES ($1, 2)
+       ON CONFLICT (province_code) DO UPDATE
+       SET version = map_province_meta.version + 1, updated_at = now()
+       RETURNING version`,
+      [provinceCode],
+    );
+    return r.rows[0]?.version ?? 1;
+  }
 }
 
 export const mapRepository = new MapRepository();

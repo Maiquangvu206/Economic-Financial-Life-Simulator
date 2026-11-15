@@ -25,17 +25,21 @@ export class MapService {
   constructor(private readonly repository = mapRepository) {}
 
   /**
-   * Trả về toàn bộ bản đồ (nút, đường, phiên bản) để render ở phía người chơi.
-   * - Không tham số / province=001: bản đồ Hà Nội lưu trong DB (có BĐS, editor chỉnh sửa).
-   * - province khác: bản đồ địa giới sinh động theo mã tỉnh (không lưu DB).
+   * Trả về bản đồ (nút, đường, phiên bản) để render/cấu hình.
+   * - province=001 (mặc định): bản đồ Hà Nội lưu trong DB.
+   * - province khác: bản đồ sinh động theo tỉnh + overlay cấu hình giá đất đã lưu (nếu có).
    */
   async getMap(provinceCode?: string) {
-    const code = provinceCode ?? '001';
+    const code = (provinceCode ?? '001').trim() || '001';
     if (code !== '001') {
       if (!provinceByCode(code)) {
         throw AppError.badRequest('Mã tỉnh không hợp lệ.');
       }
       const generated = generateProvinceMap(code);
+      const [savedPrices, meta] = await Promise.all([
+        this.repository.getProvinceLandPrices(this.repository.db, code),
+        this.repository.getProvinceMeta(this.repository.db, code),
+      ]);
       const nodeIdByCoord = new Map<string, string>();
       for (const n of generated.nodes) {
         nodeIdByCoord.set(`${n.x}-${n.y}`, uuidFromSeed(`${code}:${n.x}:${n.y}`));
@@ -47,13 +51,13 @@ export class MapService {
           y: n.y,
           zoneType: n.zone,
           name: n.name,
-          landPriceMinor: 0,
+          landPriceMinor: savedPrices.get(`${n.x}-${n.y}`) ?? 0,
         })),
         roads: generated.roads.map((r) => ({
           nodeId: nodeIdByCoord.get(`${r.x}-${r.y}`)!,
           roadType: r.roadType,
         })),
-        meta: { version: 0, cols: generated.cols, rows: generated.rows },
+        meta: { version: meta.version, cols: generated.cols, rows: generated.rows },
         provinceCode: code,
         provinceName: generated.name,
       };
@@ -63,8 +67,9 @@ export class MapService {
   }
 
   /**
-   * Lưu bản đồ (quản trị viên). Phải gọi bên trong giao dịch để xử lý đồng thời:
-   * phiên bản yêu cầu phải khớp phiên bản hiện tại, nếu không → 409 Conflict.
+   * Lưu cấu hình/bản đồ (quản trị viên). Xử lý đồng thời theo phiên bản (409 nếu lệch).
+   * - provinceCode 001/mặc định: lưu bản đồ Hà Nội (map_nodes/map_meta).
+   * - provinceCode khác: lưu cấu hình giá đất theo tỉnh (map_province_*), không hiển thị/ghi đè bản đồ.
    */
   async putMap(
     actorId: string | undefined,
@@ -75,10 +80,33 @@ export class MapService {
       throw AppError.unauthorized('Missing actor identity');
     }
     if (actorRole !== 'admin' && actorRole !== 'moderator') {
-      throw AppError.forbidden('Chỉ quản trị viên hoặc điều hành viên được chỉnh sửa bản đồ');
+      throw AppError.forbidden('Chỉ quản trị viên hoặc điều hành viên được chỉnh sửa cấu hình bản đồ');
     }
 
+    const code = (input.provinceCode ?? '001').trim() || '001';
+
     return withTransaction(async (client) => {
+      if (code !== '001') {
+        if (!provinceByCode(code)) {
+          throw AppError.badRequest('Mã tỉnh không hợp lệ.');
+        }
+        const current = await this.repository.getProvinceMeta(client, code);
+        if (current.version !== input.version) {
+          throw AppError.conflict(
+            'version_mismatch',
+            `Cấu hình đã được cập nhật (phiên bản ${current.version}). Vui lòng tải lại và thử lại.`,
+          );
+        }
+        const nodes = (input.nodes ?? [])
+          .filter((n) => typeof n.landPriceMinor === 'number')
+          .map((n) => ({ x: n.x, y: n.y, landPriceMinor: Math.max(0, Math.floor(n.landPriceMinor!)) }));
+        if (nodes.length > 0) {
+          await this.repository.upsertProvinceLandPrices(client, code, nodes);
+        }
+        const newVersion = await this.repository.bumpProvinceVersion(client, code);
+        return { version: newVersion };
+      }
+
       const currentVersion = await this.repository.getVersion(client);
       if (currentVersion !== input.version) {
         throw AppError.conflict(
