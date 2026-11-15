@@ -10,6 +10,8 @@ import {
   type CompanyEmployeesDto,
   type CompanyHrAccountingDto,
   type CompanyOverviewDto,
+  type CompanyPremisesOptionsDto,
+  type CreateCompanyRequest,
   type HiringPlanDto,
   MoneySchema,
 } from '@efls/contracts';
@@ -17,6 +19,20 @@ import { corporationRepository } from './corporation.repository.js';
 
 function money(amount: number) {
   return MoneySchema.parse({ amount, currency: 'VND' });
+}
+
+function premisesFromRow(row: Awaited<ReturnType<typeof corporationRepository.listCompanies>>[number]): CompanyDto['premises'] {
+  if (!row.premisesType) return null;
+  return {
+    type: row.premisesType as any,
+    label: row.premisesLabel ?? 'Địa điểm công ty',
+    provinceCode: row.premisesProvinceCode,
+    corePropertyId: row.premisesCorePropertyId,
+    provinceLandPropertyId: row.premisesProvinceLandPropertyId,
+    companyPropertyId: row.premisesCompanyPropertyId,
+    hostCompanyId: row.premisesHostCompanyId,
+    hostCompanyName: row.premisesHostCompanyName,
+  };
 }
 
 function toCompanyDto(
@@ -34,6 +50,7 @@ function toCompanyDto(
     tickerSymbol: row.tickerSymbol,
     foundedAt: row.foundedAt.toISOString(),
     isOwner: false, // điền lại ở caller nếu cần
+    premises: premisesFromRow(row),
   };
 }
 
@@ -79,18 +96,78 @@ export class CorporationService {
     };
   }
 
-  /** Thành lập công ty mới: trừ vốn từ ví cá nhân, tạo công ty, cấp 100% cổ phiếu cho chủ sở hữu. */
+  async getPremisesOptions(userId: string): Promise<CompanyPremisesOptionsDto> {
+    const db = this.repository.db;
+    const character = await requireCharacterByUserId(db, userId);
+    const rows = await this.repository.listPremisesOptions(character.id, db);
+    return {
+      land: rows
+        .filter((r) => r.type === 'land_core' || r.type === 'land_province')
+        .map((r) => ({
+          type: r.type,
+          id: r.id,
+          label: r.label,
+          provinceCode: r.provinceCode,
+          propertyType: r.propertyType,
+          location: r.x != null && r.y != null ? { x: r.x, y: r.y } : null,
+          hostCompanyId: r.hostCompanyId,
+          hostCompanyName: r.hostCompanyName,
+        })),
+      companyProperties: rows
+        .filter((r) => r.type === 'company_property')
+        .map((r) => ({
+          type: r.type,
+          id: r.id,
+          label: r.label,
+          provinceCode: r.provinceCode,
+          propertyType: r.propertyType,
+          location: r.x != null && r.y != null ? { x: r.x, y: r.y } : null,
+          hostCompanyId: r.hostCompanyId,
+          hostCompanyName: r.hostCompanyName,
+        })),
+    };
+  }
+
+  /** Thành lập công ty mới: yêu cầu chọn địa điểm/cơ sở (đất nền hoặc BĐS thuộc công ty khác), trừ vốn, cấp 100% cổ phiếu cho chủ sở hữu. */
   async createCompany(
     userId: string,
     name: string,
     industry: string,
     initialCapitalMinor: number,
+    premises: CreateCompanyRequest['premises'],
   ): Promise<CompanyDto> {
+    if (!premises || !premises.type) {
+      throw AppError.badRequest('Vui lòng chọn địa điểm/cơ sở để thành lập công ty (đất nền hoặc bất động sản thuộc công ty khác).');
+    }
+
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
       const cash = toMinor(character.cash_minor);
       if (cash < initialCapitalMinor) {
         throw AppError.conflict('insufficient_funds', 'Không đủ tiền mặt để thành lập công ty.');
+      }
+
+      // Xác định & khóa/chiếm giữ địa điểm trước (đảm bảo còn hợp lệ)
+      let premisesRecord: { type: 'land_core' | 'land_province' | 'company_property'; provinceCode: string | null; corePropertyId: string | null; provinceLandPropertyId: string | null; companyPropertyId: string | null };
+      let premisesBody = '';
+      try {
+        if (premises.type === 'land_core') {
+          if (!premises.corePropertyId) throw new Error('MISSING_PREMISES_ID');
+          premisesRecord = { type: 'land_core', provinceCode: '001', corePropertyId: premises.corePropertyId, provinceLandPropertyId: null, companyPropertyId: null };
+          premisesBody = 'đất nền (Hà Nội)';
+        } else if (premises.type === 'land_province') {
+          if (!premises.provinceLandPropertyId) throw new Error('MISSING_PREMISES_ID');
+          premisesRecord = { type: 'land_province', provinceCode: null, corePropertyId: null, provinceLandPropertyId: premises.provinceLandPropertyId, companyPropertyId: null };
+          premisesBody = 'đất nền (tỉnh/thành)';
+        } else if (premises.type === 'company_property') {
+          if (!premises.companyPropertyId) throw new Error('MISSING_PREMISES_ID');
+          premisesRecord = { type: 'company_property', provinceCode: null, corePropertyId: null, provinceLandPropertyId: null, companyPropertyId: premises.companyPropertyId };
+          premisesBody = 'bất động sản thuộc công ty khác';
+        } else {
+          throw new Error('INVALID_PREMISES_TYPE');
+        }
+      } catch {
+        throw AppError.badRequest('Địa điểm/cơ sở thành lập công ty không hợp lệ.');
       }
 
       // Chuyển vốn từ ví cá nhân vào escrow (quản lý bởi hệ thống).
@@ -109,7 +186,34 @@ export class CorporationService {
         industry,
         ownerCharacterId: character.id,
         initialCapitalMinor,
+        premises: premisesRecord,
       });
+
+      // Link/validate premises and claim if land
+      try {
+        if (premisesRecord.type === 'land_core' && premisesRecord.corePropertyId) {
+          await this.repository.lockAndClaimCoreLandPremises(client, premisesRecord.corePropertyId, character.id, companyId);
+        } else if (premisesRecord.type === 'land_province' && premisesRecord.provinceLandPropertyId) {
+          const claimed = await this.repository.lockAndClaimProvinceLandPremises(client, premisesRecord.provinceLandPropertyId, character.id, companyId);
+          if (claimed.provinceCode) {
+            await client.query(`UPDATE companies SET premises_province_code = $2 WHERE id = $1`, [companyId, claimed.provinceCode]);
+          }
+        } else if (premisesRecord.type === 'company_property' && premisesRecord.companyPropertyId) {
+          await this.repository.validateCompanyPropertyPremises(client, premisesRecord.companyPropertyId);
+        }
+      } catch (e: any) {
+        const msg = String(e?.message || '');
+        if (msg.includes('CORE_LAND_PREMISES_UNAVAILABLE')) {
+          throw AppError.conflict('premises_unavailable', 'Đất nền đã chọn không còn khả dụng để xây dựng công ty (phải là đất nền đang sở hữu, chưa xây dựng/hợp thửa/chưa dùng làm trụ sở).');
+        }
+        if (msg.includes('PROVINCE_LAND_PREMISES_UNAVAILABLE')) {
+          throw AppError.conflict('premises_unavailable', 'Đất nền tỉnh/thành đã chọn không còn khả dụng để xây dựng công ty (phải là đất nền đang sở hữu, chưa xây dựng/hợp thửa/chưa dùng làm trụ sở).');
+        }
+        if (msg.includes('COMPANY_PROPERTY_PREMISES_UNAVAILABLE')) {
+          throw AppError.conflict('premises_unavailable', 'Bất động sản của công ty khác đã chọn không còn khả dụng để đặt trụ sở (phải là BĐS đã xây dựng, thuộc công ty khác đang hoạt động).');
+        }
+        throw e;
+      }
 
       // Cấp giấy phép kinh doanh mặc định cho công ty mới.
       await this.repository.ensureBusinessLicense(client, companyId);
@@ -125,8 +229,8 @@ export class CorporationService {
         userId,
         kind: 'company',
         title: 'Thành lập công ty',
-        body: `Bạn đã thành lập công ty "${name}" với vốn khởi điểm ${formatMinor(initialCapitalMinor)} VND.`,
-        payload: { companyId, name, industry, initialCapitalMinor },
+        body: `Bạn đã thành lập công ty "${name}" tại ${premisesBody} với vốn khởi điểm ${formatMinor(initialCapitalMinor)} VND.`,
+        payload: { companyId, name, industry, initialCapitalMinor, premises: premisesRecord },
       });
 
       const dto = await this.repository.getCompany(companyId, client);

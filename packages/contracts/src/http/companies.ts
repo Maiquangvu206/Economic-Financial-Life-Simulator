@@ -3,6 +3,21 @@ import { IdSchema } from '../common/ids.js';
 import { MoneySchema } from '../common/money.js';
 import { IndustryTypeSchema } from '../enums/index.js';
 
+export const CompanyPremisesTypeSchema = z.enum(['land_core', 'land_province', 'company_property']);
+export type CompanyPremisesType = z.infer<typeof CompanyPremisesTypeSchema>;
+
+export const CompanyPremisesDtoSchema = z.object({
+  type: CompanyPremisesTypeSchema,
+  label: z.string(),
+  provinceCode: z.string().nullable().optional(),
+  corePropertyId: IdSchema.nullable().optional(),
+  provinceLandPropertyId: IdSchema.nullable().optional(),
+  companyPropertyId: IdSchema.nullable().optional(),
+  hostCompanyId: IdSchema.nullable().optional(),
+  hostCompanyName: z.string().nullable().optional(),
+});
+export type CompanyPremisesDto = z.infer<typeof CompanyPremisesDtoSchema>;
+
 export const CompanyDtoSchema = z.object({
   id: IdSchema,
   name: z.string(),
@@ -15,6 +30,7 @@ export const CompanyDtoSchema = z.object({
   tickerSymbol: z.string().nullable(),
   foundedAt: z.string().datetime(),
   isOwner: z.boolean(),
+  premises: CompanyPremisesDtoSchema.nullable().optional(),
   /** Cổ đông (chỉ có khi xem chi tiết công ty). */
   shareholders: z
     .array(
@@ -35,8 +51,33 @@ export const CreateCompanyRequestSchema = z.object({
   name: z.string().min(3).max(60),
   industry: IndustryTypeSchema,
   initialCapital: MoneySchema,
+  premises: z.object({
+    type: CompanyPremisesTypeSchema,
+    corePropertyId: IdSchema.optional(),
+    provinceLandPropertyId: IdSchema.optional(),
+    companyPropertyId: IdSchema.optional(),
+  }),
 });
 export type CreateCompanyRequest = z.infer<typeof CreateCompanyRequestSchema>;
+
+export const CompanyPremisesOptionDtoSchema = z.object({
+  type: CompanyPremisesTypeSchema,
+  id: IdSchema,
+  label: z.string(),
+  provinceCode: z.string().nullable().optional(),
+  provinceName: z.string().nullable().optional(),
+  propertyType: z.string().nullable().optional(),
+  location: z.object({ x: z.number().int(), y: z.number().int() }).nullable().optional(),
+  hostCompanyId: IdSchema.nullable().optional(),
+  hostCompanyName: z.string().nullable().optional(),
+});
+export type CompanyPremisesOptionDto = z.infer<typeof CompanyPremisesOptionDtoSchema>;
+
+export const CompanyPremisesOptionsDtoSchema = z.object({
+  land: z.array(CompanyPremisesOptionDtoSchema),
+  companyProperties: z.array(CompanyPremisesOptionDtoSchema),
+});
+export type CompanyPremisesOptionsDto = z.infer<typeof CompanyPremisesOptionsDtoSchema>;
 
 export const CompanyInvestRequestSchema = z.object({
   amount: MoneySchema,

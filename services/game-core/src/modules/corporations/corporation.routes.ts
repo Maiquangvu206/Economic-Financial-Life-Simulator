@@ -25,6 +25,9 @@ corporationRouter.use(attachActor);
 /** Danh sách tất cả công ty (mọi người chơi). */
 corporationRouter.get('/', asyncHandler(controller.getOverview));
 
+/** Địa điểm/cơ sở khả dụng để thành lập công ty (đất nền sở hữu hoặc BĐS thuộc công ty khác). */
+corporationRouter.get('/premises-options', asyncHandler(controller.getPremisesOptions));
+
 /** Chi tiết một công ty (kèm danh sách cổ đông). */
 corporationRouter.get('/:companyId', asyncHandler(controller.getCompany));
 

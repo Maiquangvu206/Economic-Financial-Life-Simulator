@@ -6,6 +6,7 @@ import type {
   CompanyEmployeesDto,
   CompanyHrAccountingDto,
   CompanyOverviewDto,
+  CompanyPremisesOptionsDto,
   IndustryType,
 } from '@efls/contracts';
 import { apiRequest } from '../shared/api/httpClient';
@@ -67,6 +68,7 @@ export function BusinessPage() {
   const [name, setName] = useState('');
   const [industry, setIndustry] = useState<IndustryType>('technology_ai');
   const [capital, setCapital] = useState('10000000');
+  const [premisesKey, setPremisesKey] = useState('');
 
   const [investAmount, setInvestAmount] = useState('1000000');
   const [ipoSymbol, setIpoSymbol] = useState('');
@@ -113,6 +115,12 @@ export function BusinessPage() {
     queryFn: () => apiRequest<CompanyOverviewDto>('/api/v1/corporations'),
   });
 
+  const { data: premisesOptions, isLoading: premisesLoading } = useQuery<CompanyPremisesOptionsDto>({
+    queryKey: ['corporations', 'premises-options'],
+    queryFn: () => apiRequest<CompanyPremisesOptionsDto>('/api/v1/corporations/premises-options'),
+    enabled: createOpen,
+  });
+
   const { data: detail, isLoading: detailLoading } = useQuery<CompanyDto>({
     queryKey: ['corporations', 'detail', selectedId],
     queryFn: () => apiRequest<CompanyDto>(`/api/v1/corporations/${selectedId}`),
@@ -145,25 +153,46 @@ export function BusinessPage() {
     await queryClient.invalidateQueries({ queryKey: ['characters', 'me'] });
   };
 
+  const premisesMap = useMemo(() => {
+    const m = new Map<string, { type: 'land_core' | 'land_province' | 'company_property'; id: string }>();
+    for (const o of premisesOptions?.land ?? []) m.set(`${o.type}:${o.id}`, { type: o.type, id: o.id });
+    for (const o of premisesOptions?.companyProperties ?? []) m.set(`${o.type}:${o.id}`, { type: o.type, id: o.id });
+    return m;
+  }, [premisesOptions]);
+
   const createCompany = useMutation({
-    mutationFn: () =>
-      apiRequest<CompanyDto>('/api/v1/corporations', {
+    mutationFn: () => {
+      const selected = premisesMap.get(premisesKey);
+      if (!selected) throw new Error('Vui lòng chọn địa điểm/cơ sở để thành lập công ty.');
+      const premises =
+        selected.type === 'land_core'
+          ? { type: 'land_core' as const, corePropertyId: selected.id }
+          : selected.type === 'land_province'
+            ? { type: 'land_province' as const, provinceLandPropertyId: selected.id }
+            : { type: 'company_property' as const, companyPropertyId: selected.id };
+      return apiRequest<CompanyDto>('/api/v1/corporations', {
         method: 'POST',
         body: JSON.stringify({
           name: name.trim(),
           industry,
           initialCapital: money(Number(capital) || 0),
+          premises,
         }),
-      }),
+      });
+    },
     onSuccess: async (c) => {
       toast({ title: 'Đã thành lập công ty', description: `Công ty "${c.name}" đã được tạo.` });
       setCreateOpen(false);
       setName('');
-      await invalidate();
+      setPremisesKey('');
+      await Promise.all([
+        invalidate(),
+        queryClient.invalidateQueries({ queryKey: ['corporations', 'premises-options'] }),
+      ]);
       setSelectedId(c.id);
     },
-    onError: (e: Error) =>
-      toast({ title: 'Thành lập thất bại', description: e.message, variant: 'error' }),
+    onError: (e: any) =>
+      toast({ title: 'Thành lập thất bại', description: e?.problem?.detail || e?.message, variant: 'error' }),
   });
 
   const investCompany = useMutation({
@@ -572,7 +601,7 @@ export function BusinessPage() {
         </div>
       </div>
 
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Thành lập công ty">
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Thành lập công ty" size="lg">
         <form
           className="space-y-3"
           onSubmit={(e) => {
@@ -609,6 +638,46 @@ export function BusinessPage() {
             onChange={(e) => setCapital(e.target.value)}
             required
           />
+
+          <div className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <label className="text-[11px] uppercase tracking-wider text-slate-600">Địa điểm / cơ sở công ty (bắt buộc)</label>
+            <p className="text-[11px] text-slate-500">
+              Khi thành lập công ty, bạn phải có <b>đất nền</b> để xây dựng công ty hoặc <b>bất động sản đã xây dựng thuộc công ty khác</b> để đặt trụ sở.
+              Có thể mua/đấu giá và sở hữu đất nền tại trang <b>Thành phố</b>, sau đó quay lại đây để chọn.
+            </p>
+            <select
+              value={premisesKey}
+              onChange={(e) => setPremisesKey(e.target.value)}
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+              required
+            >
+              <option value="">{premisesLoading ? 'Đang tải địa điểm khả dụng...' : '-- Chọn đất nền / trụ sở --'}</option>
+              {(premisesOptions?.land?.length ?? 0) > 0 && (
+                <optgroup label="Đất nền đang sở hữu (xây dựng công ty)">
+                  {(premisesOptions?.land ?? []).map((o) => (
+                    <option key={`${o.type}:${o.id}`} value={`${o.type}:${o.id}`}>
+                      {o.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {(premisesOptions?.companyProperties?.length ?? 0) > 0 && (
+                <optgroup label="Bất động sản thuộc công ty khác (đặt trụ sở)">
+                  {(premisesOptions?.companyProperties ?? []).map((o) => (
+                    <option key={`${o.type}:${o.id}`} value={`${o.type}:${o.id}`}>
+                      {o.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            {!premisesLoading && (premisesOptions?.land?.length ?? 0) === 0 && (premisesOptions?.companyProperties?.length ?? 0) === 0 && (
+              <p className="text-[11px] text-amber-700">
+                Bạn chưa có địa điểm phù hợp. Hãy sở hữu một lô <b>đất nền trống</b> (trang Thành phố / bản đồ tỉnh-thành) hoặc chọn một <b>bất động sản đã xây dựng thuộc công ty khác</b> đang khả dụng.
+              </p>
+            )}
+          </div>
+
           <p className="text-[11px] text-slate-500">
             Vốn sẽ được trừ từ ví cá nhân của bạn khi thành lập.
           </p>
@@ -616,7 +685,7 @@ export function BusinessPage() {
             <GameButton
               variant="primary"
               type="submit"
-              disabled={createCompany.isPending || !name.trim()}
+              disabled={createCompany.isPending || !name.trim() || !premisesKey}
             >
               {createCompany.isPending ? 'Đang tạo...' : 'Thành lập'}
             </GameButton>
@@ -643,6 +712,7 @@ export function BusinessPage() {
               <div className="flex justify-between gap-2 sm:block"><span className="text-slate-500">Mã CK</span><div className="font-mono">{selectedCompany.tickerSymbol ?? '—'}</div></div>
               <div className="flex justify-between gap-2 sm:block"><span className="text-slate-500">Định giá</span><div className="font-mono text-right sm:text-left">{formatMoney(selectedCompany.valuation.amount)}</div></div>
               <div className="flex justify-between gap-2 sm:block"><span className="text-slate-500">Quỹ công ty</span><div className="font-mono text-right sm:text-left">{formatMoney(selectedCompany.cash.amount)}</div></div>
+              <div className="flex justify-between gap-2 sm:col-span-2 sm:block"><span className="text-slate-500">Địa điểm/cơ sở</span><div className="font-medium text-right sm:text-left break-words">{selectedCompany.premises?.label ?? '— (công ty cũ, chưa gắn địa điểm)'}</div></div>
             </div>
 
             <div className="space-y-2 rounded-xl border border-slate-200 p-3">

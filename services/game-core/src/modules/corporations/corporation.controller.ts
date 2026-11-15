@@ -30,10 +30,16 @@ export class CorporationController {
     res.status(200).json(company);
   };
 
+  getPremisesOptions = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const options = await this.service.getPremisesOptions(userId);
+    res.status(200).json(options);
+  };
+
   createCompany = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
-    const { name, industry, initialCapital } = req.body as CreateCompanyRequest;
-    const company = await this.service.createCompany(userId, name, industry, initialCapital.amount);
+    const { name, industry, initialCapital, premises } = req.body as CreateCompanyRequest;
+    const company = await this.service.createCompany(userId, name, industry, initialCapital.amount, premises);
     res.status(201).json(company);
   };
 

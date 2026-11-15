@@ -13,6 +13,14 @@ export interface CompanyRow {
   tickerSymbol: string | null;
   foundedAt: Date;
   updatedAt: Date;
+  premisesType: string | null;
+  premisesProvinceCode: string | null;
+  premisesCorePropertyId: string | null;
+  premisesProvinceLandPropertyId: string | null;
+  premisesCompanyPropertyId: string | null;
+  premisesLabel: string | null;
+  premisesHostCompanyId: string | null;
+  premisesHostCompanyName: string | null;
 }
 
 export interface CompanyEmployeeRow {
@@ -30,6 +38,25 @@ interface CreateCompanyInput {
   industry: string;
   ownerCharacterId: string;
   initialCapitalMinor: number;
+  premises: {
+    type: 'land_core' | 'land_province' | 'company_property';
+    provinceCode: string | null;
+    corePropertyId: string | null;
+    provinceLandPropertyId: string | null;
+    companyPropertyId: string | null;
+  };
+}
+
+export interface PremisesOptionRow {
+  type: 'land_core' | 'land_province' | 'company_property';
+  id: string;
+  label: string;
+  provinceCode: string | null;
+  propertyType: string | null;
+  x: number | null;
+  y: number | null;
+  hostCompanyId: string | null;
+  hostCompanyName: string | null;
 }
 
 interface InvestCompanyInput {
@@ -54,15 +81,37 @@ interface PayDividendInput {
 export class CorporationRepository {
   constructor(readonly db: Db = pool) {}
 
+  private static readonly COMPANY_SELECT = `
+    SELECT c.id, c.name, c.industry, c.owner_character_id AS "ownerCharacterId",
+           ch.full_name AS "ownerName", c.cash_minor AS "cashMinor",
+           c.valuation_minor AS "valuationMinor", c.status, c.ticker_symbol AS "tickerSymbol",
+           c.founded_at AS "foundedAt", c.updated_at AS "updatedAt",
+           c.premises_type AS "premisesType",
+           c.premises_province_code AS "premisesProvinceCode",
+           c.premises_core_property_id AS "premisesCorePropertyId",
+           c.premises_province_land_property_id AS "premisesProvinceLandPropertyId",
+           c.premises_company_property_id AS "premisesCompanyPropertyId",
+           CASE
+             WHEN c.premises_type = 'land_core' THEN COALESCE('Đất nền (Hà Nội) - ' || COALESCE(cp.lot_number, cp.id::text), 'Đất nền (Hà Nội)')
+             WHEN c.premises_type = 'land_province' THEN COALESCE('Đất nền ' || COALESCE(pr.name, c.premises_province_code, '') || ' - ' || plp.node_name, 'Đất nền tỉnh/thành')
+             WHEN c.premises_type = 'company_property' THEN COALESCE('Trụ sở tại ' || host.name || ' - ' || COALESCE(hp.lot_number, hp.property_type, 'BĐS'), 'BĐS công ty khác')
+             ELSE NULL
+           END AS "premisesLabel",
+           hp.owner_company_id AS "premisesHostCompanyId",
+           host.name AS "premisesHostCompanyName"
+    FROM companies c
+    JOIN characters ch ON ch.id = c.owner_character_id
+    LEFT JOIN properties cp ON cp.id = c.premises_core_property_id
+    LEFT JOIN province_land_properties plp ON plp.id = c.premises_province_land_property_id
+    LEFT JOIN provinces pr ON pr.code = c.premises_province_code
+    LEFT JOIN properties hp ON hp.id = c.premises_company_property_id
+    LEFT JOIN companies host ON host.id = hp.owner_company_id
+  `;
+
   /** Danh sách công ty đang hoạt động/IPO (không bao gồm đã giải thể/phá sản), kèm chủ sở hữu và mã chứng khoán (nếu có). */
   async listCompanies(): Promise<CompanyRow[]> {
     const result = await this.db.query<CompanyRow>(
-      `SELECT c.id, c.name, c.industry, c.owner_character_id AS "ownerCharacterId",
-              ch.full_name AS "ownerName", c.cash_minor AS "cashMinor",
-              c.valuation_minor AS "valuationMinor", c.status, c.ticker_symbol AS "tickerSymbol",
-              c.founded_at AS "foundedAt", c.updated_at AS "updatedAt"
-       FROM companies c
-       JOIN characters ch ON ch.id = c.owner_character_id
+      `${CorporationRepository.COMPANY_SELECT}
        WHERE c.status <> 'bankrupt'
        ORDER BY c.updated_at DESC`,
     );
@@ -71,12 +120,7 @@ export class CorporationRepository {
 
   async getCompany(id: string, db: Db = this.db): Promise<CompanyRow | null> {
     const result = await db.query<CompanyRow>(
-      `SELECT c.id, c.name, c.industry, c.owner_character_id AS "ownerCharacterId",
-              ch.full_name AS "ownerName", c.cash_minor AS "cashMinor",
-              c.valuation_minor AS "valuationMinor", c.status, c.ticker_symbol AS "tickerSymbol",
-              c.founded_at AS "foundedAt", c.updated_at AS "updatedAt"
-       FROM companies c
-       JOIN characters ch ON ch.id = c.owner_character_id
+      `${CorporationRepository.COMPANY_SELECT}
        WHERE c.id = $1 AND c.status <> 'bankrupt'`,
       [id],
     );
@@ -86,12 +130,7 @@ export class CorporationRepository {
   /** Lấy công ty bất kể trạng thái (phục vụ luồng nội bộ sau giải thể/phá sản). */
   async getCompanyAnyStatus(id: string, db: Db = this.db): Promise<CompanyRow | null> {
     const result = await db.query<CompanyRow>(
-      `SELECT c.id, c.name, c.industry, c.owner_character_id AS "ownerCharacterId",
-              ch.full_name AS "ownerName", c.cash_minor AS "cashMinor",
-              c.valuation_minor AS "valuationMinor", c.status, c.ticker_symbol AS "tickerSymbol",
-              c.founded_at AS "foundedAt", c.updated_at AS "updatedAt"
-       FROM companies c
-       JOIN characters ch ON ch.id = c.owner_character_id
+      `${CorporationRepository.COMPANY_SELECT}
        WHERE c.id = $1`,
       [id],
     );
@@ -121,13 +160,151 @@ export class CorporationRepository {
   /** Thành lập một công ty mới. */
   async createCompany(db: Db, input: CreateCompanyInput): Promise<string> {
     const result = await db.query<{ id: string }>(
-      `INSERT INTO companies (id, name, industry, owner_character_id, cash_minor,
-              valuation_minor, status, ticker_symbol)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $4, 'active', NULL)
+      `INSERT INTO companies (
+         id, name, industry, owner_character_id, cash_minor, valuation_minor, status, ticker_symbol,
+         premises_type, premises_province_code, premises_core_property_id, premises_province_land_property_id, premises_company_property_id
+       )
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $4, 'active', NULL, $5, $6, $7, $8, $9)
        RETURNING id`,
-      [input.name, input.industry, input.ownerCharacterId, input.initialCapitalMinor],
+      [
+        input.name,
+        input.industry,
+        input.ownerCharacterId,
+        input.initialCapitalMinor,
+        input.premises.type,
+        input.premises.provinceCode,
+        input.premises.corePropertyId,
+        input.premises.provinceLandPropertyId,
+        input.premises.companyPropertyId,
+      ],
     );
     return result.rows[0]!.id;
+  }
+
+  async listPremisesOptions(characterId: string, db: Db = this.db): Promise<PremisesOptionRow[]> {
+    const coreLand = await db.query<PremisesOptionRow>(
+      `SELECT 'land_core'::text AS type,
+              p.id,
+              ('Đất nền (Hà Nội) - ' || COALESCE(p.lot_number, p.id::text) || CASE WHEN n.name IS NOT NULL AND n.name <> '' THEN ' (' || n.name || ')' ELSE '' END) AS label,
+              '001'::text AS "provinceCode",
+              p.property_type AS "propertyType",
+              n.x, n.y,
+              NULL::uuid AS "hostCompanyId",
+              NULL::text AS "hostCompanyName"
+       FROM properties p
+       JOIN map_nodes n ON n.id = p.node_id
+       WHERE p.owner_character_id = $1
+         AND p.status = 'owned'
+         AND p.property_type = 'land'
+         AND p.hq_company_id IS NULL
+         AND p.merged_into_property_id IS NULL
+         AND (p.construction_option IS NULL OR p.construction_option = '')
+       ORDER BY p.updated_at DESC NULLS LAST, p.id`,
+      [characterId],
+    );
+
+    const provinceLand = await db.query<PremisesOptionRow>(
+      `SELECT 'land_province'::text AS type,
+              plp.id,
+              ('Đất nền ' || COALESCE(pr.name, plp.province_code) || ' - ' || plp.node_name || ' (' || plp.node_x || ',' || plp.node_y || ')') AS label,
+              plp.province_code AS "provinceCode",
+              plp.property_type AS "propertyType",
+              plp.node_x AS x,
+              plp.node_y AS y,
+              NULL::uuid AS "hostCompanyId",
+              NULL::text AS "hostCompanyName"
+       FROM province_land_properties plp
+       LEFT JOIN provinces pr ON pr.code = plp.province_code
+       WHERE plp.owner_character_id = $1
+         AND plp.status = 'owned'
+         AND plp.property_type = 'land'
+         AND plp.hq_company_id IS NULL
+         AND plp.merged_into_property_id IS NULL
+         AND (plp.construction_option IS NULL OR plp.construction_option = '')
+       ORDER BY plp.updated_at DESC, plp.id`,
+      [characterId],
+    );
+
+    const companyProps = await db.query<PremisesOptionRow>(
+      `SELECT 'company_property'::text AS type,
+              p.id,
+              ('Trụ sở tại ' || c.name || ' - ' || COALESCE(n.name, p.lot_number, p.property_type, p.id::text)) AS label,
+              NULL::text AS "provinceCode",
+              p.property_type AS "propertyType",
+              n.x, n.y,
+              c.id AS "hostCompanyId",
+              c.name AS "hostCompanyName"
+       FROM properties p
+       JOIN companies c ON c.id = p.owner_company_id
+       LEFT JOIN map_nodes n ON n.id = p.node_id
+       WHERE p.owner_company_id IS NOT NULL
+         AND c.status <> 'bankrupt'
+         AND p.property_type <> 'land'
+         AND p.status IN ('owned', 'listed')
+         AND p.merged_into_property_id IS NULL
+         AND (p.construction_option IS NOT NULL AND p.construction_option <> '')
+       ORDER BY c.name ASC, p.updated_at DESC NULLS LAST, p.id`,
+      [characterId],
+    );
+
+    return [...coreLand.rows, ...provinceLand.rows, ...companyProps.rows];
+  }
+
+  async lockAndClaimCoreLandPremises(db: Db, propertyId: string, characterId: string, companyId: string): Promise<{ provinceCode: string | null }> {
+    const r = await db.query<{ id: string }>(
+      `UPDATE properties
+       SET hq_company_id = $3, updated_at = now()
+       WHERE id = $1
+         AND owner_character_id = $2
+         AND status = 'owned'
+         AND property_type = 'land'
+         AND hq_company_id IS NULL
+         AND merged_into_property_id IS NULL
+         AND (construction_option IS NULL OR construction_option = '')
+       RETURNING id`,
+      [propertyId, characterId, companyId],
+    );
+    if (!r.rows[0]) throw new Error('CORE_LAND_PREMISES_UNAVAILABLE');
+    return { provinceCode: '001' };
+  }
+
+  async lockAndClaimProvinceLandPremises(db: Db, propertyId: string, characterId: string, companyId: string): Promise<{ provinceCode: string | null }> {
+    const r = await db.query<{ id: string; provinceCode: string }>(
+      `UPDATE province_land_properties
+       SET hq_company_id = $3, updated_at = now()
+       WHERE id = $1
+         AND owner_character_id = $2
+         AND status = 'owned'
+         AND property_type = 'land'
+         AND hq_company_id IS NULL
+         AND merged_into_property_id IS NULL
+         AND (construction_option IS NULL OR construction_option = '')
+       RETURNING id, province_code AS "provinceCode"`,
+      [propertyId, characterId, companyId],
+    );
+    const row = r.rows[0];
+    if (!row) throw new Error('PROVINCE_LAND_PREMISES_UNAVAILABLE');
+    return { provinceCode: row.provinceCode };
+  }
+
+  async validateCompanyPropertyPremises(db: Db, propertyId: string): Promise<{ hostCompanyId: string; hostCompanyName: string }> {
+    const r = await db.query<{ id: string; hostCompanyId: string; hostCompanyName: string }>(
+      `SELECT p.id, c.id AS "hostCompanyId", c.name AS "hostCompanyName"
+       FROM properties p
+       JOIN companies c ON c.id = p.owner_company_id
+       WHERE p.id = $1
+         AND p.owner_company_id IS NOT NULL
+         AND c.status <> 'bankrupt'
+         AND p.property_type <> 'land'
+         AND p.status IN ('owned', 'listed')
+         AND p.merged_into_property_id IS NULL
+         AND (p.construction_option IS NOT NULL AND p.construction_option <> '')
+       FOR UPDATE OF p`,
+      [propertyId],
+    );
+    const row = r.rows[0];
+    if (!row) throw new Error('COMPANY_PROPERTY_PREMISES_UNAVAILABLE');
+    return { hostCompanyId: row.hostCompanyId, hostCompanyName: row.hostCompanyName };
   }
 
   /** Đảm bảo công ty có giấy phép kinh doanh hoạt động (idempotent). */
