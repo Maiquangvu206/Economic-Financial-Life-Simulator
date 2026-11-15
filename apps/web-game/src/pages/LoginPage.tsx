@@ -160,53 +160,107 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl border border-white/60 bg-white shadow-soft md:grid-cols-[1.05fr_1fr]">
-        {/* Brand panel */}
-        <div className="relative hidden flex-col justify-between bg-gradient-to-br from-emerald-100 via-sky-100 to-violet-100 p-8 md:flex">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-lg shadow-sm">
-                🏙️
-              </span>
+      <div className="w-full max-w-6xl grid gap-5 lg:grid-cols-[minmax(320px,400px)_1fr] items-start">
+        {/* Bảng thông báo hệ thống bên trái (tách khỏi khu vực đăng nhập) */}
+        <aside className="order-2 lg:order-1 rounded-3xl border border-white/60 bg-white/95 shadow-soft p-5 sm:p-6 lg:sticky lg:top-6">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-50 text-lg ring-1 ring-amber-100">📢</span>
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.3em] text-emerald-700">
-                  EFLS
-                </p>
-                <p className="text-xs font-medium text-slate-600">Việt Nam</p>
+                <h2 className="text-sm font-semibold text-slate-900">Thông báo hệ thống</h2>
+                <p className="text-[11px] text-slate-500">Cập nhật từ Ban Quản trị</p>
               </div>
             </div>
-
-            <h1 className="mt-8 font-heading text-2xl font-bold leading-snug text-slate-800">
-              Mô phỏng Kinh tế &amp; Cuộc sống
-            </h1>
-            <p className="mt-3 text-sm leading-relaxed text-slate-600">
-              Xây dựng sự nghiệp, quản lý tài chính, đầu tư bất động sản và sống trọn một vòng đời
-              công dân — tất cả theo chuẩn tiền đồng Việt Nam.
-            </p>
-
-            <ul className="mt-6 space-y-2 text-xs text-slate-600">
-              <li className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Thời gian trong game
-                trôi theo giờ, ngày, mùa
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-sky-500" /> Ngân hàng, chứng khoán,
-                doanh nghiệp &amp; pháp lý
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Lịch nghỉ lễ và phúc lợi
-                theo Luật Lao động
-              </li>
-            </ul>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-700">
+              {systemBroadcasts.length}
+            </span>
           </div>
 
-          <p className="text-[11px] text-slate-500">
-            Server xác thực mọi giao dịch. AI chỉ đưa ra đề xuất.
-          </p>
-        </div>
+          {systemBroadcasts.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center">
+              <div className="text-2xl mb-2">🗞️</div>
+              <div className="text-sm font-medium text-slate-700">Chưa có thông báo</div>
+              <div className="mt-1 text-xs text-slate-500">Thông báo hệ thống mới sẽ hiển thị tại đây.</div>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3 max-h-[70vh] overflow-y-auto pr-1 [scrollbar-width:thin]">
+              {systemBroadcasts.map((b) => {
+                const style = BROADCAST_STYLE[b.type] ?? BROADCAST_STYLE.news;
+                return (
+                  <article key={b.id} className={`rounded-2xl border p-4 shadow-sm ${style.cls}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <span className="mt-0.5 text-base leading-none">{style.icon}</span>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-sm font-semibold leading-snug text-slate-900 break-words">{b.title}</h3>
+                            {b.pinned ? (
+                              <span className="rounded-md bg-white/70 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-amber-800 ring-1 ring-amber-200">GHIM</span>
+                            ) : null}
+                          </div>
+                          <div className="mt-0.5 text-[10px] uppercase tracking-wide opacity-70">{b.type}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="mt-3 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">{b.content}</p>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/5 pt-2 text-[11px] text-slate-600">
+                      <span className="truncate">Người gửi: <b className="font-medium">{b.sender}</b></span>
+                      <span className="shrink-0">{fmtDate(b.createdAt)}</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </aside>
 
-        {/* Form panel */}
-        <div className="p-7 sm:p-9">
+        <div className="order-1 lg:order-2 grid w-full overflow-hidden rounded-3xl border border-white/60 bg-white shadow-soft md:grid-cols-[1.05fr_1fr]">
+          {/* Brand panel */}
+          <div className="relative hidden flex-col justify-between bg-gradient-to-br from-emerald-100 via-sky-100 to-violet-100 p-8 md:flex">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-lg shadow-sm">
+                  🏙️
+                </span>
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.3em] text-emerald-700">
+                    EFLS
+                  </p>
+                  <p className="text-xs font-medium text-slate-600">Việt Nam</p>
+                </div>
+              </div>
+
+              <h1 className="mt-8 font-heading text-2xl font-bold leading-snug text-slate-800">
+                Mô phỏng Kinh tế &amp; Cuộc sống
+              </h1>
+              <p className="mt-3 text-sm leading-relaxed text-slate-600">
+                Xây dựng sự nghiệp, quản lý tài chính, đầu tư bất động sản và sống trọn một vòng đời
+                công dân — tất cả theo chuẩn tiền đồng Việt Nam.
+              </p>
+
+              <ul className="mt-6 space-y-2 text-xs text-slate-600">
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Thời gian trong game
+                  trôi theo giờ, ngày, mùa
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-500" /> Ngân hàng, chứng khoán,
+                  doanh nghiệp &amp; pháp lý
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Lịch nghỉ lễ và phúc lợi
+                  theo Luật Lao động
+                </li>
+              </ul>
+            </div>
+
+            <p className="text-[11px] text-slate-500">
+              Server xác thực mọi giao dịch. AI chỉ đưa ra đề xuất.
+            </p>
+          </div>
+
+          {/* Form panel (đăng nhập/đăng ký) */}
+          <div className="p-7 sm:p-9">
           <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
             <button
               type="button"
@@ -255,29 +309,7 @@ export function LoginPage() {
             </p>
           </div>
 
-          {systemBroadcasts.length > 0 ? (
-            <div className="mt-4 space-y-2">
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                <span>📢 Thông báo hệ thống</span>
-                <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">{systemBroadcasts.length}</span>
-              </div>
-              <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                {systemBroadcasts.map((b) => {
-                  const style = BROADCAST_STYLE[b.type] ?? BROADCAST_STYLE.news;
-                  return (
-                    <div key={b.id} className={`rounded-xl border p-3 text-xs leading-relaxed ${style.cls}`}>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold">{style.icon} {b.title}</span>
-                        {b.pinned ? <span className="rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-bold">GHIM</span> : null}
-                      </div>
-                      <p className="mt-1 whitespace-pre-wrap text-[11px] opacity-95">{b.content}</p>
-                      <div className="mt-1 text-[10px] opacity-70">{b.sender} · {fmtDate(b.createdAt)}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
+          {/* Thông báo hệ thống hiển thị ở bảng riêng bên cạnh (không đặt trong phần đăng nhập) */}
 
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
             {mode === 'register' ? (
@@ -383,6 +415,7 @@ export function LoginPage() {
             Hệ thống tự định tuyến theo vai trò: <b className="text-slate-700">công dân</b> vào
             game, <b className="text-slate-700">quản trị viên / điều hành viên</b> vào bảng điều
             khiển quản trị.
+          </div>
           </div>
         </div>
       </div>
