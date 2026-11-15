@@ -184,7 +184,7 @@ export function StockMarketPage() {
       </div>
 
       <Panel title="Danh sách mã chứng khoán (biến động theo giờ trong game)" borderColor="emerald">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[60vh]">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-slate-200 text-[10px] uppercase text-slate-500">
@@ -234,7 +234,7 @@ export function StockMarketPage() {
       </Panel>
 
       <Panel title="Lệnh mua/bán đang mở" borderColor="amber">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[60vh]">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-slate-200 text-[10px] uppercase text-slate-500">
@@ -263,7 +263,7 @@ export function StockMarketPage() {
       </Panel>
 
       <Panel title="Lịch sử giao dịch" borderColor="default">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[60vh]">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-slate-200 text-[10px] uppercase text-slate-500">

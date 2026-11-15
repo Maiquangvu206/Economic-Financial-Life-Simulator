@@ -241,7 +241,7 @@ export function SystemBroadcastPage() {
           ) : broadcasts.length === 0 ? (
             <div className="text-sm text-slate-500">Chưa có thông báo nào.</div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
               {broadcasts.map((ann) => {
                 const cfg = TYPE_CONFIG[ann.type];
                 return (

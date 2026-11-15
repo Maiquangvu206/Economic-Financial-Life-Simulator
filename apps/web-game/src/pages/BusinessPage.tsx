@@ -523,7 +523,7 @@ export function BusinessPage() {
             {companies.length === 0 ? (
               <p className="text-sm text-slate-500">Chưa có công ty nào được thành lập.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[60vh]">
                 <table className="min-w-full text-sm">
                   <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
                     <tr>
@@ -1224,7 +1224,7 @@ export function BusinessPage() {
               ) : topShareholders.length === 0 ? (
                 <p className="text-xs text-slate-500">Chưa có dữ liệu cổ đông.</p>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-[60vh]">
                   <table className="min-w-full text-xs">
                     <thead className="text-left uppercase tracking-wide text-slate-500">
                       <tr>

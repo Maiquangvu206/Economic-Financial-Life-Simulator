@@ -141,7 +141,7 @@ export function GiftCodesPage() {
               Bạn chưa sử dụng mã quà tặng nào.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[60vh]">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-slate-200">

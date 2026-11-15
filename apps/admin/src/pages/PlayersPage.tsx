@@ -221,9 +221,9 @@ export function PlayersPage() {
       {msg && <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{msg}</div>}
       {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">Không tải được danh sách: {(error as any)?.message || 'Lỗi'}</div>}
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/80">
+      <div className="overflow-auto max-h-[70vh] rounded-2xl border border-slate-200 bg-white/80">
         <table className="w-full text-left text-xs">
-          <thead className="border-b border-slate-200 bg-slate-100 text-slate-600">
+          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-100 text-slate-600">
             <tr>
               <th className="py-3 px-3">Nhân vật</th>
               <th className="py-3 px-3">Tài khoản</th>

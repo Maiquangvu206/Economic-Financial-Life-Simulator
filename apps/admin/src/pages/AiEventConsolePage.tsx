@@ -269,7 +269,7 @@ export function AiEventConsolePage() {
 
       <section className="panel">
         <h2 className="panel-title">AI Metrics — Chi phí & Độ trễ (50 gọi gần nhất)</h2>
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[60vh]">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500">

@@ -177,9 +177,9 @@ export function AuditLogsPage() {
         />
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/80 shadow-sm">
+      <div className="overflow-auto max-h-[70vh] rounded-2xl border border-slate-200 bg-white/80 shadow-sm">
         <table className="w-full text-left text-xs text-slate-700">
-          <thead className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
+          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
             <tr>
               <th className="py-2.5 px-4 w-[170px]">Thời gian</th>
               <th className="py-2.5 px-4">Hành động</th>
