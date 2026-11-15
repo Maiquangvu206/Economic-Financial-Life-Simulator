@@ -3,6 +3,7 @@ import type {
   BuyLandRequest,
   BuyPropertyRequest,
   ConstructPropertyRequest,
+  DemolishPropertyRequest,
   ListPropertyRequest,
   MakePropertyOfferRequest,
   RentPropertyRequest,
@@ -76,6 +77,12 @@ export class RealEstateController {
   constructProperty = async (req: Request, res: Response): Promise<void> => {
     const { propertyId, optionId, memberPropertyIds, constructionName } = req.body as ConstructPropertyRequest;
     const overview = await this.service.constructProperty(req.actorId!, propertyId, optionId, memberPropertyIds ?? [], constructionName);
+    res.status(200).json(overview);
+  };
+
+  demolishProperty = async (req: Request, res: Response): Promise<void> => {
+    const { propertyId } = req.body as DemolishPropertyRequest;
+    const overview = await this.service.demolishProperty(req.actorId!, propertyId);
     res.status(200).json(overview);
   };
 }

@@ -172,3 +172,9 @@ export const ConstructPropertyRequestSchema = z.object({
   constructionName: z.string().trim().min(1).max(80).optional(),
 });
 export type ConstructPropertyRequest = z.infer<typeof ConstructPropertyRequestSchema>;
+
+/** Phá dỡ công trình/hủy hợp thửa để đưa tài sản về đất nền (đất đang sở hữu). */
+export const DemolishPropertyRequestSchema = z.object({
+  propertyId: IdSchema,
+});
+export type DemolishPropertyRequest = z.infer<typeof DemolishPropertyRequestSchema>;

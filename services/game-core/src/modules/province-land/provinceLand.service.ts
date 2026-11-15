@@ -217,6 +217,38 @@ export class ProvinceLandService {
     });
   }
 
+  async demolish(userId: string, provinceCode: string, propertyId: string): Promise<PropertyDto[]> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const rowsById = await this.repo.findByIds(client, [propertyId]);
+      const target = rowsById[0];
+      if (!target || target.provinceCode !== provinceCode) throw AppError.notFound('Property');
+
+      const groupIds = await this.repo.getTransferGroupPropertyIds(client, propertyId);
+      const rows = await this.repo.findByIds(client, groupIds.length > 0 ? groupIds : [propertyId]);
+      if (rows.length === 0) throw AppError.notFound('Property');
+
+      const hasConstruction = rows.some((r) => !!r.constructionOption || !!r.mergedIntoPropertyId || !!r.mergeGroupId);
+      if (!hasConstruction) {
+        throw AppError.badRequest('Chỉ có thể phá dỡ công trình hoặc hủy hợp thửa để trả về đất nền.');
+      }
+
+      for (const p of rows) {
+        if (p.ownerCharacterId !== character.id) {
+          throw AppError.forbidden('Chỉ chủ sở hữu mới có thể phá dỡ công trình/hủy hợp thửa.');
+        }
+        if (p.status !== 'owned') {
+          throw AppError.badRequest('Không thể phá dỡ khi lô đất đang ở trạng thái đấu giá/không sở hữu hợp lệ.');
+        }
+      }
+
+      await this.repo.cancelPendingOffersForProperties(client, rows.map((r) => r.id));
+      await this.repo.demolishToLand(client, rows.map((r) => r.id));
+
+      return this.listByProvince(userId, provinceCode);
+    });
+  }
+
   async makeOffer(userId: string, provinceCode: string, propertyId: string, amountMinor: number, message?: string): Promise<PropertySaleOfferDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);

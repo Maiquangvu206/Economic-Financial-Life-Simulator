@@ -233,6 +233,9 @@ export function CityPage() {
   const [offerLoading, setOfferLoading] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
   const [offerOk, setOfferOk] = useState<string | null>(null);
+  const [demolishing, setDemolishing] = useState(false);
+  const [demolishError, setDemolishError] = useState<string | null>(null);
+  const [demolishOk, setDemolishOk] = useState<string | null>(null);
 
   function isConnectedCells(cells: Array<{ x: number; y: number }>): boolean {
     if (cells.length <= 1) return true;
@@ -367,6 +370,33 @@ export function CityPage() {
       setConstructError(caught instanceof Error ? caught.message : 'Không thể xây dựng công trình.');
     } finally {
       setConstructing(false);
+    }
+  }
+
+  async function handleDemolish() {
+    if (!selected?.property) return;
+    const p: any = selected.property;
+    if (!window.confirm('Phá dỡ công trình/hủy hợp thửa để trả về đất nền? (Các lô trong cụm sẽ được tách lại; đề xuất mua đang chờ sẽ bị hủy)')) return;
+    setDemolishing(true);
+    setDemolishError(null);
+    setDemolishOk(null);
+    try {
+      const isProvinceLand = p.provinceSource === 'province-land' || activeProvince !== '001';
+      const url = isProvinceLand
+        ? `/api/v1/province-land/demolish?province=${encodeURIComponent(activeProvince)}`
+        : '/api/v1/real-estate/demolish';
+      await apiRequest(url, {
+        method: 'POST',
+        body: JSON.stringify({ propertyId: p.id, provinceCode: activeProvince }),
+      });
+      setDemolishOk('Đã phá dỡ công trình/hủy hợp thửa. Tài sản đã trở về đất nền.');
+      setBuildChoice(null);
+      setMergeSelectedIds([]);
+      await Promise.all([refetchRealEstate(), refetchProvinceLand(), refetchCharacter(), refetchMap()]);
+    } catch (caught) {
+      setDemolishError(caught instanceof Error ? caught.message : 'Không thể phá dỡ công trình.');
+    } finally {
+      setDemolishing(false);
     }
   }
 
@@ -642,10 +672,40 @@ export function CityPage() {
                                                                   Đã hợp nhất vào công trình (ô thành viên)
                                                                 </span>
                                                               )}
+                                                              {selected.property?.isMine && selected.property.mergedIntoPropertyId && selected.property.status === 'owned' && !(selected.property.constructionOption || selected.property.mergeGroupId) && (
+                                                                <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-rose-50/70 p-2">
+                                                                  <span className="text-[11px] text-rose-800">Ô này thuộc cụm đã hợp thửa/công trình. Bạn có thể phá dỡ để tách và trả về đất nền.</span>
+                                                                  <button
+                                                                    type="button"
+                                                                    disabled={demolishing}
+                                                                    onClick={() => void handleDemolish()}
+                                                                    className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                                                                  >
+                                                                    {demolishing ? 'Đang phá dỡ…' : 'Phá dỡ / Trả về đất nền'}
+                                                                  </button>
+                                                                  {demolishError && <span className="text-[11px] text-rose-600">{demolishError}</span>}
+                                                                  {demolishOk && <span className="text-[11px] font-semibold text-emerald-700">{demolishOk}</span>}
+                                                                </div>
+                                                              )}
                                                               {selected.property?.isMine && selected.property.constructionOption && !selected.property.mergedIntoPropertyId && (
                                                                 <span className="rounded-lg bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-800">
                                                                   🏗 Công trình: {selected.property.constructionLabel ?? selected.property.constructionOption}
                                                                 </span>
+                                                              )}
+                                                              {selected.property?.isMine && (selected.property.constructionOption || selected.property.mergedIntoPropertyId || selected.property.mergeGroupId) && selected.property.status === 'owned' && (
+                                                                <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-rose-50/70 p-2">
+                                                                  <span className="text-[11px] text-rose-800">Có thể phá dỡ công trình/hủy hợp thửa để trả về đất nền.</span>
+                                                                  <button
+                                                                    type="button"
+                                                                    disabled={demolishing}
+                                                                    onClick={() => void handleDemolish()}
+                                                                    className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                                                                  >
+                                                                    {demolishing ? 'Đang phá dỡ…' : 'Phá dỡ / Trả về đất nền'}
+                                                                  </button>
+                                                                  {demolishError && <span className="text-[11px] text-rose-600">{demolishError}</span>}
+                                                                  {demolishOk && <span className="text-[11px] font-semibold text-emerald-700">{demolishOk}</span>}
+                                                                </div>
                                                               )}
                                                               {selected.property?.isMine && selectedCluster && !selected.property.constructionOption && !selected.property.mergedIntoPropertyId && (
                                                                 <div className="flex w-full flex-col gap-2 rounded-lg border border-orange-200 bg-orange-50/60 p-2">

@@ -247,6 +247,28 @@ export function RealEstatePage() {
                         Ngưng bán
                       </GameButton>
                     )}
+                    {(p.constructionOption || p.mergedIntoPropertyId || p.mergeGroupId) && p.status === 'owned' && (
+                      <GameButton
+                        variant="outline"
+                        size="sm"
+                        disabled={isBusy(`demolish-${p.id}`)}
+                        onClick={() => {
+                          if (!window.confirm('Phá dỡ công trình/hủy hợp thửa để trả về đất nền? (Các lô trong cụm sẽ được tách lại; đề xuất mua đang chờ sẽ bị hủy)')) return;
+                          void runAction(
+                            `demolish-${p.id}`,
+                            async () => {
+                              await apiRequest('/api/v1/real-estate/demolish', {
+                                method: 'POST',
+                                body: JSON.stringify({ propertyId: p.id }),
+                              });
+                            },
+                            'Đã phá dỡ công trình/hủy hợp thửa. Tài sản đã trở về đất nền.',
+                          );
+                        }}
+                      >
+                        Phá dỡ / Đất nền
+                      </GameButton>
+                    )}
                   </div>
                 </div>
                 {(p.offers ?? []).length > 0 && (

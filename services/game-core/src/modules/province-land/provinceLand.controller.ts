@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import type { ConstructPropertyRequest } from '@efls/contracts';
+import type { ConstructPropertyRequest, DemolishPropertyRequest } from '@efls/contracts';
 import { provinceLandService } from './provinceLand.service.js';
 
 export class ProvinceLandController {
@@ -19,6 +19,13 @@ export class ProvinceLandController {
       memberPropertyIds ?? [],
       constructionName,
     );
+    res.status(200).json({ provinceCode, properties });
+  };
+
+  demolish = async (req: Request, res: Response): Promise<void> => {
+    const { propertyId } = req.body as DemolishPropertyRequest;
+    const provinceCode = String(req.query.province ?? (req.body as any)?.provinceCode ?? '001');
+    const properties = await provinceLandService.demolish(req.actorId!, provinceCode, propertyId);
     res.status(200).json({ provinceCode, properties });
   };
 

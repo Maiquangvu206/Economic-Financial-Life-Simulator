@@ -615,6 +615,40 @@ export class RealEstateService {
       return result;
     });
   }
+
+  async demolishProperty(userId: string, propertyId: string): Promise<RealEstateOverviewDto> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const target = await this.repository.findById(propertyId, client);
+      if (!target) throw AppError.notFound('Property');
+
+      const groupIds = await this.repository.findGroupPropertyIds(client, propertyId);
+      const rows = await this.repository.findByIds(client, groupIds.length > 0 ? groupIds : [propertyId]);
+      if (rows.length === 0) throw AppError.notFound('Property');
+
+      const hasConstruction = rows.some((r) => !!r.constructionOption || !!r.mergedIntoPropertyId || !!r.mergeGroupId);
+      if (!hasConstruction) {
+        throw AppError.badRequest('Chỉ có thể phá dỡ công trình hoặc hủy hợp thửa để trả về đất nền.');
+      }
+
+      for (const p of rows) {
+        if (p.ownerCharacterId !== character.id) {
+          throw AppError.forbidden('Chỉ chủ sở hữu mới có thể phá dỡ công trình/hủy hợp thửa.');
+        }
+        if (p.status !== 'owned') {
+          throw AppError.badRequest('Không thể phá dỡ khi tài sản đang rao bán/đấu giá. Vui lòng ngưng bán hoặc xử lý trạng thái trước.');
+        }
+        if (p.rentListingActive || (await this.repository.hasActiveLease(client, p.id))) {
+          throw AppError.badRequest('Không thể phá dỡ khi tài sản đang cho thuê hoặc có hợp đồng thuê hoạt động.');
+        }
+      }
+
+      await this.repository.cancelPendingOffersForProperties(client, rows.map((r) => r.id));
+      await this.repository.demolishToLand(client, rows.map((r) => r.id));
+
+      return this.getOverview(userId);
+    });
+  }
 }
 
 export const realEstateService = new RealEstateService();

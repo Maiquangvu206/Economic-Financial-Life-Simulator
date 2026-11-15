@@ -7,6 +7,7 @@ import {
   BuyLandRequestSchema,
   BuyPropertyRequestSchema,
   ConstructPropertyRequestSchema,
+  DemolishPropertyRequestSchema,
   ListPropertyRequestSchema,
   MakePropertyOfferRequestSchema,
   RentPropertyRequestSchema,
@@ -75,4 +76,10 @@ realEstateRouter.post(
   '/construct',
   validateBody(ConstructPropertyRequestSchema),
   asyncHandler(controller.constructProperty),
+);
+
+realEstateRouter.post(
+  '/demolish',
+  validateBody(DemolishPropertyRequestSchema),
+  asyncHandler(controller.demolishProperty),
 );
