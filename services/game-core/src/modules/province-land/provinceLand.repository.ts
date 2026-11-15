@@ -270,6 +270,37 @@ export class ProvinceLandRepository {
       [propertyIds, exceptOfferId],
     );
   }
+
+  async cancelPendingOffersForProperties(db: Db, propertyIds: string[]): Promise<void> {
+    if (propertyIds.length === 0) return;
+    await db.query(
+      `UPDATE province_land_purchase_offers SET status = 'cancelled', resolved_at = now(), updated_at = now()
+       WHERE property_id = ANY($1::uuid[]) AND status = 'pending'`,
+      [propertyIds],
+    );
+  }
+
+  async demolishToLand(db: Db, propertyIds: string[]): Promise<void> {
+    if (propertyIds.length === 0) return;
+    await db.query(
+      `UPDATE province_land_properties
+       SET property_type = 'land',
+           status = 'owned',
+           construction_option = NULL,
+           construction_label = NULL,
+           construction_tier = NULL,
+           construction_multiplier = 1,
+           construction_cost_minor = 0,
+           construction_built_at = NULL,
+           merged_into_property_id = NULL,
+           merge_group_id = NULL,
+           monthly_rent_minor = 0,
+           current_value_minor = purchase_price_minor,
+           updated_at = now()
+       WHERE id = ANY($1::uuid[])`,
+      [propertyIds],
+    );
+  }
 }
 
 export const provinceLandRepository = new ProvinceLandRepository();

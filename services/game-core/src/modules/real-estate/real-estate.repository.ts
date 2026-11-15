@@ -427,6 +427,72 @@ export class RealEstateRepository {
       );
     }
   }
+
+  async findGroupPropertyIds(db: Db, propertyId: string): Promise<string[]> {
+    const info = await db.query<{
+      id: string;
+      mergeGroupId: string | null;
+      mergedIntoPropertyId: string | null;
+    }>(
+      `SELECT id, merge_group_id AS "mergeGroupId", merged_into_property_id AS "mergedIntoPropertyId"
+       FROM properties WHERE id = $1`,
+      [propertyId],
+    );
+    const row = info.rows[0];
+    if (!row) return [];
+    let groupId: string | null = row.mergeGroupId;
+    if (!groupId && row.mergedIntoPropertyId) {
+      const parent = await db.query<{ mergeGroupId: string | null }>(
+        `SELECT merge_group_id AS "mergeGroupId" FROM properties WHERE id = $1`,
+        [row.mergedIntoPropertyId],
+      );
+      groupId = parent.rows[0]?.mergeGroupId ?? null;
+    }
+    if (!groupId) return [propertyId];
+    const r = await db.query<{ id: string }>(
+      `SELECT id FROM properties WHERE merge_group_id = $1`,
+      [groupId],
+    );
+    const ids = r.rows.map((x) => x.id);
+    return ids.length > 0 ? ids : [propertyId];
+  }
+
+  async demolishToLand(db: Db, propertyIds: string[]): Promise<void> {
+    if (propertyIds.length === 0) return;
+    await db.query(
+      `UPDATE properties
+       SET property_type = 'land',
+           status = 'owned',
+           construction_option = NULL,
+           construction_label = NULL,
+           construction_tier = NULL,
+           construction_multiplier = 1,
+           construction_cost_minor = 0,
+           construction_built_at = NULL,
+           merged_into_property_id = NULL,
+           merge_group_id = NULL,
+           monthly_rent_minor = 0,
+           rent_listing_active = false,
+           rent_deposit_minor = 0,
+           rent_notes = NULL,
+           asking_price_minor = NULL,
+           sale_notes = NULL,
+           current_value_minor = purchase_price_minor,
+           updated_at = now()
+       WHERE id = ANY($1::uuid[])`,
+      [propertyIds],
+    );
+  }
+
+  async cancelPendingOffersForProperties(db: Db, propertyIds: string[]): Promise<void> {
+    if (propertyIds.length === 0) return;
+    await db.query(
+      `UPDATE property_sale_offers
+       SET status = 'cancelled', resolved_at = now(), updated_at = now()
+       WHERE property_id = ANY($1::uuid[]) AND status = 'pending'`,
+      [propertyIds],
+    );
+  }
 }
 
 export const realEstateRepository = new RealEstateRepository();
