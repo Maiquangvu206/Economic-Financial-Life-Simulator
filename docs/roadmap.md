@@ -51,6 +51,12 @@ Thứ tự ưu tiên bám theo GDD, nhưng đi từ nền tảng có thể kiể
   - `POST /api/v1/real-estate/buy` — mua bất động sản (chưa có chủ / đang bán), đồng bộ ledger.
   - `POST /api/v1/real-estate/list` — chủ sở hữu đặt bán.
   - `POST /api/v1/real-estate/rent` — cho thuê, tạo hợp đồng thuê active.
+- [x] **Tái thiết kế Bản đồ Đô thị 2D (`CityPage` & `MapCanvas2D`)**:
+  - Tỷ lệ khung hình chuẩn màn hình rộng (Aspect Ratio ~16:10), loại bỏ hoàn toàn dải đen/vùng chết lãng phí, phủ kín lưới đô thị 32×20.
+  - Xóa bỏ giới hạn độ rộng `w-[48%]`, đưa Bản đồ thành tâm điểm chính của trang (Hero element) rộng rãi, sắc nét.
+  - Bổ sung bộ điều khiển Zoom/Pan mượt mà: Lăn chuột zoom vào con trỏ, cụm phím tắt nổi `[+]`, `[−]`, `[100% Reset]`, bật/tắt đường lưới tọa độ.
+  - Hiển thị trực quan: Icon phân khu đô thị (🏢 Thương mại, 🏡 Dân cư, 🏭 Công nghiệp, 🌳 Công viên, ⚓ Cảng biển), tọa độ góc mờ, viền rực rỡ cho ô của bạn và hiệu ứng pulse đỏ cho ô đang đấu giá.
+  - Tái cấu trúc thanh Thông tin ô đất (Plot Inspector) và tinh gọn sidebar Đấu giá đất + Chọn tỉnh/thành với bộ lọc tìm kiếm nhanh.
 - [x] **Map Editor phân lớp & mở rộng (Admin Panel)**:
   - Cấu hình kích thước bản đồ linh hoạt (số Cột x Dòng), tự động bảo toàn 100% dữ liệu các ô đất cũ khi mở rộng quy mô.
   - Tích hợp cụm nút Zoom điều hướng nhanh (`[−]`, `[%]`, `[+]`) cạnh nút lưu.
