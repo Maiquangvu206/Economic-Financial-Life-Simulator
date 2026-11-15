@@ -54,7 +54,7 @@ interface PayDividendInput {
 export class CorporationRepository {
   constructor(readonly db: Db = pool) {}
 
-  /** Danh sách tất cả công ty, kèm chủ sở hữu và mã chứng khoán (nếu đã IPO). */
+  /** Danh sách công ty đang hoạt động/IPO (không bao gồm đã giải thể/phá sản), kèm chủ sở hữu và mã chứng khoán (nếu có). */
   async listCompanies(): Promise<CompanyRow[]> {
     const result = await this.db.query<CompanyRow>(
       `SELECT c.id, c.name, c.industry, c.owner_character_id AS "ownerCharacterId",
@@ -63,12 +63,28 @@ export class CorporationRepository {
               c.founded_at AS "foundedAt", c.updated_at AS "updatedAt"
        FROM companies c
        JOIN characters ch ON ch.id = c.owner_character_id
+       WHERE c.status <> 'bankrupt'
        ORDER BY c.updated_at DESC`,
     );
     return result.rows;
   }
 
   async getCompany(id: string, db: Db = this.db): Promise<CompanyRow | null> {
+    const result = await db.query<CompanyRow>(
+      `SELECT c.id, c.name, c.industry, c.owner_character_id AS "ownerCharacterId",
+              ch.full_name AS "ownerName", c.cash_minor AS "cashMinor",
+              c.valuation_minor AS "valuationMinor", c.status, c.ticker_symbol AS "tickerSymbol",
+              c.founded_at AS "foundedAt", c.updated_at AS "updatedAt"
+       FROM companies c
+       JOIN characters ch ON ch.id = c.owner_character_id
+       WHERE c.id = $1 AND c.status <> 'bankrupt'`,
+      [id],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /** Lấy công ty bất kể trạng thái (phục vụ luồng nội bộ sau giải thể/phá sản). */
+  async getCompanyAnyStatus(id: string, db: Db = this.db): Promise<CompanyRow | null> {
     const result = await db.query<CompanyRow>(
       `SELECT c.id, c.name, c.industry, c.owner_character_id AS "ownerCharacterId",
               ch.full_name AS "ownerName", c.cash_minor AS "cashMinor",

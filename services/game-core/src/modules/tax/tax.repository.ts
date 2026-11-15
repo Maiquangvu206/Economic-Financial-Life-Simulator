@@ -251,7 +251,7 @@ export class TaxRepository {
          ORDER BY (status = 'active') DESC, issued_at DESC
          LIMIT 1
        ) l ON true
-       WHERE c.owner_character_id = $1
+       WHERE c.owner_character_id = $1 AND c.status <> 'bankrupt'
        ORDER BY c.name ASC`,
       [characterId],
     );

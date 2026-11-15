@@ -40,7 +40,7 @@ export function EducationPage() {
       toast({ title: 'Ghi danh thành công', description: 'Bạn đã ghi danh và đóng học phí.', variant: 'success' });
       void refetch();
     } catch (e: any) {
-      toast({ title: 'Không thể ghi danh', description: e?.message || 'Vui lòng thử lại.', variant: 'error' });
+      toast({ title: 'Không thể ghi danh', description: e?.problem?.detail || e?.message || 'Vui lòng thử lại.', variant: 'error' });
     } finally { setBusy(null); }
   }
 
@@ -51,7 +51,23 @@ export function EducationPage() {
       toast({ title: 'Tốt nghiệp', description: 'Chúc mừng bạn đã tốt nghiệp.', variant: 'success' });
       void refetch();
     } catch (e: any) {
-      toast({ title: 'Chưa thể tốt nghiệp', description: e?.message || 'Chưa đến thời hạn hoặc có lỗi.', variant: 'error' });
+      toast({ title: 'Chưa thể tốt nghiệp', description: e?.problem?.detail || e?.message || 'Chưa đến thời hạn hoặc có lỗi.', variant: 'error' });
+    } finally { setBusy(null); }
+  }
+
+  async function handleDrop(degreeId: string, degreeCode: string) {
+    const ok = window.confirm(
+      `Bỏ học giữa chừng chương trình ${degreeCode}?\n\n- Toàn bộ học phí đã đóng sẽ KHÔNG được hoàn lại.\n- Bạn sẽ KHÔNG nhận được bằng cấp hay bất kỳ chức năng/lợi ích nào của bằng này.\n- Bạn vẫn có thể ghi danh và học lại bằng này sau.\n\nBạn có chắc chắn muốn bỏ học?`,
+    );
+    if (!ok) return;
+    setBusy(`drop-${degreeId}`);
+    try {
+      await apiRequest('/api/v1/education/drop', { method: 'POST', body: JSON.stringify({ degreeId }) });
+      toast({ title: 'Đã bỏ học', description: 'Bạn đã bỏ học giữa chừng. Học phí không được hoàn và không nhận chức năng của bằng.', variant: 'success' });
+      setActiveTest((t) => (t?.degreeId === degreeId ? null : t));
+      void refetch();
+    } catch (e: any) {
+      toast({ title: 'Không thể bỏ học', description: e?.problem?.detail || e?.message || 'Vui lòng thử lại.', variant: 'error' });
     } finally { setBusy(null); }
   }
 
@@ -66,7 +82,7 @@ export function EducationPage() {
       setAnswers({});
       toast({ title: 'Đã tạo bài kiểm tra', description: '5 câu trắc nghiệm cơ bản do AI sinh theo ngành/lĩnh vực. Hãy hoàn thành và nộp bài.', variant: 'success' });
     } catch (e: any) {
-      toast({ title: 'Không thể bắt đầu bài kiểm tra', description: e?.message || 'Vui lòng thử lại.', variant: 'error' });
+      toast({ title: 'Không thể bắt đầu bài kiểm tra', description: e?.problem?.detail || e?.message || 'Vui lòng thử lại.', variant: 'error' });
     } finally { setBusy(null); }
   }
 
@@ -95,7 +111,7 @@ export function EducationPage() {
       }
       void refetch();
     } catch (e: any) {
-      toast({ title: 'Nộp bài thất bại', description: e?.message || 'Vui lòng thử lại.', variant: 'error' });
+      toast({ title: 'Nộp bài thất bại', description: e?.problem?.detail || e?.message || 'Vui lòng thử lại.', variant: 'error' });
     } finally { setBusy(null); }
   }
 
@@ -183,7 +199,9 @@ export function EducationPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-slate-800">{d.degreeCode ?? '—'}</span>
                         {d.universityName && <span className="text-xs text-slate-600">{d.universityName}</span>}
-                        <Badge variant={d.status === 'graduated' ? 'success' : 'warning'}>{d.status === 'graduated' ? 'Đã tốt nghiệp' : 'Đang theo học'}</Badge>
+                        <Badge variant={d.status === 'graduated' ? 'success' : d.status === 'dropped' ? 'error' : 'warning'}>
+                          {d.status === 'graduated' ? 'Đã tốt nghiệp' : d.status === 'dropped' ? 'Đã bỏ học' : 'Đang theo học'}
+                        </Badge>
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
                         Ghi danh {d.enrolledAt ? new Date(d.enrolledAt).toLocaleDateString('vi-VN') : '—'} · Tốt nghiệp {d.graduatesAt ? new Date(d.graduatesAt).toLocaleDateString('vi-VN') : '—'}
@@ -196,6 +214,11 @@ export function EducationPage() {
                           {due && <span className="ml-1 text-emerald-700 font-semibold">· Đã đủ thời gian tốt nghiệp</span>}
                         </div>
                       )}
+                      {d.status === 'dropped' && (
+                        <div className="mt-1 text-[11px] text-rose-600">
+                          Đã bỏ học giữa chừng: không hoàn học phí, không nhận bằng/chức năng. Bạn có thể ghi danh học lại bằng này.
+                        </div>
+                      )}
                     </div>
                     {d.status === 'enrolled' && (
                       <div className="flex gap-2 flex-wrap justify-end">
@@ -204,6 +227,15 @@ export function EducationPage() {
                             {busy === `start-${d.id}` ? 'Đang tạo đề…' : 'Làm bài thi tốt nghiệp sớm'}
                           </GameButton>
                         )}
+                        <GameButton
+                          variant="ghost"
+                          size="sm"
+                          disabled={!!busy}
+                          onClick={() => void handleDrop(d.id, d.degreeCode ?? 'bằng này')}
+                          title="Bỏ học giữa chừng: không hoàn học phí, không nhận chức năng/bằng cấp, nhưng có thể học lại."
+                        >
+                          {busy === `drop-${d.id}` ? 'Đang xử lý…' : 'Bỏ học giữa chừng'}
+                        </GameButton>
                         <GameButton variant="primary" size="sm" disabled={!!busy} onClick={() => void handleGraduate(d.id)} title={due ? 'Tốt nghiệp đúng hạn' : 'Khả dụng khi đủ thời gian (hoặc thi tốt nghiệp sớm nếu đủ 2/3)'}>
                           {busy === d.id ? 'Đang xử lý…' : 'Tốt nghiệp'}
                         </GameButton>

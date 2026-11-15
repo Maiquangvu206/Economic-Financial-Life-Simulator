@@ -153,6 +153,13 @@ export class EducationRepository {
     );
   }
 
+  async dropDegree(client: Db, degreeId: string): Promise<void> {
+    await client.query(
+      `UPDATE degrees SET status = 'dropped' WHERE id = $1 AND status = 'enrolled'`,
+      [degreeId],
+    );
+  }
+
   async recordTuition(
     client: Db,
     characterId: string,

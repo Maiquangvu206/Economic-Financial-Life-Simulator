@@ -6,6 +6,7 @@ import { EducationController } from './education.controller.js';
 import {
   EnrollUniversityRequestSchema,
   GraduateRequestSchema,
+  DropDegreeRequestSchema,
   EarlyGraduateRequestSchema,
   EarlyGraduateSubmitRequestSchema,
 } from '@efls/contracts';
@@ -28,6 +29,12 @@ educationRouter.post(
   '/graduate',
   validateBody(GraduateRequestSchema),
   asyncHandler(controller.graduate),
+);
+
+educationRouter.post(
+  '/drop',
+  validateBody(DropDegreeRequestSchema),
+  asyncHandler(controller.drop),
 );
 
 educationRouter.post(

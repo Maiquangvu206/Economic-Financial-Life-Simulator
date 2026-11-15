@@ -79,6 +79,9 @@ export type UnlockedFeature = z.infer<typeof UnlockedFeatureSchema>;
 export const GraduateRequestSchema = z.object({ degreeId: IdSchema });
 export type GraduateRequest = z.infer<typeof GraduateRequestSchema>;
 
+export const DropDegreeRequestSchema = z.object({ degreeId: IdSchema });
+export type DropDegreeRequest = z.infer<typeof DropDegreeRequestSchema>;
+
 export const GraduationDtoSchema = z.object({
   degree: DegreeDtoSchema,
   unlockedFeatures: z.array(UnlockedFeatureSchema),

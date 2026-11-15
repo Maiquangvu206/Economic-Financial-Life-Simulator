@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import {
   type EnrollUniversityRequest,
   type GraduateRequest,
+  type DropDegreeRequest,
   type EarlyGraduateRequest,
   type EarlyGraduateSubmitRequest,
 } from '@efls/contracts';
@@ -25,6 +26,12 @@ export class EducationController {
     const { degreeId } = req.body as GraduateRequest;
     const result = await this.service.graduate(req.actorId!, degreeId);
     res.status(200).json(result);
+  };
+
+  drop = async (req: Request, res: Response): Promise<void> => {
+    const { degreeId } = req.body as DropDegreeRequest;
+    const overview = await this.service.drop(req.actorId!, degreeId);
+    res.status(200).json(overview);
   };
 
   earlyGraduateStart = async (req: Request, res: Response): Promise<void> => {

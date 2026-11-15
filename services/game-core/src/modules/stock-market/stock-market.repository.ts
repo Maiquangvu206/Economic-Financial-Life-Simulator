@@ -69,6 +69,7 @@ export class StockMarketRepository {
               t.total_volume AS "totalVolume", t.is_ipo AS "isIpo"
        FROM stock_tickers t
        JOIN companies c ON c.id = t.company_id
+       WHERE c.status <> 'bankrupt'
        ORDER BY t.symbol`,
     );
     return result.rows;
@@ -85,7 +86,7 @@ export class StockMarketRepository {
               t.total_volume AS "totalVolume", t.is_ipo AS "isIpo"
        FROM stock_tickers t
        JOIN companies c ON c.id = t.company_id
-       WHERE t.id = $1`,
+       WHERE t.id = $1 AND c.status <> 'bankrupt'`,
       [tickerId],
     );
     return result.rows[0] ?? null;
@@ -98,7 +99,8 @@ export class StockMarketRepository {
               o.status, o.created_at AS "createdAt"
        FROM stock_orders o
        JOIN stock_tickers t ON t.id = o.ticker_id
-       WHERE o.character_id = $1 AND o.status IN ('open', 'partially_filled')
+       JOIN companies c ON c.id = t.company_id
+       WHERE o.character_id = $1 AND o.status IN ('open', 'partially_filled') AND c.status <> 'bankrupt'
        ORDER BY o.created_at DESC`,
       [characterId],
     );
@@ -139,7 +141,7 @@ export class StockMarketRepository {
        FROM stock_holdings h
        JOIN stock_tickers t ON t.id = h.ticker_id
        JOIN companies c ON c.id = t.company_id
-       WHERE h.character_id = $1 AND h.shares > 0
+       WHERE h.character_id = $1 AND h.shares > 0 AND c.status <> 'bankrupt'
        ORDER BY t.symbol`,
       [characterId],
     );
@@ -165,7 +167,8 @@ export class StockMarketRepository {
               tr.amount, tr.executed_at AS "executedAt"
        FROM stock_trades tr
        JOIN stock_tickers t ON t.id = tr.ticker_id
-       WHERE tr.buyer_character_id = $1 OR tr.seller_character_id = $1
+       JOIN companies c ON c.id = t.company_id
+       WHERE (tr.buyer_character_id = $1 OR tr.seller_character_id = $1) AND c.status <> 'bankrupt'
        ORDER BY tr.executed_at DESC
        LIMIT 50`,
       [characterId],

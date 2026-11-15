@@ -171,6 +171,30 @@ export class EducationService {
     });
   }
 
+  /** Bỏ học giữa chừng: không hoàn học phí, không nhận bằng/chức năng, có thể ghi danh học lại sau. */
+  async drop(userId: string, degreeId: string): Promise<CareersOverviewExtDto> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const degree = await this.repository.getDegreeForCharacter(degreeId, character.id, client);
+      if (!degree) throw AppError.notFound('Degree');
+      if (degree.status !== 'enrolled') {
+        throw AppError.badRequest('Chỉ có thể bỏ học chương trình đang theo học.');
+      }
+
+      await this.repository.dropDegree(client, degreeId);
+
+      await notify(client, {
+        userId,
+        kind: 'education',
+        title: 'Đã bỏ học giữa chừng',
+        body: `Bạn đã bỏ học chương trình ${degree.degreeCode}${degree.universityName ? ` (${degree.universityName})` : ''}. Học phí đã đóng không được hoàn lại và bạn không nhận được bằng cấp/chức năng của chương trình này. Bạn có thể ghi danh học lại bằng này sau.`,
+        payload: { degreeId: degree.id, degreeCode: degree.degreeCode, status: 'dropped' },
+      });
+
+      return this.getOverview(userId, client);
+    });
+  }
+
   /** Bắt đầu bài kiểm tra tốt nghiệp sớm: tạo 5 câu trắc nghiệm cơ bản do AI sinh theo ngành/lĩnh vực. */
   async startEarlyGraduateTest(userId: string, degreeId: string): Promise<EarlyGraduateStartResponse> {
     return withTransaction(async (client) => {

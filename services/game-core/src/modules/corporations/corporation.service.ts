@@ -521,7 +521,7 @@ export class CorporationService {
         payload: { companyId },
       });
 
-      const dto = await this.repository.getCompany(companyId, client);
+      const dto = await this.repository.getCompanyAnyStatus(companyId, client);
       if (!dto) throw new Error('Company disappeared after dissolve');
       return { ...toCompanyDto(dto), isOwner: true, shareholders: [] };
     });
