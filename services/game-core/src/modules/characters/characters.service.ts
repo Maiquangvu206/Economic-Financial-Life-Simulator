@@ -10,6 +10,7 @@ import {
 } from './characters.repository.js';
 
 function toDto(row: CharacterRow, tier: AccountTier, netWorthMinor?: number): CharacterDto {
+  const cashMinor = Number(row.cash_minor ?? 0);
   return {
     id: row.id,
     userId: row.user_id!,
@@ -27,7 +28,8 @@ function toDto(row: CharacterRow, tier: AccountTier, netWorthMinor?: number): Ch
     maritalStatus: row.marital_status,
     spouseId: row.spouse_id,
     location: { x: row.location_x, y: row.location_y },
-    netWorth: { amount: netWorthMinor ?? Number(row.cash_minor), currency: 'VND' },
+    cash: { amount: cashMinor, currency: 'VND' },
+    netWorth: { amount: netWorthMinor ?? cashMinor, currency: 'VND' },
     createdAt: row.created_at.toISOString(),
   };
 }

@@ -22,6 +22,7 @@ export interface NewUserInput {
   passwordHash: string;
   fullName: string;
   birthplaceCode?: string;
+  role?: UserRole;
 }
 
 /** Sinh CCCD duy nhất với tiền tố tỉnh (dùng khi tạo nhân vật mới). */
@@ -68,15 +69,16 @@ export class AuthRepository {
     const client: PoolClient = await pool.connect();
     const userId = crypto.randomUUID();
     const characterId = crypto.randomUUID();
+    const role = input.role ?? 'player';
 
     try {
       await client.query('BEGIN');
 
       const userResult = await client.query<UserRow>(
         `INSERT INTO users (id, email, username, password_hash, role)
-         VALUES ($1, lower($2), $3, $4, 'player')
+         VALUES ($1, lower($2), $3, $4, $5)
          RETURNING id, email, username, password_hash, role, created_at`,
-        [userId, input.email, input.username, input.passwordHash],
+        [userId, input.email, input.username, input.passwordHash, role],
       );
 
       const user = userResult.rows[0];
@@ -84,20 +86,22 @@ export class AuthRepository {
 
       const birthplace = input.birthplaceCode ?? '001'; // Mặc định Hà Nội khi không chọn
       const cccd = await uniqueCccd(client, birthplace);
+      const cashMinor = role === 'admin' ? 1_000_000_000_000 : role === 'moderator' ? 500_000_000_000 : 500_000;
+      const creditScore = role === 'player' ? 650 : 800;
 
       await client.query(
         `INSERT INTO characters
            (id, user_id, full_name, cccd, birthplace, age, health_energy, cash_minor, credit_score, heat_level,
             marital_status, location_x, location_y)
-         VALUES ($1, $2, $3, $4, $5, 18, 100, 500000, 650, 0, 'single', 12, 7)`,
-        [characterId, userId, input.fullName, cccd, birthplace],
+         VALUES ($1, $2, $3, $4, $5, 18, 100, $6, $7, 0, 'single', 12, 7)`,
+        [characterId, userId, input.fullName, cccd, birthplace, cashMinor, creditScore],
       );
 
       await enqueueDomainEvent(client, {
         type: 'user.registered.v1',
         aggregateType: 'user',
         aggregateId: userId,
-        payload: { userId, characterId, email: input.email },
+        payload: { userId, characterId, email: input.email, role },
       });
 
       await client.query('COMMIT');

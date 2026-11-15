@@ -72,7 +72,7 @@ export function AppLayout() {
   const {
     netWorth, cash, heatLevel, energy, year, month, day, hour, minute,
     isPaused, season, period, activeHoliday, education,
-    lastHolidayLetter, claimHolidayGift, dismissHolidayLetter, tickTime, setSeason,
+    lastHolidayLetter, claimHolidayGift, dismissHolidayLetter, tickTime, setSeason, setGameState,
   } = useGameStore();
   const queryClient = useQueryClient();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -85,6 +85,18 @@ export function AppLayout() {
     staleTime: 15000,
   });
   const isDead = me?.isAlive === false;
+
+  // Đồng bộ thanh báo cáo (topbar) theo dữ liệu nhân vật thực từ server, tránh hiển thị dữ liệu mẫu
+  useEffect(() => {
+    if (!me) return;
+    setGameState({
+      cash: me.cash?.amount ?? 0,
+      netWorth: me.netWorth?.amount ?? me.cash?.amount ?? 0,
+      energy: typeof me.healthEnergy === 'number' ? me.healthEnergy : 100,
+      heatLevel: typeof me.heatLevel === 'number' ? me.heatLevel : 0,
+      creditScore: typeof me.creditScore === 'number' ? me.creditScore : 650,
+    });
+  }, [me, setGameState]);
 
   const { data: broadcasts = [] } = useQuery<BroadcastItem[]>({
     queryKey: ['broadcasts', 'active'],

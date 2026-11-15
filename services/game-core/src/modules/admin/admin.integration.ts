@@ -1,14 +1,22 @@
 import type { Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
 import { pool } from '../../shared/db/pool.js';
 import { AppError } from '../../shared/http/errors.js';
 import { listActionLogs, writeActionLog } from '../../shared/audit/actionLog.js';
 import { notify } from '../notifications/notification.service.js';
 import { publishToUser, publishToAllUsers } from '../../shared/realtime/publish.js';
-import type { MacroSnapshotDto, TriggerMacroEventRequest } from '@efls/contracts';
+import { AuthRepository } from '../auth/auth.repository.js';
+import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest } from '@efls/contracts';
 
 function ensureAdmin(req: Request): void {
   if (req.actorRole !== 'admin' && req.actorRole !== 'moderator') {
     throw AppError.forbidden('Admin role required');
+  }
+}
+
+function ensureSuperAdmin(req: Request): void {
+  if (req.actorRole !== 'admin') {
+    throw AppError.forbidden('Chỉ quản trị viên (admin) mới được thực hiện thao tác này.');
   }
 }
 
@@ -303,4 +311,104 @@ export async function triggerMacroEvent(req: Request, res: Response): Promise<vo
     await publishToAllUsers('notification', { kind: 'macro_event', title, body: content.slice(0, 200), at: Date.now() });
   } catch { /* ignore */ }
   res.json({ ok: true, event: eventRecord });
+}
+
+const authRepo = new AuthRepository();
+
+export async function adminCreateAccount(req: Request, res: Response): Promise<void> {
+  ensureSuperAdmin(req);
+  const body = req.body as CreateAdminAccountRequest;
+  const email = body.email.trim().toLowerCase();
+  const username = body.username.trim();
+  const fullName = body.fullName.trim();
+  const role = body.role;
+  if (!['admin', 'moderator'].includes(role)) {
+    throw AppError.badRequest('Vai trò không hợp lệ.');
+  }
+  if (await authRepo.emailExists(email)) {
+    throw AppError.conflict('email_taken', 'Email đã được sử dụng.');
+  }
+  const existingUsername = await pool.query(`SELECT 1 FROM users WHERE lower(username)=lower($1) LIMIT 1`, [username]);
+  if (existingUsername.rows[0]) {
+    throw AppError.conflict('username_taken', 'Username đã được sử dụng.');
+  }
+
+  const passwordHash = await bcrypt.hash(body.password, 12);
+  const { user, characterId } = await authRepo.createWithCharacter({
+    email,
+    username,
+    passwordHash,
+    fullName: fullName || username,
+    birthplaceCode: '001',
+    role,
+  });
+
+  await writeActionLog(pool as any, req.actorId, 'admin.account.create', {
+    targetUserId: user.id,
+    targetCharacterId: characterId,
+    email: user.email,
+    username: user.username,
+    role: user.role,
+  });
+
+  res.status(201).json({
+    ok: true,
+    user: { id: user.id, email: user.email, username: user.username, role: user.role },
+    characterId,
+  });
+}
+
+export async function adminSetUserRole(req: Request, res: Response): Promise<void> {
+  ensureSuperAdmin(req);
+  const body = req.body as SetUserRoleRequest;
+  const { userId, role } = body;
+  const note = body.note?.trim() || null;
+
+  if (userId === req.actorId && role !== 'admin') {
+    throw AppError.badRequest('Bạn không thể tự hạ quyền tài khoản admin đang đăng nhập.');
+  }
+
+  const existing = await pool.query<{ id: string; email: string; username: string; role: string }>(
+    `SELECT id, email, username, role FROM users WHERE id = $1`,
+    [userId],
+  );
+  const target = existing.rows[0];
+  if (!target) throw AppError.notFound('Tài khoản');
+
+  if (target.role === role) {
+    res.json({ ok: true, userId, role, changed: false });
+  return;
+  }
+
+  await pool.query(`UPDATE users SET role = $2, updated_at = now() WHERE id = $1`, [userId, role]);
+
+  await writeActionLog(pool as any, req.actorId, 'admin.account.set_role', {
+    targetUserId: userId,
+    email: target.email,
+    username: target.username,
+    fromRole: target.role,
+    toRole: role,
+    note,
+  });
+
+  const roleLabel = role === 'admin' ? 'Quản trị viên (admin)' : role === 'moderator' ? 'Điều hành viên (moderator)' : 'Người chơi';
+  try {
+    await notify(pool as any, {
+      userId,
+      kind: 'admin_action',
+      title: 'Quyền tài khoản đã được cập nhật',
+      body: `Quyền truy cập của bạn đã được thay đổi thành: ${roleLabel}. Vui lòng đăng xuất và đăng nhập lại để áp dụng quyền mới.`,
+      payload: { action: 'set_role', fromRole: target.role, toRole: role, note },
+    });
+    await publishToUser(userId, 'notification', {
+      kind: 'admin_action',
+      title: 'Quyền tài khoản đã được cập nhật',
+      body: `Quyền của bạn đã đổi thành ${roleLabel}. Hãy đăng nhập lại để áp dụng.`,
+      at: Date.now(),
+    });
+  } catch {
+    /* ignore */
+  }
+
+  res.json({ ok: true, userId, role, fromRole: target.role, changed: true });
 }

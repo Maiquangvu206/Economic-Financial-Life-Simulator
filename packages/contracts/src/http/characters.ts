@@ -26,6 +26,7 @@ export const CharacterDtoSchema = z.object({
   maritalStatus: MaritalStatusSchema,
   spouseId: IdSchema.nullable(),
   location: z.object({ x: z.number().int(), y: z.number().int() }),
+  cash: MoneySchema,
   netWorth: MoneySchema,
   createdAt: z.string().datetime(),
 });

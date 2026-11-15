@@ -40,6 +40,22 @@ export const AdminPlayerActionRequestSchema = z.object({
 });
 export type AdminPlayerActionRequest = z.infer<typeof AdminPlayerActionRequestSchema>;
 
+export const CreateAdminAccountRequestSchema = z.object({
+  email: z.string().email(),
+  username: z.string().min(3).max(32),
+  password: z.string().min(8).max(128),
+  fullName: z.string().min(2).max(80),
+  role: z.enum(['admin', 'moderator']),
+});
+export type CreateAdminAccountRequest = z.infer<typeof CreateAdminAccountRequestSchema>;
+
+export const SetUserRoleRequestSchema = z.object({
+  userId: IdSchema,
+  role: z.enum(['player', 'moderator', 'admin']),
+  note: z.string().max(500).optional(),
+});
+export type SetUserRoleRequest = z.infer<typeof SetUserRoleRequestSchema>;
+
 export const BroadcastTypeSchema = z.enum(['urgent', 'maintenance', 'event', 'economy', 'news']);
 export type BroadcastType = z.infer<typeof BroadcastTypeSchema>;
 
