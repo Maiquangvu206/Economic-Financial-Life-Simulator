@@ -25,6 +25,7 @@ export class BankingController {
       amountMinor: input.amount.amount,
       termMonths: input.termMonths,
       collateralPropertyId: input.collateralPropertyId ?? undefined,
+      collateralCompanyId: input.collateralCompanyId ?? undefined,
     });
     res.status(201).json(loan);
   };

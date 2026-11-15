@@ -13,11 +13,17 @@ export interface LoanRow {
   next_due_at: Date;
   grace_period_end: Date;
   status: 'active' | 'grace' | 'defaulted' | 'foreclosed' | 'repaid';
+  collateral_type: 'property' | 'company' | null;
   collateral_property_id: string | null;
+  collateral_company_id: string | null;
   collateral_property_type: string | null;
-  collateral_current_value_minor: string | null;
+  collateral_property_value_minor: string | null;
   collateral_node_name: string | null;
-  collateral_status: string | null;
+  collateral_property_status: string | null;
+  collateral_company_name: string | null;
+  collateral_company_industry: string | null;
+  collateral_company_value_minor: string | null;
+  collateral_company_status: string | null;
   created_at: Date;
 }
 
@@ -57,7 +63,9 @@ export interface CreateLoanInput {
   monthlyPaymentMinor: number;
   gracePeriodEnd: Date;
   nextDueAt: Date;
+  collateralType: 'property' | 'company' | null;
   collateralPropertyId: string | null;
+  collateralCompanyId: string | null;
 }
 
 export class BankingRepository {
@@ -67,11 +75,18 @@ export class BankingRepository {
     return `
       ${alias}.id, ${alias}.borrower_id, ${alias}.lender_type, ${alias}.principal_minor, ${alias}.outstanding_minor,
       ${alias}.interest_rate_pct, ${alias}.term_months, ${alias}.monthly_payment_minor, ${alias}.next_due_at,
-      ${alias}.grace_period_end, ${alias}.status, ${alias}.collateral_property_id, ${alias}.created_at,
+      ${alias}.grace_period_end, ${alias}.status, ${alias}.created_at,
+      COALESCE(${alias}.collateral_type, CASE WHEN ${alias}.collateral_property_id IS NOT NULL THEN 'property' WHEN ${alias}.collateral_company_id IS NOT NULL THEN 'company' ELSE NULL END) AS collateral_type,
+      ${alias}.collateral_property_id,
+      ${alias}.collateral_company_id,
       p.property_type AS collateral_property_type,
-      p.current_value_minor AS collateral_current_value_minor,
+      p.current_value_minor AS collateral_property_value_minor,
       n.name AS collateral_node_name,
-      p.status AS collateral_status
+      p.status AS collateral_property_status,
+      c.name AS collateral_company_name,
+      c.industry AS collateral_company_industry,
+      c.valuation_minor AS collateral_company_value_minor,
+      c.status AS collateral_company_status
     `;
   }
 
@@ -79,6 +94,7 @@ export class BankingRepository {
     return `
       LEFT JOIN properties p ON p.id = ${alias}.collateral_property_id
       LEFT JOIN map_nodes n ON n.id = p.node_id
+      LEFT JOIN companies c ON c.id = ${alias}.collateral_company_id
     `;
   }
 
@@ -111,8 +127,8 @@ export class BankingRepository {
       `INSERT INTO loans
          (id, borrower_id, lender_type, principal_minor, outstanding_minor,
           interest_rate_pct, term_months, monthly_payment_minor, next_due_at,
-          grace_period_end, status, collateral_property_id)
-       VALUES (gen_random_uuid(), $1, 'bank', $2, $2, $3, $4, $5, $6, $7, 'active', $8)
+          grace_period_end, status, collateral_type, collateral_property_id, collateral_company_id)
+       VALUES (gen_random_uuid(), $1, 'bank', $2, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10)
        RETURNING id`,
       [
         input.borrowerId,
@@ -122,7 +138,9 @@ export class BankingRepository {
         input.monthlyPaymentMinor,
         input.nextDueAt,
         input.gracePeriodEnd,
+        input.collateralType,
         input.collateralPropertyId,
+        input.collateralCompanyId,
       ],
     );
     const id = inserted.rows[0]?.id;
@@ -407,6 +425,96 @@ export class BankingRepository {
     );
     const row = result.rows[0];
     return row ? Number(row.current_value_minor) : null;
+  }
+
+  async companyCollateralValue(db: Db, characterId: string, companyId: string): Promise<number | null> {
+    const result = await db.query<{ valuation_minor: string }>(
+      `SELECT c.valuation_minor
+       FROM companies c
+       WHERE c.id = $1 AND c.owner_character_id = $2 AND c.status <> 'bankrupt'
+       LIMIT 1`,
+      [companyId, characterId],
+    );
+    const row = result.rows[0];
+    return row ? Number(row.valuation_minor) : null;
+  }
+
+  async isCollateralEncumbered(db: Db, kind: 'property' | 'company', assetId: string): Promise<boolean> {
+    if (kind === 'property') {
+      const r = await db.query<{ ok: number }>(
+        `SELECT 1 AS ok
+         FROM loans
+         WHERE collateral_property_id = $1 AND status IN ('active','grace','defaulted')
+         LIMIT 1`,
+        [assetId],
+      );
+      return r.rows.length > 0;
+    }
+    const r = await db.query<{ ok: number }>(
+      `SELECT 1 AS ok
+       FROM loans
+       WHERE collateral_company_id = $1 AND status IN ('active','grace','defaulted')
+       LIMIT 1`,
+      [assetId],
+    );
+    return r.rows.length > 0;
+  }
+
+  async getOwnedRealEstateValue(db: Db, characterId: string): Promise<number> {
+    const core = await db.query<{ total: string }>(
+      `SELECT COALESCE(SUM(p.current_value_minor), 0)::bigint AS total
+       FROM properties p
+       WHERE p.owner_character_id = $1 AND p.status IN ('owned','listed')`,
+      [characterId],
+    );
+    let province = { rows: [{ total: '0' }] } as { rows: Array<{ total: string }> };
+    try {
+      province = await db.query<{ total: string }>(
+        `SELECT COALESCE(SUM(pl.current_value_minor), 0)::bigint AS total
+         FROM province_land_properties pl
+         WHERE pl.owner_character_id = $1 AND pl.status IN ('owned')`,
+        [characterId],
+      );
+    } catch {
+      // bảng có thể chưa tồn tại ở môi trường cũ; bỏ qua để không chặn
+    }
+    return Number(core.rows[0]?.total ?? 0) + Number(province.rows[0]?.total ?? 0);
+  }
+
+  async getOwnedCompanyValue(db: Db, characterId: string): Promise<number> {
+    const r = await db.query<{ total: string }>(
+      `SELECT COALESCE(SUM(c.valuation_minor), 0)::bigint AS total
+       FROM companies c
+       WHERE c.owner_character_id = $1 AND c.status <> 'bankrupt'`,
+      [characterId],
+    );
+    return Number(r.rows[0]?.total ?? 0);
+  }
+
+  async listCollateralPropertyOptions(db: Db, characterId: string): Promise<Array<{ id: string; name: string; valueMinor: number; subtitle: string | null }>> {
+    const r = await db.query<{ id: string; name: string; value_minor: string; subtitle: string | null }>(
+      `SELECT p.id,
+              COALESCE(n.name, 'Bất động sản') AS name,
+              p.current_value_minor AS value_minor,
+              n.name AS subtitle
+       FROM properties p
+       LEFT JOIN map_nodes n ON n.id = p.node_id
+       WHERE p.owner_character_id = $1 AND p.status = 'owned'
+       ORDER BY p.current_value_minor DESC`,
+      [characterId],
+    );
+    return r.rows.map((x) => ({ id: x.id, name: x.name, valueMinor: Number(x.value_minor), subtitle: x.subtitle }));
+  }
+
+  async listCollateralCompanyOptions(db: Db, characterId: string): Promise<Array<{ id: string; name: string; valueMinor: number; subtitle: string | null }>> {
+    const r = await db.query<{ id: string; name: string; value_minor: string; subtitle: string | null }>(
+      `SELECT c.id, c.name, c.valuation_minor AS value_minor, c.industry AS subtitle
+       FROM companies c
+       WHERE c.owner_character_id = $1 AND c.status <> 'bankrupt'
+       ORDER BY c.valuation_minor DESC`,
+      [characterId],
+    );
+    return r.rows.map((x) => ({ id: x.id, name: x.name, valueMinor: Number(x.value_minor), subtitle: x.subtitle }));
   }
 
   async insertTransfer(

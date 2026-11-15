@@ -27,7 +27,14 @@ import {
 } from './banking.repository.js';
 
 const DAY_MS = 86_400_000;
-const MAX_LOAN_MINOR = 200_000_000;
+const MAX_LOAN_MINOR = 2_000_000_000; // trần hệ thống an toàn
+const PROPERTY_LTV_PCT = 80;
+const COMPANY_LTV_PCT = 70;
+
+function scoreFactorFromCredit(score: number): number {
+  const clamped = Math.max(300, Math.min(850, Number(score) || 300));
+  return 0.6 + ((clamped - 300) / 550) * 1.8; // ~0.6x .. ~2.4x
+}
 
 function money(amount: number): Money {
   return { amount, currency: 'VND' };
@@ -43,17 +50,34 @@ const PROPERTY_TYPE_LABELS: Record<string, string> = {
 };
 
 function toLoanDto(row: LoanRow): LoanDto {
-  const collateral =
-    row.collateral_property_id && row.collateral_property_type
-      ? {
-          propertyId: row.collateral_property_id,
-          propertyType:
-            PROPERTY_TYPE_LABELS[row.collateral_property_type] ?? row.collateral_property_type,
-          currentValue: money(toMinor(row.collateral_current_value_minor ?? '0')),
-          nodeName: row.collateral_node_name ?? null,
-          status: row.collateral_status ?? 'unknown',
-        }
-      : null;
+  const collateralType = (row as any).collateral_type as 'property' | 'company' | null;
+  let collateral: LoanDto['collateral'] = null;
+  if (collateralType === 'property' && row.collateral_property_id) {
+    collateral = {
+      kind: 'property',
+      propertyId: row.collateral_property_id,
+      propertyType:
+        PROPERTY_TYPE_LABELS[row.collateral_property_type ?? ''] ?? (row.collateral_property_type ?? 'Bất động sản'),
+      nodeName: row.collateral_node_name ?? null,
+      status: row.collateral_property_status ?? 'unknown',
+      companyId: null,
+      companyName: null,
+      companyIndustry: null,
+      currentValue: money(toMinor((row as any).collateral_property_value_minor ?? '0')),
+    };
+  } else if (collateralType === 'company' && (row as any).collateral_company_id) {
+    collateral = {
+      kind: 'company',
+      propertyId: null,
+      propertyType: null,
+      nodeName: null,
+      status: (row as any).collateral_company_status ?? 'unknown',
+      companyId: (row as any).collateral_company_id,
+      companyName: (row as any).collateral_company_name ?? 'Công ty',
+      companyIndustry: (row as any).collateral_company_industry ?? null,
+      currentValue: money(toMinor((row as any).collateral_company_value_minor ?? '0')),
+    };
+  }
 
   return {
     id: row.id,
@@ -66,7 +90,9 @@ function toLoanDto(row: LoanRow): LoanDto {
     monthlyPayment: money(toMinor(row.monthly_payment_minor)),
     nextDueAt: row.status === 'repaid' ? null : row.next_due_at.toISOString(),
     gracePeriodEnd: row.grace_period_end.toISOString(),
-    collateralPropertyId: row.collateral_property_id,
+    collateralType: collateralType ?? null,
+    collateralPropertyId: row.collateral_property_id ?? null,
+    collateralCompanyId: (row as any).collateral_company_id ?? null,
     collateral,
     status: row.status,
     createdAt: row.created_at.toISOString(),
@@ -123,20 +149,22 @@ export class BankingService {
       await this.rolloverMaturedSavings(client, character.id);
       await this.capitalizeOverdueLoanInterest(client, { ...character, user_id: (character.user_id ?? (userId as any)) } as any);
 
-      const [loans, savingsRow, debt, salary, deposits, terms, baseRate] = await Promise.all([
+      const [loans, savingsRow, debt, deposits, terms, baseRate, realEstateValue, companyValue, propOptions, companyOptions] = await Promise.all([
         this.repository.listLoans(character.id),
         this.repository.ensureSavingsAccount(client, character.id),
         this.repository.totalDebt(client, character.id),
-        this.repository.activeSalary(client, character.id),
         this.repository.listSavingsDeposits(character.id, client),
         this.repository.listSavingsTerms(client),
         this.repository.baseRate(client),
+        this.repository.getOwnedRealEstateValue(client, character.id),
+        this.repository.getOwnedCompanyValue(client, character.id),
+        this.repository.listCollateralPropertyOptions(client, character.id),
+        this.repository.listCollateralCompanyOptions(client, character.id),
       ]);
 
       const termMap = new Map(terms.map((t) => [Number(t.term_months), t]));
       const activeDeposits = deposits.filter((d) => d.status === 'active');
       const savingsTotal = activeDeposits.reduce((s, d) => s + toMinor(d.balance_minor), 0);
-      // đồng bộ tổng để tương thích
       await this.repository.syncSavingsAggregate(client, character.id);
       const sortedActiveDeposits = [...activeDeposits].sort(
         (a, b) => b.opened_at.getTime() - a.opened_at.getTime(),
@@ -144,9 +172,45 @@ export class BankingService {
 
       const cash = toMinor(character.cash_minor);
       const score = character.credit_score;
-      const scoreFactor = 1 + ((score - 300) / 550) * 3;
-      const borrowingBase = salary > 0 ? salary * 24 * scoreFactor : cash * scoreFactor;
-      const maxLoanAmount = Math.min(MAX_LOAN_MINOR, Math.max(0, Math.round(borrowingBase)));
+      const sf = scoreFactorFromCredit(score);
+      const assetBase = cash + savingsTotal + realEstateValue + companyValue;
+      // Hạn mức tín dụng (không/ít thế chấp) dựa trên điểm tín dụng + tiền mặt + tiết kiệm + BĐS + công ty
+      const unsecuredLimit = Math.min(MAX_LOAN_MINOR, Math.max(0, Math.round(assetBase * sf * 0.4)));
+
+      const collateralOptions = await Promise.all([
+        ...propOptions.map(async (p) => {
+          const encumbered = await this.repository.isCollateralEncumbered(client, 'property', p.id);
+          const maxByLtv = Math.round(p.valueMinor * (PROPERTY_LTV_PCT / 100));
+          return {
+            kind: 'property' as const,
+            id: p.id,
+            name: p.name,
+            value: money(p.valueMinor),
+            ltvPct: PROPERTY_LTV_PCT,
+            maxLoanAmount: money(Math.min(MAX_LOAN_MINOR, maxByLtv)),
+            subtitle: p.subtitle,
+            encumbered,
+          };
+        }),
+        ...companyOptions.map(async (c) => {
+          const encumbered = await this.repository.isCollateralEncumbered(client, 'company', c.id);
+          const maxByLtv = Math.round(c.valueMinor * (COMPANY_LTV_PCT / 100));
+          return {
+            kind: 'company' as const,
+            id: c.id,
+            name: c.name,
+            value: money(c.valueMinor),
+            ltvPct: COMPANY_LTV_PCT,
+            maxLoanAmount: money(Math.min(MAX_LOAN_MINOR, maxByLtv)),
+            subtitle: c.subtitle,
+            encumbered,
+          };
+        }),
+      ]);
+      const bestSecured = collateralOptions
+        .filter((o) => !o.encumbered)
+        .reduce((m, o) => Math.max(m, o.maxLoanAmount.amount), 0);
+      const maxLoanAmount = Math.min(MAX_LOAN_MINOR, Math.max(unsecuredLimit, bestSecured));
 
       const daysSinceOpened = Math.max(
         0,
@@ -169,6 +233,18 @@ export class BankingService {
         creditBand: creditBand(score),
         baseRatePct: baseRate,
         maxLoanAmount: money(maxLoanAmount),
+        loanLimit: {
+          cash: money(cash),
+          savings: money(savingsTotal),
+          realEstate: money(realEstateValue),
+          companies: money(companyValue),
+          assetBase: money(assetBase),
+          creditScore: score,
+          scoreFactor: Math.round(sf * 1000) / 1000,
+          unsecuredLimit: money(unsecuredLimit),
+          maxLoanAmount: money(maxLoanAmount),
+        },
+        collateralOptions,
         loans: activeLoans.map(toLoanDto),
         savingsAccount: {
           id: savingsRow.id,
@@ -334,40 +410,80 @@ export class BankingService {
 
   async applyLoan(
     userId: string,
-    input: { amountMinor: number; termMonths: number; collateralPropertyId?: string },
+    input: { amountMinor: number; termMonths: number; collateralPropertyId?: string; collateralCompanyId?: string },
   ): Promise<LoanDto> {
-    if (input.amountMinor <= 0) throw AppError.badRequest('Loan amount must be positive');
+    if (input.amountMinor <= 0) throw AppError.badRequest('Số tiền vay phải lớn hơn 0.');
+    if (input.collateralPropertyId && input.collateralCompanyId) {
+      throw AppError.badRequest('Chỉ được chọn một tài sản thế chấp (bất động sản hoặc công ty).');
+    }
 
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
       const baseRate = await this.repository.baseRate(client);
       const rate = recommendedInterestRate(character.credit_score, baseRate);
 
-      const salary = await this.repository.activeSalary(client, character.id);
-      const cash = toMinor(character.cash_minor);
-      const scoreFactor = 1 + ((character.credit_score - 300) / 550) * 3;
-      const borrowingBase = salary > 0 ? salary * 24 * scoreFactor : cash * scoreFactor;
-      const maxLoan = Math.min(MAX_LOAN_MINOR, Math.max(0, Math.round(borrowingBase)));
+      const [cash, savingsRow, realEstateValue, companyValue, salary] = await Promise.all([
+        Promise.resolve(toMinor(character.cash_minor)),
+        this.repository.ensureSavingsAccount(client, character.id),
+        this.repository.getOwnedRealEstateValue(client, character.id),
+        this.repository.getOwnedCompanyValue(client, character.id),
+        this.repository.activeSalary(client, character.id),
+      ]);
+      // savings total hiện tại (tổng các sổ active)
+      const deposits = (await this.repository.listSavingsDeposits(character.id, client)).filter((d) => d.status === 'active');
+      const savingsTotal = deposits.reduce((s, d) => s + toMinor(d.balance_minor), 0);
+      const sf = scoreFactorFromCredit(character.credit_score);
+      const assetBase = cash + savingsTotal + realEstateValue + companyValue;
+      // Hạn mức tín dụng dựa trên điểm tín dụng + tiền mặt + tiết kiệm + bất động sản + công ty
+      const unsecuredLimit = Math.min(MAX_LOAN_MINOR, Math.max(0, Math.round(assetBase * sf * 0.4)));
+      // giữ tương thích nhẹ: nếu thu nhập cao, không hạ thấp hơn công thức cũ quá nhiều
+      const incomeCompat = Math.min(MAX_LOAN_MINOR, Math.max(0, Math.round((salary > 0 ? salary * 24 : cash) * sf)));
+      const effectiveUnsecuredLimit = Math.max(unsecuredLimit, Math.round(incomeCompat * 0.5));
+
+      let collateralType: 'property' | 'company' | null = null;
+      let collateralPropertyId: string | null = null;
+      let collateralCompanyId: string | null = null;
+      let maxLoan = Math.min(MAX_LOAN_MINOR, effectiveUnsecuredLimit);
+      let collateralLabel = '';
+
+      if (input.collateralPropertyId) {
+        const value = await this.repository.collateralValue(client, character.id, input.collateralPropertyId);
+        if (value === null) {
+          throw AppError.unprocessable('Bất động sản thế chấp phải thuộc sở hữu của bạn và đang ở trạng thái sở hữu.');
+        }
+        if (await this.repository.isCollateralEncumbered(client, 'property', input.collateralPropertyId)) {
+          throw AppError.unprocessable('Bất động sản này đang được dùng làm thế chấp cho khoản vay khác.');
+        }
+        const ltvMax = Math.round(value * (PROPERTY_LTV_PCT / 100));
+        collateralType = 'property';
+        collateralPropertyId = input.collateralPropertyId;
+        maxLoan = Math.min(MAX_LOAN_MINOR, Math.max(effectiveUnsecuredLimit, ltvMax));
+        if (input.amountMinor > ltvMax) {
+          throw AppError.unprocessable(`Khoản vay thế chấp bất động sản vượt ${PROPERTY_LTV_PCT}% giá trị tài sản (${ltvMax.toLocaleString('vi-VN')} ₫).`);
+        }
+        collateralLabel = ' (thế chấp bất động sản)';
+      } else if (input.collateralCompanyId) {
+        const value = await this.repository.companyCollateralValue(client, character.id, input.collateralCompanyId);
+        if (value === null) {
+          throw AppError.unprocessable('Công ty thế chấp phải thuộc sở hữu của bạn và không ở trạng thái phá sản.');
+        }
+        if (await this.repository.isCollateralEncumbered(client, 'company', input.collateralCompanyId)) {
+          throw AppError.unprocessable('Công ty này đang được dùng làm thế chấp cho khoản vay khác.');
+        }
+        const ltvMax = Math.round(value * (COMPANY_LTV_PCT / 100));
+        collateralType = 'company';
+        collateralCompanyId = input.collateralCompanyId;
+        maxLoan = Math.min(MAX_LOAN_MINOR, Math.max(effectiveUnsecuredLimit, ltvMax));
+        if (input.amountMinor > ltvMax) {
+          throw AppError.unprocessable(`Khoản vay thế chấp công ty vượt ${COMPANY_LTV_PCT}% giá trị định giá công ty (${ltvMax.toLocaleString('vi-VN')} ₫).`);
+        }
+        collateralLabel = ' (thế chấp công ty)';
+      }
+
       if (input.amountMinor > maxLoan) {
         throw AppError.unprocessable(
           `Số tiền vượt hạn mức vay tối đa: ${maxLoan.toLocaleString('vi-VN')} ₫`,
         );
-      }
-
-      let collateralValue = 0;
-      if (input.collateralPropertyId) {
-        const value = await this.repository.collateralValue(
-          client,
-          character.id,
-          input.collateralPropertyId,
-        );
-        if (value === null) {
-          throw AppError.unprocessable('Tài sản thế chấp phải thuộc sở hữu và không bị ràng buộc.');
-        }
-        collateralValue = value;
-        if (input.amountMinor > collateralValue * 0.8) {
-          throw AppError.unprocessable('Khoản vay vượt 80% giá trị tài sản thế chấp.');
-        }
       }
 
       const payment = monthlyPayment({
@@ -385,7 +501,9 @@ export class BankingService {
         monthlyPaymentMinor: payment,
         nextDueAt: nextDue,
         gracePeriodEnd: nextDue,
-        collateralPropertyId: input.collateralPropertyId ?? null,
+        collateralType,
+        collateralPropertyId,
+        collateralCompanyId,
       });
 
       await ledger.transfer(client, {
@@ -393,7 +511,7 @@ export class BankingService {
         to: { ownerType: 'character', ownerId: character.id },
         amountMinor: input.amountMinor,
         kind: 'loan_disbursement',
-        description: `Loan disbursement ${loan.id}`,
+        description: `Loan disbursement ${loan.id}${collateralLabel}`,
         referenceType: 'loan',
         referenceId: loan.id,
       });
@@ -408,6 +526,9 @@ export class BankingService {
           amountMinor: input.amountMinor,
           interestRatePct: rate,
           termMonths: input.termMonths,
+          collateralType,
+          collateralPropertyId,
+          collateralCompanyId,
         },
       });
 
@@ -415,7 +536,7 @@ export class BankingService {
         userId,
         kind: 'banking',
         title: 'Khoản vay đã được giải ngân',
-        body: `Bạn vừa vay ${input.amountMinor.toLocaleString('vi-VN')} ₫ với lãi suất ${rate}%/năm.`,
+        body: `Bạn vừa vay ${input.amountMinor.toLocaleString('vi-VN')} ₫${collateralLabel} với lãi suất ${rate}%/năm.`,
         payload: { loanId: loan.id },
       });
 

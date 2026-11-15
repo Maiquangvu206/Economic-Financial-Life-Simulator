@@ -6,12 +6,22 @@ import { LoanStatusSchema } from '../enums/index.js';
 export const CreditBandSchema = z.enum(['poor', 'fair', 'good', 'very_good', 'excellent']);
 export type CreditBand = z.infer<typeof CreditBandSchema>;
 
+export const LoanCollateralKindSchema = z.enum(['property', 'company']);
+export type LoanCollateralKind = z.infer<typeof LoanCollateralKindSchema>;
+
 export const LoanCollateralDtoSchema = z.object({
-  propertyId: IdSchema,
-  propertyType: z.string(),
+  kind: LoanCollateralKindSchema.default('property'),
+  // property collateral
+  propertyId: IdSchema.nullable().optional(),
+  propertyType: z.string().nullable().optional(),
+  nodeName: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
+  // company collateral
+  companyId: IdSchema.nullable().optional(),
+  companyName: z.string().nullable().optional(),
+  companyIndustry: z.string().nullable().optional(),
+  // shared
   currentValue: MoneySchema,
-  nodeName: z.string().nullable(),
-  status: z.string(),
 });
 export type LoanCollateralDto = z.infer<typeof LoanCollateralDtoSchema>;
 
@@ -26,18 +36,31 @@ export const LoanDtoSchema = z.object({
   monthlyPayment: MoneySchema,
   nextDueAt: z.string().datetime().nullable(),
   gracePeriodEnd: z.string().datetime().nullable(),
+  collateralType: LoanCollateralKindSchema.nullable().optional(),
   collateralPropertyId: IdSchema.nullable(),
+  collateralCompanyId: IdSchema.nullable().optional(),
   collateral: LoanCollateralDtoSchema.nullable().default(null),
   status: LoanStatusSchema,
   createdAt: z.string().datetime().optional(),
 });
 export type LoanDto = z.infer<typeof LoanDtoSchema>;
 
-export const ApplyLoanRequestSchema = z.object({
-  amount: MoneySchema,
-  termMonths: z.number().int().min(1).max(360),
-  collateralPropertyId: IdSchema.optional(),
-});
+export const ApplyLoanRequestSchema = z
+  .object({
+    amount: MoneySchema,
+    termMonths: z.number().int().min(1).max(360),
+    collateralType: LoanCollateralKindSchema.optional(),
+    collateralPropertyId: IdSchema.optional(),
+    collateralCompanyId: IdSchema.optional(),
+  })
+  .refine(
+    (v) => !(v.collateralPropertyId && v.collateralCompanyId),
+    { message: 'Chỉ được chọn một tài sản thế chấp (bất động sản hoặc công ty).' },
+  )
+  .refine(
+    (v) => !v.collateralType || (v.collateralType === 'property' ? !!v.collateralPropertyId : !!v.collateralCompanyId),
+    { message: 'Thiếu tài sản thế chấp tương ứng với loại thế chấp đã chọn.' },
+  );
 export type ApplyLoanRequest = z.infer<typeof ApplyLoanRequestSchema>;
 
 export const RepayLoanRequestSchema = z.object({
@@ -96,6 +119,31 @@ export const SavingsRequestSchema = z.object({
 });
 export type SavingsRequest = z.infer<typeof SavingsRequestSchema>;
 
+export const LoanCollateralOptionDtoSchema = z.object({
+  kind: LoanCollateralKindSchema,
+  id: IdSchema,
+  name: z.string(),
+  value: MoneySchema,
+  ltvPct: z.number(),
+  maxLoanAmount: MoneySchema,
+  subtitle: z.string().nullable().optional(),
+  encumbered: z.boolean().optional(),
+});
+export type LoanCollateralOptionDto = z.infer<typeof LoanCollateralOptionDtoSchema>;
+
+export const LoanLimitBreakdownDtoSchema = z.object({
+  cash: MoneySchema,
+  savings: MoneySchema,
+  realEstate: MoneySchema,
+  companies: MoneySchema,
+  assetBase: MoneySchema,
+  creditScore: z.number().int(),
+  scoreFactor: z.number(),
+  unsecuredLimit: MoneySchema,
+  maxLoanAmount: MoneySchema,
+});
+export type LoanLimitBreakdownDto = z.infer<typeof LoanLimitBreakdownDtoSchema>;
+
 export const BankingOverviewDtoSchema = z.object({
   characterId: IdSchema,
   cash: MoneySchema,
@@ -106,6 +154,8 @@ export const BankingOverviewDtoSchema = z.object({
   creditBand: CreditBandSchema,
   baseRatePct: z.number().default(5),
   maxLoanAmount: MoneySchema,
+  loanLimit: LoanLimitBreakdownDtoSchema.optional(),
+  collateralOptions: z.array(LoanCollateralOptionDtoSchema).default([]),
   loans: z.array(LoanDtoSchema),
   savingsAccount: SavingsAccountDtoSchema,
   savingsDeposits: z.array(SavingsDepositDtoSchema).default([]),

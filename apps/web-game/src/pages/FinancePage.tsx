@@ -249,6 +249,7 @@ export function FinancePage() {
   const [loanModal, setLoanModal] = useState(false);
   const [loanAmount, setLoanAmount] = useState('');
   const [loanTerm, setLoanTerm] = useState('12');
+  const [loanCollateral, setLoanCollateral] = useState<string>('none'); // none | property:<id> | company:<id>
 
   const handleApplyLoan = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -256,12 +257,16 @@ export function FinancePage() {
       const amount = parseVnd(loanAmount);
       const term = Number(loanTerm);
       if (!amount || amount <= 0 || !term || term <= 0) return;
-      applyLoan.mutate({ amount: moneyMinor(amount), termMonths: term });
+      const req: ApplyLoanRequest = { amount: moneyMinor(amount), termMonths: term };
+      if (loanCollateral.startsWith('property:')) req.collateralPropertyId = loanCollateral.slice('property:'.length);
+      if (loanCollateral.startsWith('company:')) req.collateralCompanyId = loanCollateral.slice('company:'.length);
+      applyLoan.mutate(req);
       setLoanModal(false);
       setLoanAmount('');
       setLoanTerm('12');
+      setLoanCollateral('none');
     },
-    [loanAmount, loanTerm, applyLoan],
+    [loanAmount, loanTerm, loanCollateral, applyLoan],
   );
 
   const loanPreview = useMemo(() => {
@@ -455,7 +460,7 @@ export function FinancePage() {
         </div>
         <GameButton
           variant="primary"
-          onClick={() => setLoanModal(true)}
+          onClick={() => { setLoanCollateral('none'); setLoanModal(true); }}
           disabled={applyLoan.isPending}
         >
           {applyLoan.isPending ? 'Đang xử lý...' : 'Vay ngân hàng'}
@@ -529,12 +534,36 @@ export function FinancePage() {
               {overview.creditBand}
             </Badge>
             <div className="mt-2">
-              <span className="text-[11px] text-slate-500 block">Hạn mức vay tối đa</span>
+              <span className="text-[11px] text-slate-500 block">Hạn mức vay tối đa (tín dụng + thế chấp)</span>
               <span className="font-mono font-semibold text-emerald-700">
                 {formatMoney(overview.maxLoanAmount.amount)}
               </span>
             </div>
-            <div className="mt-2">
+            {overview.loanLimit && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-2 text-[11px] text-slate-700 space-y-1">
+                <div className="font-semibold text-slate-700">Cơ sở tính hạn mức (điểm tín dụng + tài sản)</div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                  <span>Tiền mặt</span><span className="text-right font-mono">{formatMoney(overview.loanLimit.cash.amount)}</span>
+                  <span>Tiết kiệm</span><span className="text-right font-mono">{formatMoney(overview.loanLimit.savings.amount)}</span>
+                  <span>Bất động sản</span><span className="text-right font-mono">{formatMoney(overview.loanLimit.realEstate.amount)}</span>
+                  <span>Công ty</span><span className="text-right font-mono">{formatMoney(overview.loanLimit.companies.amount)}</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-slate-200">
+                  <span>Tổng cơ sở tài sản</span>
+                  <span className="font-mono font-semibold">{formatMoney(overview.loanLimit.assetBase.amount)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Hệ số theo điểm tín dụng</span>
+                  <span className="font-mono">x{overview.loanLimit.scoreFactor}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Hạn mức tín dụng (không thế chấp)</span>
+                  <span className="font-mono font-semibold text-emerald-700">{formatMoney(overview.loanLimit.unsecuredLimit.amount)}</span>
+                </div>
+                <div className="text-[10px] text-slate-500 pt-0.5">Có thể vay thế chấp trên bất động sản hoặc công ty để tăng hạn mức (theo tỷ lệ LTV của tài sản).</div>
+              </div>
+            )}
+            <div className="mt-1">
               <span className="text-[11px] text-slate-500 block">Dòng nợ/tháng</span>
               <span className="font-mono font-semibold">
                 {monthlyDebt > 0 ? formatMoney(monthlyDebt) : formatMoney(0)}
@@ -747,7 +776,7 @@ export function FinancePage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">
-                        Sổ vay {loan.collateral ? '(thế chấp BĐS)' : '(tín chấp)'}
+                        Sổ vay {loan.collateral ? (loan.collateral.kind === 'company' || loan.collateralType === 'company' ? '(thế chấp công ty)' : '(thế chấp BĐS)') : '(tín chấp)'}
                       </p>
                       <p className="text-[11px] text-slate-500">
                         Mở: {fmtDate(loan.createdAt ?? null)} • Kỳ hạn: {loan.termMonths} tháng
@@ -771,14 +800,29 @@ export function FinancePage() {
 
                   {loan.collateral ? (
                     <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-2 text-[11px] text-amber-900">
-                      <p className="font-semibold">Thế chấp bất động sản</p>
-                      <p>Loại: {loan.collateral.propertyType}</p>
-                      <p>Vị trí: {loan.collateral.nodeName ?? '—'}</p>
-                      <p>Giá trị tham chiếu: {formatMoney(loan.collateral.currentValue.amount)}</p>
-                      <p className="text-amber-800">Mã BĐS: {loan.collateral.propertyId}</p>
+                      <p className="font-semibold">
+                        {loan.collateral.kind === 'company' || loan.collateralType === 'company'
+                          ? 'Thế chấp công ty'
+                          : 'Thế chấp bất động sản'}
+                      </p>
+                      {loan.collateral.kind === 'company' || loan.collateralType === 'company' ? (
+                        <>
+                          <p>Công ty: {loan.collateral.companyName ?? '—'}</p>
+                          {loan.collateral.companyIndustry && <p>Ngành: {loan.collateral.companyIndustry}</p>}
+                          <p>Định giá tham chiếu: {formatMoney(loan.collateral.currentValue.amount)}</p>
+                          <p className="text-amber-800">Mã công ty: {loan.collateral.companyId ?? loan.collateralCompanyId ?? '—'}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p>Loại: {loan.collateral.propertyType ?? '—'}</p>
+                          <p>Vị trí: {loan.collateral.nodeName ?? '—'}</p>
+                          <p>Giá trị tham chiếu: {formatMoney(loan.collateral.currentValue.amount)}</p>
+                          <p className="text-amber-800">Mã BĐS: {loan.collateral.propertyId ?? loan.collateralPropertyId ?? '—'}</p>
+                        </>
+                      )}
                     </div>
                   ) : (
-                    <p className="text-[11px] text-slate-500">Không có tài sản thế chấp.</p>
+                    <p className="text-[11px] text-slate-500">Không có tài sản thế chấp (vay tín chấp).</p>
                   )}
 
                   <div className="space-y-1.5 pt-1 border-t border-slate-200">
@@ -920,33 +964,86 @@ export function FinancePage() {
 
       <Modal open={loanModal} onClose={() => setLoanModal(false)} title="Đơn vay ngân hàng">
         <form onSubmit={handleApplyLoan} className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <GameInput
-                label="Số tiền vay (VND)"
-                value={loanAmount}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoanAmount(e.target.value)}
-                placeholder="Nhập số tiền..."
-                required
-              />
-              <GameButton type="button" variant="outline" size="sm" onClick={() => setLoanAmount(String(overview.maxLoanAmount.amount))}>
-                Điền hạn mức tối đa
-              </GameButton>
-            </div>
-            <GameInput
-              label="Kỳ hạn (tháng)"
-              type="number"
-              value={loanTerm}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoanTerm(e.target.value)}
-              placeholder="12"
-              required
-            />
-          </div>
+          {(() => {
+            const opts = overview.collateralOptions ?? [];
+            const selectedOpt = loanCollateral === 'none'
+              ? null
+              : opts.find((o) => `${o.kind}:${o.id}` === loanCollateral) ?? null;
+            const unsecuredMax = overview.loanLimit?.unsecuredLimit.amount ?? overview.maxLoanAmount.amount;
+            const effectiveMax = selectedOpt
+              ? Math.min(overview.maxLoanAmount.amount, selectedOpt.maxLoanAmount.amount)
+              : unsecuredMax;
+            return (
+              <>
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Hạn mức vay (dựa trên điểm tín dụng + tiền mặt + tiết kiệm + BĐS + công ty)</div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-700">
+                    <span>Điểm tín dụng</span><span className="text-right font-mono">{overview.creditScore} ({overview.creditBand})</span>
+                    <span>Tiền mặt</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.cash.amount ?? overview.cash.amount)}</span>
+                    <span>Tiết kiệm</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.savings.amount ?? overview.savings.amount)}</span>
+                    <span>Bất động sản</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.realEstate.amount ?? 0)}</span>
+                    <span>Công ty</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.companies.amount ?? 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs pt-1 border-t border-slate-200">
+                    <span>Hạn mức tín dụng (không thế chấp)</span>
+                    <span className="font-mono font-semibold text-emerald-700">{formatMoney(unsecuredMax)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span>Hạn mức áp dụng (theo lựa chọn)</span>
+                    <span className="font-mono font-semibold text-emerald-700">{formatMoney(effectiveMax)}</span>
+                  </div>
+                </div>
 
-          <p className="text-[11px] text-slate-500">
-            Lãi suất ước tính theo Credit Score ({overview.creditScore}) và lãi suất cơ sở {overview.baseRatePct ?? 5}%/năm. Hạn mức tối đa:{' '}
-            {formatMoney(overview.maxLoanAmount.amount)}.
-          </p>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-600">Tài sản thế chấp (tuỳ chọn)</label>
+                  <select
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    value={loanCollateral}
+                    onChange={(e) => setLoanCollateral(e.target.value)}
+                  >
+                    <option value="none">Không thế chấp (vay tín chấp)</option>
+                    {opts.map((o) => (
+                      <option key={`${o.kind}:${o.id}`} value={`${o.kind}:${o.id}`} disabled={o.encumbered}>
+                        {o.kind === 'company' ? 'Công ty' : 'Bất động sản'}: {o.name} — giá trị {formatMoney(o.value.amount)} — vay tối đa {formatMoney(o.maxLoanAmount.amount)} (LTV {o.ltvPct}%){o.encumbered ? ' [đang thế chấp]' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedOpt && (
+                    <p className="text-[11px] text-slate-500">
+                      Đã chọn thế chấp {selectedOpt.kind === 'company' ? 'công ty' : 'bất động sản'} <b>{selectedOpt.name}</b>. Hạn mức theo tài sản: {formatMoney(selectedOpt.maxLoanAmount.amount)} (LTV {selectedOpt.ltvPct}%).
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <GameInput
+                      label="Số tiền vay (VND)"
+                      value={loanAmount}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoanAmount(e.target.value)}
+                      placeholder="Nhập số tiền..."
+                      required
+                    />
+                    <GameButton type="button" variant="outline" size="sm" onClick={() => setLoanAmount(String(effectiveMax))}>
+                      Điền hạn mức tối đa
+                    </GameButton>
+                  </div>
+                  <GameInput
+                    label="Kỳ hạn (tháng)"
+                    type="number"
+                    value={loanTerm}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoanTerm(e.target.value)}
+                    placeholder="12"
+                    required
+                  />
+                </div>
+
+                <p className="text-[11px] text-slate-500">
+                  Lãi suất ước tính theo Credit Score ({overview.creditScore}) và lãi suất cơ sở {overview.baseRatePct ?? 5}%/năm. Hạn mức áp dụng: {formatMoney(effectiveMax)}.
+                </p>
+              </>
+            );
+          })()}
 
           {loanPreview ? (
             <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
@@ -977,11 +1074,17 @@ export function FinancePage() {
                   <div className="font-mono font-semibold">{loanPreview.term} tháng</div>
                 </div>
               </div>
-              {loanPreview.amount > overview.maxLoanAmount.amount && (
-                <p className="text-[11px] text-rose-600">
-                  Số tiền vượt hạn mức tối đa {formatMoney(overview.maxLoanAmount.amount)} (đơn có thể bị từ chối).
-                </p>
-              )}
+              {(() => {
+                const opts = overview.collateralOptions ?? [];
+                const selectedOpt = loanCollateral === 'none' ? null : opts.find((o) => `${o.kind}:${o.id}` === loanCollateral) ?? null;
+                const unsecuredMax = overview.loanLimit?.unsecuredLimit.amount ?? overview.maxLoanAmount.amount;
+                const effectiveMax = selectedOpt ? Math.min(overview.maxLoanAmount.amount, selectedOpt.maxLoanAmount.amount) : unsecuredMax;
+                return loanPreview.amount > effectiveMax ? (
+                  <p className="text-[11px] text-rose-600">
+                    Số tiền vượt hạn mức áp dụng {formatMoney(effectiveMax)} (đơn có thể bị từ chối).
+                  </p>
+                ) : null;
+              })()}
               <div>
                 <p className="text-[11px] font-semibold text-slate-600 mb-1">Lịch trả nợ dự kiến từng tháng</p>
                 <div className="max-h-52 overflow-auto rounded-lg border border-slate-200 bg-white">
