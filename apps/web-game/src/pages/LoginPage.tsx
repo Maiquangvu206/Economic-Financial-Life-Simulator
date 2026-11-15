@@ -1,5 +1,5 @@
 import { SsoHandoffResponseSchema, TokenPairSchema } from '@efls/contracts';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSessionStore } from '../features/auth/sessionStore';
 import { apiRequest } from '../shared/api/httpClient';
@@ -9,6 +9,28 @@ type Mode = 'login' | 'register';
 
 function isStaffRole(role: string): boolean {
   return role === 'admin' || role === 'moderator';
+}
+
+type LoginBroadcast = {
+  id: string;
+  title: string;
+  content: string;
+  type: 'urgent' | 'maintenance' | 'event' | 'economy' | 'news';
+  pinned: boolean;
+  sender: string;
+  createdAt: string;
+};
+
+const BROADCAST_STYLE: Record<LoginBroadcast['type'], { icon: string; cls: string }> = {
+  urgent: { icon: '🚨', cls: 'border-rose-200 bg-rose-50 text-rose-800' },
+  maintenance: { icon: '⚙️', cls: 'border-amber-200 bg-amber-50 text-amber-800' },
+  event: { icon: '🎉', cls: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  economy: { icon: '📈', cls: 'border-blue-200 bg-blue-50 text-blue-800' },
+  news: { icon: '📰', cls: 'border-slate-200 bg-slate-50 text-slate-800' },
+};
+
+function fmtDate(iso: string) {
+  try { return new Date(iso).toLocaleString('vi-VN'); } catch { return iso; }
 }
 
 // 34 tỉnh/thành theo domain PROVINCES_34 + seed 0016_provinces_official.sql (mã chính thức 2025).
@@ -64,6 +86,20 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+  const [systemBroadcasts, setSystemBroadcasts] = useState<LoginBroadcast[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiRequest<LoginBroadcast[]>('/api/v1/broadcasts/login');
+        if (!cancelled) setSystemBroadcasts(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setSystemBroadcasts([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -218,6 +254,30 @@ export function LoginPage() {
                   : 'Tài khoản mới sẽ nhận một nhân vật công dân khởi điểm.'}
             </p>
           </div>
+
+          {systemBroadcasts.length > 0 ? (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                <span>📢 Thông báo hệ thống</span>
+                <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">{systemBroadcasts.length}</span>
+              </div>
+              <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                {systemBroadcasts.map((b) => {
+                  const style = BROADCAST_STYLE[b.type] ?? BROADCAST_STYLE.news;
+                  return (
+                    <div key={b.id} className={`rounded-xl border p-3 text-xs leading-relaxed ${style.cls}`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">{style.icon} {b.title}</span>
+                        {b.pinned ? <span className="rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-bold">GHIM</span> : null}
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap text-[11px] opacity-95">{b.content}</p>
+                      <div className="mt-1 text-[10px] opacity-70">{b.sender} · {fmtDate(b.createdAt)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
             {mode === 'register' ? (

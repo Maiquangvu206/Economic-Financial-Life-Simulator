@@ -6,9 +6,10 @@ import { CreateSystemBroadcastRequestSchema } from '@efls/contracts';
 import { broadcastController } from './broadcast.controller.js';
 
 export const broadcastRouter: Router = Router();
-broadcastRouter.use(attachActor);
-// public for logged-in users (portal)
-broadcastRouter.get('/active', asyncHandler(broadcastController.listPublic));
+// Hiển thị trên trang đăng nhập/trang chủ (không cần actor người dùng, vẫn qua internal token/gateway)
+broadcastRouter.get('/login', asyncHandler(broadcastController.listForLogin));
+// Hiển thị trong ứng dụng/trang người dùng (cần actor)
+broadcastRouter.get('/active', attachActor, asyncHandler(broadcastController.listPublic));
 
 export const broadcastAdminRouter: Router = Router();
 broadcastAdminRouter.use(attachActor);

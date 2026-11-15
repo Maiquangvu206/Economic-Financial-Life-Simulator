@@ -70,6 +70,10 @@ export const SystemBroadcastDtoSchema = z.object({
   scope: BroadcastScopeSchema,
   pinned: z.boolean(),
   sender: z.string(),
+  /** Hiển thị tại trang đăng nhập/trang chủ (trước khi vào game) */
+  showOnLogin: z.boolean().default(false),
+  /** Hiển thị trong ứng dụng/trang người dùng (sau khi đăng nhập) */
+  showInApp: z.boolean().default(true),
   createdAt: z.string().datetime(),
 });
 export type SystemBroadcastDto = z.infer<typeof SystemBroadcastDtoSchema>;
@@ -80,6 +84,8 @@ export const CreateSystemBroadcastRequestSchema = z.object({
   type: BroadcastTypeSchema.default('news'),
   scope: BroadcastScopeSchema.default('all'),
   pinned: z.boolean().default(false),
+  showOnLogin: z.boolean().default(false),
+  showInApp: z.boolean().default(true),
 });
 export type CreateSystemBroadcastRequest = z.infer<typeof CreateSystemBroadcastRequestSchema>;
 

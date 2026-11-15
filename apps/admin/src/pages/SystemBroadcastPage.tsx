@@ -15,6 +15,8 @@ interface AnnouncementItem {
   createdAt: string;
   sender: string;
   pinned: boolean;
+  showOnLogin?: boolean;
+  showInApp?: boolean;
 }
 
 const TYPE_CONFIG: Record<BroadcastType, { label: string; icon: string; badgeCls: string }> = {
@@ -42,6 +44,8 @@ export function SystemBroadcastPage() {
   const [type, setType] = useState<BroadcastType>('news');
   const [scope, setScope] = useState<BroadcastScope>('all');
   const [isPinned, setIsPinned] = useState(false);
+  const [showOnLogin, setShowOnLogin] = useState(false);
+  const [showInApp, setShowInApp] = useState(true);
   const [busy, setBusy] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -54,19 +58,33 @@ export function SystemBroadcastPage() {
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) return;
+    if (!showOnLogin && !showInApp) {
+      setErrMsg('Vui lòng chọn ít nhất một vị trí hiển thị (trang đăng nhập hoặc trang người dùng).');
+      return;
+    }
     setBusy(true);
     setErrMsg(null);
     try {
       await adminRequest('/api/v1/admin/broadcasts', {
         method: 'POST',
-        body: JSON.stringify({ title: title.trim(), content: content.trim(), type, scope, pinned: isPinned }),
+        body: JSON.stringify({
+          title: title.trim(),
+          content: content.trim(),
+          type,
+          scope,
+          pinned: isPinned,
+          showOnLogin,
+          showInApp,
+        }),
       });
       setTitle('');
       setContent('');
       setIsPinned(false);
+      setShowOnLogin(false);
+      setShowInApp(true);
       setType('news');
       setScope('all');
-      setSuccessMsg('Đã phát sóng thông báo tới hệ thống. Người dùng sẽ thấy trong HUD/hộp thông báo (khi tải hoặc làm mới).');
+      setSuccessMsg('Đã phát sóng thông báo. Hệ thống sẽ hiển thị theo vị trí đã chọn (trang đăng nhập/trang người dùng).');
       await refetch();
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
@@ -159,6 +177,34 @@ export function SystemBroadcastPage() {
               />
             </div>
 
+            <div className="space-y-2 pt-1 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+              <div className="text-slate-700 font-medium">Vị trí hiển thị (chọn một hoặc cả hai):</div>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOnLogin}
+                  onChange={(e) => setShowOnLogin(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 bg-white text-amber-500 focus:ring-0"
+                />
+                <span>
+                  <b>Trang đăng nhập / Trang chủ</b>
+                  <span className="block text-[11px] text-slate-500">Hiển thị công khai trước khi người dùng đăng nhập (thông báo hệ thống).</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showInApp}
+                  onChange={(e) => setShowInApp(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 bg-white text-amber-500 focus:ring-0"
+                />
+                <span>
+                  <b>Trang người dùng (trong ứng dụng)</b>
+                  <span className="block text-[11px] text-slate-500">Hiển thị trong HUD/hộp thông báo sau khi đăng nhập (và tạo thông báo cho người dùng nếu bật).</span>
+                </span>
+              </label>
+            </div>
+
             <div className="flex items-center gap-2 pt-1">
               <input
                 type="checkbox"
@@ -168,7 +214,7 @@ export function SystemBroadcastPage() {
                 className="rounded border-slate-300 bg-slate-50 text-amber-500 focus:ring-0 cursor-pointer"
               />
               <label htmlFor="pinCheckbox" className="text-slate-700 text-xs cursor-pointer">
-                Ghim thông báo (ưu tiên hiển thị nổi bật/HUD cho người chơi)
+                Ghim thông báo (ưu tiên hiển thị nổi bật)
               </label>
             </div>
 
@@ -207,6 +253,12 @@ export function SystemBroadcastPage() {
                         </span>
                         {ann.pinned && (
                           <span className="rounded-lg bg-amber-100 text-amber-700 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold">📌 ĐÃ GHIM</span>
+                        )}
+                        {ann.showOnLogin && (
+                          <span className="rounded-lg bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 text-[10px] font-semibold">Trang đăng nhập</span>
+                        )}
+                        {ann.showInApp !== false && (
+                          <span className="rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold">Trang người dùng</span>
                         )}
                         <span className="text-[11px] text-slate-600 font-mono">Gửi đến: <b>{SCOPE_CONFIG[ann.scope]}</b></span>
                       </div>
