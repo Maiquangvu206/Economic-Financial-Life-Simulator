@@ -1,4 +1,4 @@
-import type { PoolClient } from 'pg';
+﻿import type { PoolClient } from 'pg';
 import { pool } from '../db.js';
 import { logger } from '../logger.js';
 import { enqueueDomainEvent } from '../outboxEvents.js';
@@ -684,7 +684,7 @@ export async function processGameTick(): Promise<GameTickResult> {
           const ratePct = Number(cfg.monthly_rate_pct ?? 0);
           if (!Number.isFinite(ratePct) || ratePct <= 0) continue;
 
-          const baseCapital = Math.max(0, Number(co.valuation_minor ?? 0), Number(co.cash_minor ?? 0));
+          const effectiveVal = await client.query<{ v: string }>(`SELECT effective_company_valuation($1::uuid) AS v`, [co.id]).then(r => Number(r.rows[0]?.v ?? 0)).catch(() => Math.max(0, Number(co.valuation_minor ?? 0), Number(co.cash_minor ?? 0))); const baseCapital = Math.max(0, effectiveVal, Number(co.cash_minor ?? 0));
           let actualRevenue = Math.round(baseCapital * (ratePct / 100) * revenueMultiplier);
           const minRev = Math.max(0, Number(cfg.min_revenue_minor ?? 0));
           const maxRev = Math.max(0, Number(cfg.max_revenue_minor ?? 0));

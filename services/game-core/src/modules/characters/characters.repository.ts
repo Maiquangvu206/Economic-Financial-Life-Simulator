@@ -1,4 +1,4 @@
-import type { Pool, PoolClient } from 'pg';
+﻿import type { Pool, PoolClient } from 'pg';
 import type { Db } from '../../shared/db/tx.js';
 import type { MaritalStatus } from '@efls/contracts';
 import { pool } from '../../shared/db/pool.js';
@@ -131,7 +131,7 @@ export class CharactersRepository {
          - COALESCE((SELECT SUM(l.outstanding_minor) FROM loans l WHERE l.borrower_id = c.id AND l.status IN ('active','grace','defaulted')), 0)
          + COALESCE((SELECT SUM(p.current_value_minor) FROM properties p WHERE p.owner_character_id = c.id AND p.status IN ('owned','listed')), 0)
          + COALESCE((SELECT SUM(pl.current_value_minor) FROM province_land_properties pl WHERE pl.owner_character_id = c.id AND pl.status = 'owned'), 0)
-         + COALESCE((SELECT SUM(co.valuation_minor) FROM companies co WHERE co.owner_character_id = c.id AND co.status <> 'bankrupt'), 0)
+         + COALESCE((SELECT SUM(effective_company_valuation(co.id)) FROM companies co WHERE co.owner_character_id = c.id AND co.status <> 'bankrupt'), 0)
        )::bigint AS tier_value
        FROM characters c
        WHERE c.id = $1`,
@@ -275,3 +275,4 @@ export class CharactersRepository {
     return res.rows;
   }
 }
+

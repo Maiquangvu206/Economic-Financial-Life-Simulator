@@ -1,4 +1,4 @@
-import type { Request, Response } from 'express';
+﻿import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { DEFAULT_SEASON_EFFECTS, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, GAME_START_YEAR, getSeasonByMonthWithRanges, normalizeSeasonEffects, normalizeSeasonRanges } from '@efls/domain';
 import { pool } from '../../shared/db/pool.js';
@@ -63,9 +63,7 @@ export async function getMacroSnapshot(req: Request, res: Response): Promise<voi
          WHERE currency = 'VND' AND (owner_type IN ('character','company','escrow','clearing') OR (owner_type = 'government' AND balance_minor > 0))`,
       ),
       client.query(`
-        SELECT COALESCE(SUM(c.valuation_minor), 0)::bigint AS total
-        FROM companies c
-        WHERE c.status = 'ipo' OR c.ticker_symbol IS NOT NULL
+        SELECT COALESCE(SUM(effective_company_valuation(c.id)), 0)::bigint AS total FROM companies c WHERE c.status = 'ipo' OR c.ticker_symbol IS NOT NULL
       `),
       client.query(`SELECT COUNT(*)::int AS total FROM characters WHERE user_id IS NOT NULL AND is_alive = true`),
       client.query(
@@ -1231,3 +1229,4 @@ export async function adminAdjustStockPrice(req: Request, res: Response): Promis
     client.release();
   }
 }
+

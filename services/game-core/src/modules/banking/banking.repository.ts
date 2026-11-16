@@ -1,4 +1,4 @@
-import type { Db } from '../../shared/db/tx.js';
+﻿import type { Db } from '../../shared/db/tx.js';
 import { pool } from '../../shared/db/pool.js';
 
 export interface LoanRow {
@@ -85,7 +85,7 @@ export class BankingRepository {
       p.status AS collateral_property_status,
       c.name AS collateral_company_name,
       c.industry AS collateral_company_industry,
-      c.valuation_minor AS collateral_company_value_minor,
+      effective_company_valuation(c.id) AS collateral_company_value_minor,
       c.status AS collateral_company_status
     `;
   }
@@ -471,8 +471,7 @@ export class BankingRepository {
 
   async companyCollateralValue(db: Db, characterId: string, companyId: string): Promise<number | null> {
     const result = await db.query<{ valuation_minor: string }>(
-      `SELECT c.valuation_minor
-       FROM companies c
+      `SELECT effective_company_valuation(c.id) AS valuation_minor FROM companies c
        WHERE c.id = $1 AND c.owner_character_id = $2 AND c.status <> 'bankrupt'
        LIMIT 1`,
       [companyId, characterId],
@@ -525,8 +524,7 @@ export class BankingRepository {
 
   async getOwnedCompanyValue(db: Db, characterId: string): Promise<number> {
     const r = await db.query<{ total: string }>(
-      `SELECT COALESCE(SUM(c.valuation_minor), 0)::bigint AS total
-       FROM companies c
+      `SELECT COALESCE(SUM(effective_company_valuation(c.id)), 0)::bigint AS total FROM companies c
        WHERE c.owner_character_id = $1 AND c.status <> 'bankrupt'`,
       [characterId],
     );
@@ -553,10 +551,10 @@ export class BankingRepository {
 
   async listCollateralCompanyOptions(db: Db, characterId: string): Promise<Array<{ id: string; name: string; valueMinor: number; subtitle: string | null }>> {
     const r = await db.query<{ id: string; name: string; value_minor: string; subtitle: string | null }>(
-      `SELECT c.id, c.name, c.valuation_minor AS value_minor, c.industry AS subtitle
+      `SELECT c.id, c.name, effective_company_valuation(c.id) AS value_minor, c.industry AS subtitle
        FROM companies c
        WHERE c.owner_character_id = $1 AND c.status <> 'bankrupt'
-       ORDER BY c.valuation_minor DESC`,
+       ORDER BY effective_company_valuation(c.id) DESC`,
       [characterId],
     );
     return r.rows.map((x) => ({ id: x.id, name: x.name, valueMinor: Number(x.value_minor), subtitle: x.subtitle }));
@@ -640,3 +638,4 @@ export class BankingRepository {
     return r.rows;
   }
 }
+

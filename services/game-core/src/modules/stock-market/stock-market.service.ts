@@ -212,7 +212,18 @@ export class StockMarketService {
   async getMarketSnapshot() {
     const rows = await this.repository.listTickers();
     const tickers = rows.map(toTickerDto);
-    const totalMarketCap = tickers.reduce((sum, t) => sum + t.currentPrice.amount, 0);
+    // Vốn hoá thị trường = giá * số cổ phần lưu hành (ước lượng từ sổ cổ đông/holdings)
+    const capRes = await this.repository.db.query<{ total: string }>(
+      `SELECT COALESCE(SUM(t.current_price_minor * GREATEST(
+          COALESCE((SELECT SUM(shares)::bigint FROM company_shareholders cs WHERE cs.company_id = c.id), 0),
+          COALESCE((SELECT SUM(shares)::bigint FROM stock_holdings h WHERE h.ticker_id = t.id), 0),
+          0
+        )), 0)::bigint AS total
+       FROM stock_tickers t
+       JOIN companies c ON c.id = t.company_id
+       WHERE c.status = 'ipo'`,
+    );
+    const totalMarketCap = Number(capRes.rows[0]?.total ?? 0);
     const totalVolume24h = tickers.reduce((sum, t) => sum + t.totalVolume, 0);
     return { tickers, totalMarketCap: money(totalMarketCap), totalVolume24h, updatedAt: new Date().toISOString() };
   }
@@ -287,4 +298,5 @@ export class StockMarketService {
 }
 
 export const stockMarketService = new StockMarketService();
+
 

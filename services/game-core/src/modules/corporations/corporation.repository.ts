@@ -89,7 +89,8 @@ export class CorporationRepository {
   private static readonly COMPANY_SELECT = `
     SELECT c.id, c.name, c.industry, c.owner_character_id AS "ownerCharacterId",
            ch.full_name AS "ownerName", c.cash_minor AS "cashMinor",
-           c.valuation_minor AS "valuationMinor", c.status, c.ticker_symbol AS "tickerSymbol",
+           -- Định giá hiệu dụng: gồm quỹ/cash (book base) và blend với vốn hoá thị trường cho công ty IPO
+           effective_company_valuation(c.id) AS "valuationMinor", c.status, c.ticker_symbol AS "tickerSymbol",
            c.founded_at AS "foundedAt", c.updated_at AS "updatedAt",
            c.premises_type AS "premisesType",
            c.premises_province_code AS "premisesProvinceCode",
