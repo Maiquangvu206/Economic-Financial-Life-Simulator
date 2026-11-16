@@ -69,10 +69,16 @@ export async function processGameTick(): Promise<GameTickResult> {
       id: string;
       age: number;
       health_energy: number;
-    }>(`SELECT id, age, health_energy FROM characters`);
+      death_age: number | null;
+      is_alive: boolean | null;
+    }>(`SELECT id, age, health_energy, death_age, is_alive FROM characters WHERE COALESCE(is_alive,true)=true`);
 
     for (const c of characters.rows) {
-      const nextAge = c.age + (nextDay === 0 ? 1 : 0);
+      let nextAge = c.age + (nextDay === 0 ? 1 : 0);
+      const deathAge = c.death_age != null ? Number(c.death_age) : null;
+      if (deathAge != null && nextAge >= deathAge) {
+        nextAge = deathAge;
+      }
       // Tiêu hao thể lực chịu hiệu ứng mùa (seasonEffects.energyPct)
       const nextHealth = Math.max(0, Math.min(100, c.health_energy + (nextDay === 0 ? -2 * seasonEffects.energy : 0)));
 
@@ -272,13 +278,14 @@ export async function processGameTick(): Promise<GameTickResult> {
     applied.push(`loans: ${loans.rows.length} interest/default checked`);
 
 
-    // ---- 8. Death check (health <= 0 or age>=65 exponential risk) ----
-    const deathCandidates = await client.query<{ id: string; user_id: string | null; age: number; health_energy: number; is_alive: boolean }>(
-      `SELECT id, user_id, age, health_energy, COALESCE(is_alive,true) as is_alive FROM characters WHERE COALESCE(is_alive,true)=true`,
+    // ---- 8. Death check (health <= 0, đạt tuổi thọ tối đa do admin cấu hình, hoặc rủi ro tuổi cao) ----
+    const deathCandidates = await client.query<{ id: string; user_id: string | null; age: number; health_energy: number; death_age: number | null; is_alive: boolean }>(
+      `SELECT id, user_id, age, health_energy, death_age, COALESCE(is_alive,true) as is_alive FROM characters WHERE COALESCE(is_alive,true)=true`,
     );
     for (const ch of deathCandidates.rows) {
       let reason: string | null = null;
       if (Number(ch.health_energy) <= 0) reason = 'Sức khỏe cạn kiệt';
+      else if (ch.death_age != null && Number(ch.age) >= Number(ch.death_age)) reason = 'Đạt tuổi thọ tối đa (do quản trị cấu hình)';
       else if (Number(ch.age) >= 65) {
         const pDeath = Math.min(0.95, Math.pow(1.12, Number(ch.age) - 65) * 0.02);
         if (Math.random() < pDeath) reason = 'Tuổi cao đột tử';

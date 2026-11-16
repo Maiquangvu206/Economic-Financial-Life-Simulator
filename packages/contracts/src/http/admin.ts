@@ -70,9 +70,11 @@ export const TriggerMacroEventRequestSchema = z.object({
 export type TriggerMacroEventRequest = z.infer<typeof TriggerMacroEventRequestSchema>;
 
 export const AdminPlayerActionRequestSchema = z.object({
-  action: z.enum(['fine', 'ban', 'unban', 'restrict', 'grant_aid', 'force_delete']),
+  action: z.enum(['fine', 'ban', 'unban', 'restrict', 'grant_aid', 'force_delete', 'set_death_age']),
   characterId: IdSchema,
   amount: MoneySchema.optional(),
+  /** Tuổi thọ tối đa của nhân vật (khi đạt tuổi này sẽ chết). Dùng với action set_death_age; null/omitted = xóa cấu hình. */
+  deathAge: z.number().int().min(1).max(200).nullable().optional(),
   note: z.string().max(500).optional(),
 });
 export type AdminPlayerActionRequest = z.infer<typeof AdminPlayerActionRequestSchema>;
@@ -145,6 +147,7 @@ export const AdminPlayerSummaryDtoSchema = z.object({
   creditScore: z.number().int(),
   heatLevel: z.number().int(),
   age: z.number().int(),
+  deathAge: z.number().int().nullable().optional(),
   role: z.string().nullable().optional(),
   email: z.string().nullable().optional(),
   username: z.string().nullable().optional(),

@@ -15,6 +15,7 @@ interface PlayerRow {
   creditScore: number;
   heatLevel: number;
   age: number;
+  deathAge?: number | null;
   role?: string | null;
   email?: string | null;
   username?: string | null;
@@ -40,6 +41,7 @@ export function PlayersPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [roleDrafts, setRoleDrafts] = useState<Record<string, string>>({});
+  const [deathAgeDrafts, setDeathAgeDrafts] = useState<Record<string, string>>({});
 
   const [createForm, setCreateForm] = useState({
     email: '',
@@ -57,10 +59,13 @@ export function PlayersPage() {
 
   useEffect(() => {
     const next: Record<string, string> = {};
+    const nextDeath: Record<string, string> = {};
     for (const p of players) {
       if (p.userId) next[p.userId] = p.role || 'player';
+      nextDeath[p.id] = p.deathAge != null ? String(p.deathAge) : '';
     }
     setRoleDrafts((prev) => ({ ...next, ...prev }));
+    setDeathAgeDrafts((prev) => ({ ...nextDeath, ...prev }));
   }, [players]);
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
@@ -68,11 +73,27 @@ export function PlayersPage() {
     setSubmitted(query.trim());
   }
 
-  async function doAction(id: string, action: 'fine' | 'ban' | 'grant_aid' | 'unban' | 'force_delete', label?: string) {
+  async function doAction(id: string, action: 'fine' | 'ban' | 'grant_aid' | 'unban' | 'force_delete' | 'set_death_age', label?: string) {
     let amount: number | undefined;
+    let deathAge: number | null | undefined;
     let note = '';
 
-    if (action === 'force_delete') {
+    if (action === 'set_death_age') {
+      const draft = (deathAgeDrafts[id] ?? '').trim();
+      if (!draft) {
+        const ok = confirm(`Gỡ cấu hình tuổi thọ tối đa cho${label ? ` "${label}"` : ' nhân vật này'}? (Nhân vật sẽ không chết theo ngưỡng tuổi thọ do admin đặt)`);
+        if (!ok) return;
+        deathAge = null;
+      } else {
+        const val = Math.trunc(Number(draft));
+        if (!Number.isFinite(val) || val < 1 || val > 200) {
+          setMsg('Tuổi thọ tối đa không hợp lệ (1 - 200).');
+          return;
+        }
+        deathAge = val;
+      }
+      note = prompt('Ghi chú (tuỳ chọn):', '') ?? '';
+    } else if (action === 'force_delete') {
       if (!isSuperAdmin) return;
       const ok = confirm(
         `CƯỠNG CHẾ XÓA tài khoản${label ? ` "${label}"` : ''}?\n\n` +
@@ -108,6 +129,7 @@ export function PlayersPage() {
           action,
           characterId: id,
           amount: amount != null ? { amount, currency: 'VND' } : undefined,
+          ...(action === 'set_death_age' ? { deathAge } : {}),
           note: note || undefined,
         }),
       });
@@ -118,6 +140,10 @@ export function PlayersPage() {
             ? 'Đã khóa tài khoản. Người dùng sẽ bị đăng xuất (theo thời gian thực, nếu đang online) và không thể đăng nhập cho tới khi được mở.'
             : action === 'unban'
               ? 'Đã mở khóa tài khoản. Người dùng có thể đăng nhập lại.'
+              : action === 'set_death_age'
+                ? (deathAge == null
+                  ? 'Đã gỡ cấu hình tuổi thọ tối đa cho nhân vật.'
+                  : `Đã đặt tuổi thọ tối đa ${deathAge} tuổi. Khi đạt tuổi này, nhân vật sẽ qua đời và yêu cầu chuyển sang nhân vật kế tiếp.`)
               : 'Đã thực hiện hành động và ghi nhật ký. Người chơi (nếu có tài khoản) sẽ nhận thông báo trong hộp thư.',
       );
       await refetch();
@@ -229,7 +255,7 @@ export function PlayersPage() {
               <th className="py-3 px-3">Tài khoản</th>
               <th className="py-3 px-3">Quyền truy cập</th>
               <th className="py-3 px-3">CCCD</th>
-              <th className="py-3 px-3">Trạng thái</th>
+              <th className="py-3 px-3">Trạng thái / Tuổi thọ</th>
               <th className="py-3 px-3 text-right">Tiền mặt</th>
               <th className="py-3 px-3 text-right">Heat</th>
               <th className="py-3 px-3">Hành động</th>
@@ -289,10 +315,35 @@ export function PlayersPage() {
                       )}
                     </td>
                     <td className="py-2.5 px-3 font-mono text-[11px]">{p.cccd ?? '—'}</td>
-                    <td className="py-2.5 px-3 space-y-1">
+                    <td className="py-2.5 px-3 space-y-1.5">
                       <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${p.isAlive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
                         {p.isAlive ? 'Sống' : 'Đã chết'} · {p.age} tuổi
                       </span>
+                      <div className="flex items-center gap-1">
+                        <label className="text-[10px] text-slate-600">Tuổi thọ tối đa:</label>
+                        <input
+                          type="number"
+                          min={p.age + 1}
+                          max={200}
+                          value={deathAgeDrafts[p.id] ?? ''}
+                          onChange={(e) => setDeathAgeDrafts((s) => ({ ...s, [p.id]: e.target.value }))}
+                          placeholder="—"
+                          className="w-16 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[11px]"
+                          title="Khi nhân vật đạt tuổi này sẽ qua đời và yêu cầu chuyển sang nhân vật kế tiếp. Để trống để gỡ cấu hình."
+                        />
+                        <button
+                          type="button"
+                          disabled={busy != null || !p.isAlive}
+                          onClick={() => doAction(p.id, 'set_death_age', p.fullName)}
+                          className="rounded-md bg-sky-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+                          title="Lưu tuổi thọ tối đa (khi đạt tuổi sẽ chết). Để trống rồi bấm Lưu để gỡ."
+                        >
+                          Lưu
+                        </button>
+                      </div>
+                      {p.deathAge != null && (
+                        <div className="text-[10px] text-slate-500">Đã cấu hình: chết ở {p.deathAge} tuổi</div>
+                      )}
                       {p.accountStatus && p.accountStatus !== 'active' && (
                         <div className="text-[10px] font-semibold text-rose-700">TK: {p.accountStatus}</div>
                       )}

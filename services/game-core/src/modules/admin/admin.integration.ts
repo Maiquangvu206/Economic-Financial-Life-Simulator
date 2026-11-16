@@ -138,10 +138,11 @@ export async function searchPlayers(req: Request, res: Response): Promise<void> 
   const r = await pool.query(
     `SELECT c.id, c.user_id AS "userId", c.full_name AS "fullName", c.cccd, c.is_alive AS "isAlive",
             c.cash_minor AS "cashMinor", c.credit_score AS "creditScore", c.heat_level AS "heatLevel", c.age,
+            c.death_age AS "deathAge",
             u.role, u.email, u.username, u.status AS "accountStatus"
      FROM characters c
      LEFT JOIN users u ON u.id = c.user_id
-     WHERE ${where}
+     WHERE COALESCE(c.is_alive, true) = true AND ${where}
      ORDER BY c.created_at DESC
      LIMIT $1`,
     params,
@@ -157,6 +158,7 @@ export async function searchPlayers(req: Request, res: Response): Promise<void> 
       creditScore: Number(row.creditScore ?? 0),
       heatLevel: Number(row.heatLevel ?? 0),
       age: Number(row.age ?? 0),
+      deathAge: row.deathAge == null ? null : Number(row.deathAge),
       role: row.role ?? null,
       email: row.email ?? null,
       username: row.username ?? null,
@@ -168,21 +170,64 @@ export async function searchPlayers(req: Request, res: Response): Promise<void> 
 export async function adminPlayerAction(req: Request, res: Response): Promise<void> {
   ensureAdmin(req);
   const characterId = req.params.id as string;
-  const body = req.body as { action?: string; amount?: { amount: number }; note?: string };
+  const body = req.body as { action?: string; amount?: { amount: number }; deathAge?: number | null; note?: string };
   const action = body?.action;
-  if (!action || !['fine', 'ban', 'grant_aid', 'unban', 'restrict', 'force_delete'].includes(action)) {
+  if (!action || !['fine', 'ban', 'grant_aid', 'unban', 'restrict', 'force_delete', 'set_death_age'].includes(action)) {
     throw AppError.badRequest('Hành động không hợp lệ.');
   }
 
   const c = await pool.query(
-    `SELECT c.id, c.user_id, c.full_name, u.email, u.username, u.role AS user_role
+    `SELECT c.id, c.user_id, c.full_name, c.age, c.death_age, COALESCE(c.is_alive,true) AS is_alive, u.email, u.username, u.role AS user_role
      FROM characters c LEFT JOIN users u ON u.id = c.user_id WHERE c.id = $1`,
     [characterId],
   );
   const ch = c.rows[0] as
-    | { id: string; user_id: string | null; full_name: string; email: string | null; username: string | null; user_role: string | null }
+    | { id: string; user_id: string | null; full_name: string; age: number; death_age: number | null; is_alive: boolean; email: string | null; username: string | null; user_role: string | null }
     | undefined;
   if (!ch) throw AppError.notFound('Nhân vật');
+
+  if (action === 'set_death_age') {
+    if (ch.is_alive === false) {
+      throw AppError.badRequest('Không thể cấu hình tuổi thọ cho nhân vật đã qua đời.');
+    }
+    const raw = body?.deathAge;
+    let deathAge: number | null = null;
+    if (raw !== undefined && raw !== null) {
+      deathAge = Math.trunc(Number(raw));
+      if (!Number.isFinite(deathAge) || deathAge < 1 || deathAge > 200) {
+        throw AppError.badRequest('Tuổi thọ tối đa không hợp lệ (1 - 200).');
+      }
+      const currentAge = Number(ch.age ?? 0);
+      if (deathAge <= currentAge) {
+        throw AppError.badRequest(`Tuổi thọ tối đa phải lớn hơn tuổi hiện tại của nhân vật (${currentAge}).`);
+      }
+    } else {
+      deathAge = null;
+    }
+    await pool.query(`UPDATE characters SET death_age = $2, updated_at = now() WHERE id = $1`, [characterId, deathAge]);
+    await writeActionLog(pool as any, req.actorId, 'player.set_death_age', {
+      characterId,
+      characterName: ch.full_name,
+      deathAge,
+      previousDeathAge: ch.death_age ?? null,
+      note: (body?.note ?? '').trim() || null,
+    });
+    if (ch.user_id) {
+      try {
+        await notify(pool as any, {
+          userId: ch.user_id,
+          kind: 'admin_action',
+          title: 'Cấu hình tuổi thọ nhân vật',
+          body: deathAge != null
+            ? `Quản trị viên đã thiết lập tuổi thọ tối đa cho nhân vật "${ch.full_name}" là ${deathAge} tuổi. Khi đạt tuổi này, nhân vật sẽ qua đời và cần chuyển sang nhân vật kế tiếp.`
+            : `Quản trị viên đã gỡ cấu hình tuổi thọ tối đa cho nhân vật "${ch.full_name}".`,
+          payload: { action: 'set_death_age', characterId, deathAge },
+        });
+      } catch { /* ignore */ }
+    }
+    res.json({ ok: true, action, deathAge });
+    return;
+  }
 
   if (action === 'force_delete') {
     ensureSuperAdmin(req);
