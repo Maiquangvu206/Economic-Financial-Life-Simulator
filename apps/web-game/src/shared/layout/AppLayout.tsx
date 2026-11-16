@@ -88,6 +88,7 @@ export function AppLayout() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<string[]>([]);
   const [offlineChecked, setOfflineChecked] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const { data: me } = useQuery<CharacterDto>({
     queryKey: ['characters', 'me'],
@@ -148,6 +149,10 @@ export function AppLayout() {
   useEffect(() => {
     if (gameConfig?.season) setSeason(gameConfig.season);
   }, [gameConfig?.season, setSeason]);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
 
   // Xử lý offline khi quay lại (một lần mỗi phiên tải app): cập nhật mốc/recap và hiển thị nếu được bật
   useEffect(() => {
@@ -267,9 +272,17 @@ export function AppLayout() {
   const restrictionContact = gameConfig?.restrictionContact;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-surface-50 text-slate-900 font-sans">
+    <div className="flex h-dvh min-h-dvh w-full overflow-hidden bg-surface-50 text-slate-900 font-sans">
       <ToastContainer />
       <ChatWidget />
+      {menuOpen && (
+        <button
+          type="button"
+          aria-label="Đóng menu"
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[1px] lg:hidden"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
       {isRestricted && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg rounded-3xl border border-rose-200 bg-white p-6 shadow-2xl space-y-4">
@@ -348,8 +361,13 @@ export function AppLayout() {
       {/* Overlay ánh sáng theo giờ/mùa */}
       <div className={clsx('pointer-events-none fixed inset-0 z-40 transition-colors duration-1000', ambientOverlayStyle)} />
 
-      {/* Sidebar cố định bên trái */}
-      <aside className="w-64 h-full flex-shrink-0 flex flex-col bg-white border-r border-slate-200 px-4 py-6">
+      {/* Sidebar */}
+      <aside
+        className={clsx(
+          'fixed inset-y-0 left-0 z-50 flex h-full w-72 max-w-[85vw] flex-shrink-0 flex-col border-r border-slate-200 bg-white px-4 py-5 shadow-xl transition-transform duration-200 lg:static lg:z-auto lg:w-64 lg:max-w-none lg:translate-x-0 lg:shadow-none lg:py-6',
+          menuOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
         <div className="px-2">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -364,7 +382,11 @@ export function AppLayout() {
           </div>
         </div>
 
-        <nav className="mt-6 flex flex-1 min-h-0 flex-col gap-1 overflow-y-auto [scrollbar-width:thin]">
+        <div className="mb-2 flex items-center justify-between lg:hidden">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Menu</span>
+          <button type="button" onClick={() => setMenuOpen(false)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">Đóng</button>
+        </div>
+        <nav className="mt-2 flex flex-1 min-h-0 flex-col gap-1 overflow-y-auto [scrollbar-width:thin] lg:mt-6">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
@@ -400,45 +422,53 @@ export function AppLayout() {
       </aside>
 
       {/* Phía phải */}
-      <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden">
+      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="h-16 w-full flex-shrink-0 flex items-center justify-between gap-y-2 border-b border-slate-200 bg-white px-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-white px-3 py-1.5 border border-slate-200 shadow-sm">
+        <header className="flex w-full flex-shrink-0 flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2 sm:px-4 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:gap-y-2 lg:px-6 lg:py-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 lg:hidden"
+              aria-label="Mở menu"
+            >
+              <span className="text-lg leading-none">☰</span>
+            </button>
+            <div className="flex min-w-0 flex-wrap items-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm sm:px-3">
               <span className="text-sm font-mono font-bold text-amber-600">{formatVietnamTime(hour, minute)}</span>
-              <span className="text-[11px] text-slate-500 border-l border-slate-200 pl-2">{currentPeriod.icon} {currentPeriod.label}</span>
-              <span className="text-xs font-mono font-medium text-emerald-700 border-l border-slate-200 pl-2">{formatVietnamDate(day, month, year)}</span>
+              <span className="hidden border-l border-slate-200 pl-2 text-[11px] text-slate-500 sm:inline">{currentPeriod.icon} {currentPeriod.label}</span>
+              <span className="border-l border-slate-200 pl-2 text-[11px] font-mono font-medium text-emerald-700 sm:text-xs">{formatVietnamDate(day, month, year)}</span>
             </div>
-            <div className={clsx('flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-medium', currentSeason.badgeCls)}>
+            <div className={clsx('hidden items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-medium sm:flex', currentSeason.badgeCls)}>
               <span>{currentSeason.icon}</span><span>{currentSeason.label}</span>
             </div>
             {activeHoliday && (
-              <div className="flex items-center gap-1.5 rounded-xl bg-rose-50 border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-600">
+              <div className="hidden items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 md:flex">
                 <span>🏮</span><span>{activeHoliday.nameVi} (Nghỉ lễ)</span>
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-4 text-xs">
-            <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs sm:gap-3 lg:gap-4">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="whitespace-nowrap text-slate-500">Tiền mặt:</span>
-              <span className="font-mono font-bold text-emerald-600 text-sm">{formatCompact(cash)}</span>
+              <span className="font-mono text-sm font-bold text-emerald-600">{formatCompact(cash)}</span>
             </div>
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden items-center gap-2 md:flex">
               <span className="whitespace-nowrap text-slate-500">Tài sản ròng:</span>
               <span className="font-mono font-semibold text-slate-800">{formatCompact(netWorth)}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="whitespace-nowrap text-slate-500">Thể lực:</span>
               <span className={clsx('font-mono font-bold', energy < 30 ? 'text-rose-600' : 'text-emerald-600')}>{energy}%</span>
             </div>
-            <div className="hidden sm:flex items-center gap-2">
+            <div className="hidden items-center gap-2 sm:flex">
               <span className="text-slate-500">Heat:</span>
               <Badge variant={heatLevel > 50 ? 'error' : 'default'}>{heatLevel}/100</Badge>
             </div>
 
             {/* Notification center */}
-            <div className="relative">
+            <div className="relative ml-auto sm:ml-0">
               <button
                 type="button"
                 onClick={() => setNotifOpen((v) => !v)}
@@ -447,11 +477,11 @@ export function AppLayout() {
               >
                 🔔
                 {unreadCount > 0 && (
-                  <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white text-center">{unreadCount > 99 ? '99+' : unreadCount}</span>
+                  <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-rose-500 px-1 text-center text-[10px] font-bold text-white">{unreadCount > 99 ? '99+' : unreadCount}</span>
                 )}
               </button>
               {notifOpen && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-[380px] max-w-[90vw] rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+                <div className="absolute right-0 top-full z-50 mt-2 w-[min(380px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
                   <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
                     <span className="text-xs font-semibold text-slate-800">Thông báo & bản tin hệ thống</span>
                     <div className="flex items-center gap-2">
@@ -459,24 +489,24 @@ export function AppLayout() {
                       <button type="button" onClick={() => setNotifOpen(false)} className="text-[11px] text-slate-500">Đóng</button>
                     </div>
                   </div>
-                  <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100">
+                  <div className="max-h-[420px] divide-y divide-slate-100 overflow-y-auto">
                     {broadcasts.length > 0 && (
-                      <div className="p-2 bg-amber-50/40">
+                      <div className="bg-amber-50/40 p-2">
                         <div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-amber-700">Thông báo hệ thống</div>
                         {broadcasts.slice(0, 5).map((b) => (
-                          <div key={`bc-${b.id}`} className="rounded-xl border border-amber-100 bg-white p-2 mb-1">
+                          <div key={`bc-${b.id}`} className="mb-1 rounded-xl border border-amber-100 bg-white p-2">
                             <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                              {b.pinned && <span className="text-amber-700 font-bold">📌 GHIM</span>}
+                              {b.pinned && <span className="font-bold text-amber-700">📌 GHIM</span>}
                               <span>{fmtDate(b.createdAt)}</span>
                             </div>
-                            <div className="text-xs font-semibold text-slate-900 mt-0.5">{b.title}</div>
-                            <div className="text-[11px] text-slate-600 mt-0.5 line-clamp-3 whitespace-pre-wrap">{b.content}</div>
+                            <div className="mt-0.5 text-xs font-semibold text-slate-900">{b.title}</div>
+                            <div className="mt-0.5 line-clamp-3 whitespace-pre-wrap text-[11px] text-slate-600">{b.content}</div>
                           </div>
                         ))}
                       </div>
                     )}
                     {notifications.length === 0 && broadcasts.length === 0 ? (
-                      <div className="p-4 text-xs text-slate-500 text-center">Chưa có thông báo.</div>
+                      <div className="p-4 text-center text-xs text-slate-500">Chưa có thông báo.</div>
                     ) : (
                       notifications.map((n) => (
                         <div key={n.id} className={clsx('p-3', !n.readAt && 'bg-emerald-50/40')}>
@@ -484,8 +514,8 @@ export function AppLayout() {
                             <span className="font-medium">{n.kind}</span>
                             <span>{fmtDate(n.createdAt)}</span>
                           </div>
-                          <div className="text-xs font-semibold text-slate-900 mt-0.5">{n.title}</div>
-                          <div className="text-[11px] text-slate-600 mt-0.5 whitespace-pre-wrap">{n.body}</div>
+                          <div className="mt-0.5 text-xs font-semibold text-slate-900">{n.title}</div>
+                          <div className="mt-0.5 whitespace-pre-wrap text-[11px] text-slate-600">{n.body}</div>
                         </div>
                       ))
                     )}
@@ -520,7 +550,7 @@ export function AppLayout() {
         )}
 
         {/* Main */}
-        <main className="flex-1 w-full overflow-y-auto p-6">
+        <main className="w-full flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6">
           {isRestricted ? (
             <div className="flex h-full items-center justify-center text-slate-500 text-sm">Tài khoản đang bị hạn chế. Vui lòng xem thông báo và liên hệ quản trị viên để được gỡ.</div>
           ) : isDead ? (

@@ -14,6 +14,7 @@ import {
 import { CONSTRUCTION_OPTIONS, type OwnedCluster } from '@efls/domain';
 import { realEstateRepository, type PropertyRow, type PropertySaleOfferRow } from './real-estate.repository.js';
 import { mapRepository } from '../map/map.repository.js';
+import { corporationRepository } from '../corporations/corporation.repository.js';
 import crypto from 'node:crypto';
 
 function money(amount: number) {
@@ -677,7 +678,25 @@ export class RealEstateService {
       }
 
       await this.repository.cancelPendingOffersForProperties(client, rows.map((r) => r.id));
-      await this.repository.demolishToLand(client, rows.map((r) => r.id));
+      const affectedPropertyIds = rows.map((r) => r.id);
+      await this.repository.demolishToLand(client, affectedPropertyIds);
+
+      // Nếu công trình/địa điểm bị phá dỡ là trụ sở công ty -> yêu cầu chọn trụ sở mới và thông báo
+      const affectedCompanies = await corporationRepository.invalidateCompaniesForDemolishedCoreProperties(
+        client,
+        affectedPropertyIds,
+        'Công trình/địa điểm trụ sở đã bị phá dỡ hoặc hủy hợp thửa. Vui lòng chọn trụ sở mới cho công ty.',
+      );
+      for (const c of affectedCompanies) {
+        if (!c.ownerUserId) continue;
+        await notify(client, {
+          userId: c.ownerUserId,
+          kind: 'company',
+          title: 'Cần chọn trụ sở mới cho công ty',
+          body: `Công trình/địa điểm trụ sở của công ty "${c.companyName}" đã bị phá dỡ hoặc hủy hợp thửa. Vui lòng chọn trụ sở mới để tiếp tục quản lý/đại diện công ty.`,
+          payload: { companyId: c.companyId, reason: 'premises_demolished' },
+        });
+      }
 
       return this.getOverview(userId);
     });

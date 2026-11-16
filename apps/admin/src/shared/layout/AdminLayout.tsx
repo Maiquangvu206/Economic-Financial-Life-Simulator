@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import clsx from 'clsx';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { clearAdminSession, useAdminSession } from '../../features/auth/session';
 import { env } from '../config/env';
 
@@ -27,6 +28,12 @@ const ROLE_LABEL: Record<string, string> = {
 
 export function AdminLayout() {
   const session = useAdminSession();
+  const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
 
   function handleLogout() {
     clearAdminSession();
@@ -34,16 +41,28 @@ export function AdminLayout() {
   }
 
   return (
-    // Root: cao đúng 100vh, ẩn thanh cuộn cửa sổ chính
-    <div className="flex h-screen w-screen overflow-hidden bg-surface-50 font-sans text-slate-900">
-      {/* Sidebar cố định bên trái */}
-      <aside className="w-64 h-full flex-shrink-0 flex flex-col border-r border-slate-200 bg-white px-3 py-4">
+    <div className="flex h-dvh min-h-dvh w-full overflow-hidden bg-surface-50 font-sans text-slate-900">
+      {menuOpen && (
+        <button
+          type="button"
+          aria-label="Đóng menu"
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[1px] lg:hidden"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
+      {/* Sidebar */}
+      <aside
+        className={clsx(
+          'fixed inset-y-0 left-0 z-50 flex h-full w-72 max-w-[85vw] flex-shrink-0 flex-col border-r border-slate-200 bg-white px-3 py-4 shadow-xl transition-transform duration-200 lg:static lg:z-auto lg:w-64 lg:max-w-none lg:translate-x-0 lg:shadow-none',
+          menuOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
         <div className="px-2">
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-100 text-base">
               🛠️
             </span>
-            <div>
+            <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-600">
                 EFLS Admin
               </p>
@@ -51,16 +70,21 @@ export function AdminLayout() {
             </div>
           </div>
         </div>
+        <div className="mt-3 flex items-center justify-between px-2 lg:hidden">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Menu</span>
+          <button type="button" onClick={() => setMenuOpen(false)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">Đóng</button>
+        </div>
 
-        <nav className="mt-6 flex flex-1 min-h-0 flex-col gap-1 overflow-y-auto [scrollbar-width:thin]">
+        <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto [scrollbar-width:thin] lg:mt-6">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
+              onClick={() => setMenuOpen(false)}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-white hover:text-slate-900',
+                  'flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900',
                   isActive && 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200',
                 )
               }
@@ -74,7 +98,7 @@ export function AdminLayout() {
         </nav>
 
         <div className="mt-auto space-y-2 rounded-2xl border border-slate-200 bg-white/90 p-3 text-xs text-slate-500">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="truncate font-semibold text-slate-800">
               {session?.user.username ?? 'Quản trị viên'}
             </span>
@@ -95,12 +119,21 @@ export function AdminLayout() {
         </div>
       </aside>
 
-      {/* Vùng phải: Topbar trên + Main Content dưới */}
-      <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden">
-        {/* Topbar cố định */}
-        <header className="h-16 w-full flex-shrink-0 flex items-center justify-between border-b border-slate-200 bg-white px-5">
-          <span className="text-xs font-medium text-slate-600">Bảng Điều Khiển Quản Trị</span>
-          <div className="flex items-center gap-2">
+      {/* Main */}
+      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex w-full flex-shrink-0 flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2 sm:px-4 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:px-5 lg:py-0">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 lg:hidden"
+              aria-label="Mở menu"
+            >
+              <span className="text-lg leading-none">☰</span>
+            </button>
+            <span className="truncate text-xs font-medium text-slate-600 sm:text-sm">Bảng Điều Khiển Quản Trị</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <span className="hidden rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700 sm:inline">
               JWT đã xác thực
             </span>
@@ -109,8 +142,7 @@ export function AdminLayout() {
             </span>
           </div>
         </header>
-        {/* Main Content: chỉ vùng này tự cuộn khi trang dài */}
-        <main className="flex-1 w-full overflow-y-auto p-6">
+        <main className="w-full flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6">
           <Outlet />
         </main>
       </div>

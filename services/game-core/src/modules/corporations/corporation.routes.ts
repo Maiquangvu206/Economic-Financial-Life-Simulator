@@ -13,6 +13,7 @@ import {
   DecideHiringCandidateRequestSchema,
   DividendRequestSchema,
   IpoCompanyRequestSchema,
+  RelocateCompanyPremisesRequestSchema,
   TakeoverRequestSchema,
 } from '@efls/contracts';
 
@@ -27,6 +28,13 @@ corporationRouter.get('/', asyncHandler(controller.getOverview));
 
 /** Địa điểm/cơ sở khả dụng để thành lập công ty (đất nền sở hữu hoặc BĐS thuộc công ty khác). */
 corporationRouter.get('/premises-options', asyncHandler(controller.getPremisesOptions));
+
+/** Chọn/đổi trụ sở công ty (bắt buộc khi trụ sở cũ bị phá dỡ). */
+corporationRouter.post(
+  '/:companyId/premises',
+  validateBody(RelocateCompanyPremisesRequestSchema),
+  asyncHandler(controller.relocatePremises),
+);
 
 /** Chi tiết một công ty (kèm danh sách cổ đông). */
 corporationRouter.get('/:companyId', asyncHandler(controller.getCompany));

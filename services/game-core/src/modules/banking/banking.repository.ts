@@ -492,6 +492,7 @@ export class BankingRepository {
   }
 
   async listCollateralPropertyOptions(db: Db, characterId: string): Promise<Array<{ id: string; name: string; valueMinor: number; subtitle: string | null }>> {
+    // Chỉ lô gốc (không lấy lô thành viên đã gộp/hợp thửa) để tránh trùng thế chấp
     const r = await db.query<{ id: string; name: string; value_minor: string; subtitle: string | null }>(
       `SELECT p.id,
               COALESCE(n.name, 'Bất động sản') AS name,
@@ -499,7 +500,9 @@ export class BankingRepository {
               n.name AS subtitle
        FROM properties p
        LEFT JOIN map_nodes n ON n.id = p.node_id
-       WHERE p.owner_character_id = $1 AND p.status = 'owned'
+       WHERE p.owner_character_id = $1
+         AND p.status = 'owned'
+         AND p.merged_into_property_id IS NULL
        ORDER BY p.current_value_minor DESC`,
       [characterId],
     );

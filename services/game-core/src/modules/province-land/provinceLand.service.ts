@@ -10,6 +10,7 @@ import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { notify } from '../notifications/notification.service.js';
 import { pool } from '../../shared/db/pool.js';
 import { provinceLandRepository, type ProvinceLandPropertyRow, type ProvinceLandPurchaseOfferRow } from './provinceLand.repository.js';
+import { corporationRepository } from '../corporations/corporation.repository.js';
 
 function money(amount: number) {
   return MoneySchema.parse({ amount, currency: 'VND' });
@@ -255,8 +256,25 @@ export class ProvinceLandService {
         }
       }
 
-      await this.repo.cancelPendingOffersForProperties(client, rows.map((r) => r.id));
-      await this.repo.demolishToLand(client, rows.map((r) => r.id));
+      const affectedPropertyIds = rows.map((r) => r.id);
+      await this.repo.cancelPendingOffersForProperties(client, affectedPropertyIds);
+      await this.repo.demolishToLand(client, affectedPropertyIds);
+
+      const affectedCompanies = await corporationRepository.invalidateCompaniesForDemolishedProvinceProperties(
+        client,
+        affectedPropertyIds,
+        'Công trình/địa điểm trụ sở đã bị phá dỡ hoặc hủy hợp thửa. Vui lòng chọn trụ sở mới cho công ty.',
+      );
+      for (const c of affectedCompanies) {
+        if (!c.ownerUserId) continue;
+        await notify(client, {
+          userId: c.ownerUserId,
+          kind: 'company',
+          title: 'Cần chọn trụ sở mới cho công ty',
+          body: `Công trình/địa điểm trụ sở của công ty "${c.companyName}" đã bị phá dỡ hoặc hủy hợp thửa. Vui lòng chọn trụ sở mới để tiếp tục quản lý/đại diện công ty.`,
+          payload: { companyId: c.companyId, reason: 'premises_demolished' },
+        });
+      }
 
       return this.listByProvince(userId, provinceCode);
     });

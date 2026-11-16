@@ -25,13 +25,17 @@ function premisesFromRow(row: Awaited<ReturnType<typeof corporationRepository.li
   if (!row.premisesType) return null;
   return {
     type: row.premisesType as any,
-    label: row.premisesLabel ?? 'Địa điểm công ty',
+    label: row.premisesNeedsReselection
+      ? `${row.premisesLabel ?? 'Địa điểm công ty'} (cần chọn trụ sở mới)`
+      : (row.premisesLabel ?? 'Địa điểm công ty'),
     provinceCode: row.premisesProvinceCode,
     corePropertyId: row.premisesCorePropertyId,
     provinceLandPropertyId: row.premisesProvinceLandPropertyId,
     companyPropertyId: row.premisesCompanyPropertyId,
     hostCompanyId: row.premisesHostCompanyId,
     hostCompanyName: row.premisesHostCompanyName,
+    needsReselection: Boolean(row.premisesNeedsReselection),
+    invalidReason: row.premisesInvalidReason ?? null,
   };
 }
 
@@ -1040,6 +1044,86 @@ export class CorporationService {
             : 'Khai báo đã ghi nhận.'),
       });
       return this.getHrAccounting(userId, companyId);
+    });
+  }
+
+  async relocatePremises(
+    userId: string,
+    companyId: string,
+    premises: { type: 'land_core' | 'land_province' | 'company_property'; corePropertyId?: string; provinceLandPropertyId?: string; companyPropertyId?: string },
+  ): Promise<CompanyDto> {
+    if (!premises || !premises.type) {
+      throw AppError.badRequest('Vui lòng chọn trụ sở/địa điểm mới cho công ty.');
+    }
+
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const company = await this.repository.getCompanyAnyStatus(companyId, client);
+      if (!company) throw AppError.notFound('Company');
+      if (company.ownerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ sở hữu mới được chọn/đổi trụ sở công ty.');
+      }
+      if (company.status === 'bankrupt') {
+        throw AppError.badRequest('Công ty đã phá sản/giải thể, không thể chọn trụ sở.');
+      }
+
+      let premisesRecord: { type: 'land_core' | 'land_province' | 'company_property'; provinceCode: string | null; corePropertyId: string | null; provinceLandPropertyId: string | null; companyPropertyId: string | null };
+      let premisesBody = '';
+      if (premises.type === 'land_core') {
+        if (!premises.corePropertyId) throw AppError.badRequest('Thiếu địa điểm đất nền (Hà Nội).');
+        premisesRecord = { type: 'land_core', provinceCode: '001', corePropertyId: premises.corePropertyId, provinceLandPropertyId: null, companyPropertyId: null };
+        premisesBody = 'đất nền/trụ sở (Hà Nội)';
+      } else if (premises.type === 'land_province') {
+        if (!premises.provinceLandPropertyId) throw AppError.badRequest('Thiếu địa điểm đất nền (tỉnh/thành).');
+        premisesRecord = { type: 'land_province', provinceCode: null, corePropertyId: null, provinceLandPropertyId: premises.provinceLandPropertyId, companyPropertyId: null };
+        premisesBody = 'đất nền/trụ sở (tỉnh/thành)';
+      } else if (premises.type === 'company_property') {
+        if (!premises.companyPropertyId) throw AppError.badRequest('Thiếu bất động sản của công ty khác.');
+        premisesRecord = { type: 'company_property', provinceCode: null, corePropertyId: null, provinceLandPropertyId: null, companyPropertyId: premises.companyPropertyId };
+        premisesBody = 'bất động sản thuộc công ty khác';
+      } else {
+        throw AppError.badRequest('Loại địa điểm trụ sở không hợp lệ.');
+      }
+
+      // Giải phóng claim cũ (nếu còn) trước khi claim mới
+      await this.repository.releasePremisesClaim(client, companyId);
+
+      try {
+        if (premisesRecord.type === 'land_core' && premisesRecord.corePropertyId) {
+          await this.repository.lockAndClaimCoreLandPremises(client, premisesRecord.corePropertyId, character.id, companyId);
+        } else if (premisesRecord.type === 'land_province' && premisesRecord.provinceLandPropertyId) {
+          const claimed = await this.repository.lockAndClaimProvinceLandPremises(client, premisesRecord.provinceLandPropertyId, character.id, companyId);
+          if (claimed.provinceCode) premisesRecord.provinceCode = claimed.provinceCode;
+        } else if (premisesRecord.type === 'company_property' && premisesRecord.companyPropertyId) {
+          await this.repository.validateCompanyPropertyPremises(client, premisesRecord.companyPropertyId);
+        }
+      } catch (e: any) {
+        const msg = String(e?.message || '');
+        if (msg.includes('CORE_LAND_PREMISES_UNAVAILABLE')) {
+          throw AppError.conflict('premises_unavailable', 'Địa điểm đã chọn không còn khả dụng (phải là lô gốc đang sở hữu: đất trống hoặc trụ sở công ty đã xây, chưa bị chiếm dụng).');
+        }
+        if (msg.includes('PROVINCE_LAND_PREMISES_UNAVAILABLE')) {
+          throw AppError.conflict('premises_unavailable', 'Địa điểm tỉnh/thành đã chọn không còn khả dụng (phải là lô gốc đang sở hữu: đất trống hoặc trụ sở công ty đã xây, chưa bị chiếm dụng).');
+        }
+        if (msg.includes('COMPANY_PROPERTY_PREMISES_UNAVAILABLE')) {
+          throw AppError.conflict('premises_unavailable', 'Bất động sản của công ty khác đã chọn không còn khả dụng để đặt trụ sở.');
+        }
+        throw e;
+      }
+
+      await this.repository.relocatePremises(client, companyId, premisesRecord);
+
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Đã chọn trụ sở mới cho công ty',
+        body: `Công ty "${company.name}" đã được đặt trụ sở mới tại ${premisesBody}.`,
+        payload: { companyId, premises: premisesRecord },
+      });
+
+      const dto = await this.repository.getCompanyAnyStatus(companyId, client);
+      if (!dto) throw new Error('Company disappeared after relocate premises');
+      return { ...toCompanyDto(dto), isOwner: true };
     });
   }
 }

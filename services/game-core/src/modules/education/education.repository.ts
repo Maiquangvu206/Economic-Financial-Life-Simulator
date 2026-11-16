@@ -154,6 +154,16 @@ export class EducationRepository {
   }
 
   async deleteEnrolledDegree(client: Db, degreeId: string, characterId: string): Promise<boolean> {
+    // Xóa toàn bộ dữ liệu liên quan đến chương trình đang học của nhân vật này (bỏ học giữa chừng).
+    await client.query(
+      `DELETE FROM tuition_payments WHERE degree_id = $1 AND character_id = $2`,
+      [degreeId, characterId],
+    );
+    // education_early_grad_tests có FK ON DELETE CASCADE theo degree_id, nhưng xóa tường minh để chắc chắn.
+    await client.query(
+      `DELETE FROM education_early_grad_tests WHERE degree_id = $1 AND character_id = $2`,
+      [degreeId, characterId],
+    );
     const res = await client.query(
       `DELETE FROM degrees WHERE id = $1 AND character_id = $2 AND status = 'enrolled'`,
       [degreeId, characterId],

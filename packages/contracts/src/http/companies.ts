@@ -15,6 +15,8 @@ export const CompanyPremisesDtoSchema = z.object({
   companyPropertyId: IdSchema.nullable().optional(),
   hostCompanyId: IdSchema.nullable().optional(),
   hostCompanyName: z.string().nullable().optional(),
+  needsReselection: z.boolean().optional().default(false),
+  invalidReason: z.string().nullable().optional(),
 });
 export type CompanyPremisesDto = z.infer<typeof CompanyPremisesDtoSchema>;
 
@@ -249,3 +251,13 @@ export const CompanyHrAccountingDtoSchema = z.object({
   filings: z.array(CompanyTaxFilingDtoSchema),
 });
 export type CompanyHrAccountingDto = z.infer<typeof CompanyHrAccountingDtoSchema>;
+
+export const RelocateCompanyPremisesRequestSchema = z.object({
+  premises: z.object({
+    type: CompanyPremisesTypeSchema,
+    corePropertyId: IdSchema.optional(),
+    provinceLandPropertyId: IdSchema.optional(),
+    companyPropertyId: IdSchema.optional(),
+  }),
+});
+export type RelocateCompanyPremisesRequest = z.infer<typeof RelocateCompanyPremisesRequestSchema>;

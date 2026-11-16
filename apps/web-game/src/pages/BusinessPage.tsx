@@ -70,6 +70,7 @@ export function BusinessPage() {
   const [industry, setIndustry] = useState<IndustryType>('technology_ai');
   const [capital, setCapital] = useState('10000000');
   const [premisesKey, setPremisesKey] = useState('');
+  const [relocatePremisesKey, setRelocatePremisesKey] = useState('');
 
   const [investAmount, setInvestAmount] = useState('1000000');
   const [ipoSymbol, setIpoSymbol] = useState('');
@@ -194,6 +195,34 @@ export function BusinessPage() {
     },
     onError: (e: any) =>
       toast({ title: 'Thành lập thất bại', description: e?.problem?.detail || e?.message, variant: 'error' }),
+  });
+
+  const relocatePremises = useMutation({
+    mutationFn: (companyId: string) => {
+      const selected = premisesMap.get(relocatePremisesKey);
+      if (!selected) throw new Error('Vui lòng chọn trụ sở mới cho công ty.');
+      const premises =
+        selected.type === 'land_core'
+          ? { type: 'land_core' as const, corePropertyId: selected.id }
+          : selected.type === 'land_province'
+            ? { type: 'land_province' as const, provinceLandPropertyId: selected.id }
+            : { type: 'company_property' as const, companyPropertyId: selected.id };
+      return apiRequest<CompanyDto>(`/api/v1/corporations/${companyId}/premises`, {
+        method: 'POST',
+        body: JSON.stringify({ premises }),
+      });
+    },
+    onSuccess: async (c) => {
+      toast({ title: 'Đã chọn trụ sở mới', description: `${c.name}: ${c.premises?.label ?? 'Đã cập nhật địa điểm công ty.'}` });
+      setRelocatePremisesKey('');
+      await Promise.all([
+        invalidate(),
+        queryClient.invalidateQueries({ queryKey: ['corporations', 'premises-options'] }),
+        queryClient.invalidateQueries({ queryKey: ['corporations', c.id] }),
+      ]);
+    },
+    onError: (e: any) =>
+      toast({ title: 'Không thể chọn trụ sở mới', description: e?.problem?.detail || e?.message, variant: 'error' }),
   });
 
   const investCompany = useMutation({
@@ -753,6 +782,40 @@ export function BusinessPage() {
                     ) : (
                       <>Liên kết Thành phố/Bản đồ{selectedCompany.premises.provinceCode ? ` · Tỉnh/thành: ${selectedCompany.premises.provinceCode}` : ''} · <Link to="/" className="underline text-emerald-700">Mở Thành phố/Bản đồ</Link></>
                     )}
+                  </div>
+                )}
+                {selectedCompany.isOwner && selectedCompany.premises?.needsReselection && selectedCompany.status !== 'bankrupt' && (
+                  <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-left text-[11px] text-amber-900 space-y-2">
+                    <div className="font-semibold">⚠️ Cần chọn trụ sở mới cho công ty</div>
+                    <div>{selectedCompany.premises.invalidReason || 'Công trình/địa điểm trụ sở đã bị phá dỡ hoặc không còn hợp lệ.'}</div>
+                    <div className="text-[10px] text-amber-800">Chọn từ dữ liệu bất động sản đang sở hữu (lọc <b>lô gốc</b>, không gồm lô thành viên đã hợp thửa), tương tự lựa chọn tài sản khi vay.</div>
+                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                      <select
+                        className="flex-1 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs text-slate-800"
+                        value={relocatePremisesKey}
+                        onChange={(e) => setRelocatePremisesKey(e.target.value)}
+                      >
+                        <option value="">-- Chọn trụ sở mới --</option>
+                        <optgroup label="Đất nền / trụ sở công ty (sở hữu, lô gốc)">
+                          {(premisesOptions?.land ?? []).map((o) => (
+                            <option key={`reloc-${o.type}:${o.id}`} value={`${o.type}:${o.id}`}>{o.label}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Bất động sản thuộc công ty khác">
+                          {(premisesOptions?.companyProperties ?? []).map((o) => (
+                            <option key={`reloc-${o.type}:${o.id}`} value={`${o.type}:${o.id}`}>{o.label}</option>
+                          ))}
+                        </optgroup>
+                      </select>
+                      <button
+                        type="button"
+                        className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                        disabled={relocatePremises.isPending || !relocatePremisesKey}
+                        onClick={() => relocatePremises.mutate(selectedCompany.id)}
+                      >
+                        {relocatePremises.isPending ? 'Đang cập nhật...' : 'Xác nhận trụ sở mới'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div></div>

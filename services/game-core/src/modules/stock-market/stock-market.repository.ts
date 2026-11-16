@@ -244,24 +244,51 @@ export class StockMarketRepository {
     deltaShares: number,
     tradePriceMinor?: number,
   ): Promise<void> {
-    // đảm bảo cột avg_cost_minor tồn tại? sẽ xử lý migration/compat bằng COALESCE ở select; cố gắng update nếu có
-    await db.query(
-      `INSERT INTO stock_holdings (character_id, ticker_id, shares, updated_at)
-       VALUES ($1::uuid, $2::uuid, GREATEST($3,0), now())
-       ON CONFLICT (character_id, ticker_id)
-       DO UPDATE SET shares = GREATEST(stock_holdings.shares + EXCLUDED.shares, 0), updated_at = now()`,
-      [characterId, tickerId, deltaShares],
-    );
-    if (deltaShares > 0 && typeof tradePriceMinor === 'number') {
+    if (deltaShares > 0) {
+      // Mua: cộng số lượng và cập nhật giá vốn trung bình
       await db.query(
+        `INSERT INTO stock_holdings (character_id, ticker_id, shares, avg_cost_minor, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3, $4::bigint, now())
+         ON CONFLICT (character_id, ticker_id)
+         DO UPDATE SET
+           avg_cost_minor = CASE
+             WHEN COALESCE(stock_holdings.avg_cost_minor, 0) <= 0 OR stock_holdings.shares <= 0 THEN $4::bigint
+             ELSE ROUND(((COALESCE(stock_holdings.avg_cost_minor, $4::bigint) * stock_holdings.shares) + ($4::bigint * $3))::numeric / GREATEST(stock_holdings.shares + $3, 1))::bigint
+           END,
+           shares = stock_holdings.shares + $3,
+           updated_at = now()`,
+        [characterId, tickerId, deltaShares, Math.max(1, Math.round(tradePriceMinor ?? 0))],
+      ).catch(async () => {
+        // fallback nếu DB chưa có cột avg_cost_minor
+        await db.query(
+          `INSERT INTO stock_holdings (character_id, ticker_id, shares, updated_at)
+           VALUES ($1::uuid, $2::uuid, $3, now())
+           ON CONFLICT (character_id, ticker_id)
+           DO UPDATE SET shares = GREATEST(stock_holdings.shares + $3, 0), updated_at = now()`,
+          [characterId, tickerId, deltaShares],
+        );
+      });
+      return;
+    }
+
+    if (deltaShares < 0) {
+      // Bán: trừ số lượng; nếu về 0 thì xóa dữ liệu sở hữu (không để dữ liệu "rác" còn lại)
+      const sellQty = Math.abs(deltaShares);
+      const res = await db.query<{ shares: number }>(
         `UPDATE stock_holdings
-           SET avg_cost_minor = CASE
-             WHEN COALESCE(avg_cost_minor, 0) <= 0 THEN $3::bigint
-             ELSE ROUND(((avg_cost_minor * GREATEST(shares - $4, 0)) + ($3::bigint * $4))::numeric / GREATEST(shares, 1))::bigint
-           END
-         WHERE character_id = $1::uuid AND ticker_id = $2::uuid`,
-        [characterId, tickerId, tradePriceMinor, deltaShares],
-      ).catch(() => {});
+            SET shares = shares - $3,
+                updated_at = now()
+          WHERE character_id = $1::uuid AND ticker_id = $2::uuid AND shares >= $3
+          RETURNING shares`,
+        [characterId, tickerId, sellQty],
+      );
+      const remaining = res.rows[0]?.shares;
+      if (remaining !== undefined && Number(remaining) <= 0) {
+        await db.query(
+          `DELETE FROM stock_holdings WHERE character_id = $1::uuid AND ticker_id = $2::uuid`,
+          [characterId, tickerId],
+        );
+      }
     }
   }
 

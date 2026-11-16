@@ -21,6 +21,8 @@ export interface CompanyRow {
   premisesLabel: string | null;
   premisesHostCompanyId: string | null;
   premisesHostCompanyName: string | null;
+  premisesNeedsReselection: boolean;
+  premisesInvalidReason: string | null;
 }
 
 export interface CompanyEmployeeRow {
@@ -99,7 +101,9 @@ export class CorporationRepository {
              ELSE NULL
            END AS "premisesLabel",
            hp.owner_company_id AS "premisesHostCompanyId",
-           host.name AS "premisesHostCompanyName"
+           host.name AS "premisesHostCompanyName",
+           COALESCE(c.premises_needs_reselection, false) AS "premisesNeedsReselection",
+           c.premises_invalid_reason AS "premisesInvalidReason"
     FROM companies c
     JOIN characters ch ON ch.id = c.owner_character_id
     LEFT JOIN properties cp ON cp.id = c.premises_core_property_id
@@ -774,7 +778,106 @@ export class CorporationRepository {
     );
     return r.rows;
   }
+
+  /** Giải phóng claim HQ trên các property (khi phá dỡ/hủy hợp thửa) và trả về danh sách công ty bị ảnh hưởng. */
+
+  /** Giải phóng claim HQ trên các property (khi phá dỡ/hủy hợp thửa) và trả về danh sách công ty bị ảnh hưởng. */
+  async invalidateCompaniesForDemolishedCoreProperties(
+    db: Db,
+    propertyIds: string[],
+    reason: string,
+  ): Promise<Array<{ companyId: string; ownerUserId: string | null; companyName: string }>> {
+    if (propertyIds.length === 0) return [];
+    const affected = await db.query<{ id: string; name: string; user_id: string | null }>(
+      `SELECT DISTINCT c.id, c.name, ch.user_id
+       FROM companies c
+       JOIN characters ch ON ch.id = c.owner_character_id
+       LEFT JOIN properties p ON p.id = ANY($1::uuid[]) AND p.hq_company_id = c.id
+       WHERE (c.premises_type = 'land_core' AND c.premises_core_property_id = ANY($1::uuid[]))
+          OR p.hq_company_id = c.id`,
+      [propertyIds],
+    );
+    if (affected.rows.length === 0) {
+      await db.query(`UPDATE properties SET hq_company_id = NULL, updated_at = now() WHERE id = ANY($1::uuid[]) AND hq_company_id IS NOT NULL`, [propertyIds]);
+      return [];
+    }
+    const companyIds = affected.rows.map((r) => r.id);
+    await db.query(
+      `UPDATE companies
+          SET premises_needs_reselection = true,
+              premises_invalid_reason = $2,
+              updated_at = now()
+        WHERE id = ANY($1::uuid[])`,
+      [companyIds, reason],
+    );
+    await db.query(
+      `UPDATE properties SET hq_company_id = NULL, updated_at = now()
+       WHERE hq_company_id = ANY($1::uuid[]) OR id = ANY($2::uuid[])`,
+      [companyIds, propertyIds],
+    );
+    return affected.rows.map((r) => ({ companyId: r.id, ownerUserId: r.user_id, companyName: r.name }));
+  }
+
+  async invalidateCompaniesForDemolishedProvinceProperties(
+    db: Db,
+    propertyIds: string[],
+    reason: string,
+  ): Promise<Array<{ companyId: string; ownerUserId: string | null; companyName: string }>> {
+    if (propertyIds.length === 0) return [];
+    const affected = await db.query<{ id: string; name: string; user_id: string | null }>(
+      `SELECT DISTINCT c.id, c.name, ch.user_id
+       FROM companies c
+       JOIN characters ch ON ch.id = c.owner_character_id
+       LEFT JOIN province_land_properties p ON p.id = ANY($1::uuid[]) AND p.hq_company_id = c.id
+       WHERE (c.premises_type = 'land_province' AND c.premises_province_land_property_id = ANY($1::uuid[]))
+          OR p.hq_company_id = c.id`,
+      [propertyIds],
+    );
+    if (affected.rows.length === 0) {
+      await db.query(`UPDATE province_land_properties SET hq_company_id = NULL, updated_at = now() WHERE id = ANY($1::uuid[]) AND hq_company_id IS NOT NULL`, [propertyIds]);
+      return [];
+    }
+    const companyIds = affected.rows.map((r) => r.id);
+    await db.query(
+      `UPDATE companies
+          SET premises_needs_reselection = true,
+              premises_invalid_reason = $2,
+              updated_at = now()
+        WHERE id = ANY($1::uuid[])`,
+      [companyIds, reason],
+    );
+    await db.query(
+      `UPDATE province_land_properties SET hq_company_id = NULL, updated_at = now()
+       WHERE hq_company_id = ANY($1::uuid[]) OR id = ANY($2::uuid[])`,
+      [companyIds, propertyIds],
+    );
+    return affected.rows.map((r) => ({ companyId: r.id, ownerUserId: r.user_id, companyName: r.name }));
+  }
+
+  async releasePremisesClaim(db: Db, companyId: string): Promise<void> {
+    await db.query(`UPDATE properties SET hq_company_id = NULL, updated_at = now() WHERE hq_company_id = $1`, [companyId]);
+    await db.query(`UPDATE province_land_properties SET hq_company_id = NULL, updated_at = now() WHERE hq_company_id = $1`, [companyId]);
+  }
+
+  async relocatePremises(
+    db: Db,
+    companyId: string,
+    premises: { type: 'land_core' | 'land_province' | 'company_property'; provinceCode: string | null; corePropertyId: string | null; provinceLandPropertyId: string | null; companyPropertyId: string | null },
+  ): Promise<void> {
+    await db.query(
+      `UPDATE companies
+          SET premises_type = $2,
+              premises_province_code = $3,
+              premises_core_property_id = $4,
+              premises_province_land_property_id = $5,
+              premises_company_property_id = $6,
+              premises_needs_reselection = false,
+              premises_invalid_reason = NULL,
+              updated_at = now()
+        WHERE id = $1`,
+      [companyId, premises.type, premises.provinceCode, premises.corePropertyId, premises.provinceLandPropertyId, premises.companyPropertyId],
+    );
+  }
 }
 
 export const corporationRepository = new CorporationRepository();
-

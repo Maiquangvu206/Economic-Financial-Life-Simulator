@@ -9,6 +9,7 @@ import type {
   DecideHiringCandidateRequest,
   DividendRequest,
   IpoCompanyRequest,
+  RelocateCompanyPremisesRequest,
   TakeoverRequest,
 } from '@efls/contracts';
 import { requireActorId } from '../../shared/http/actor.js';
@@ -197,6 +198,14 @@ export class CorporationController {
       notes: body.notes,
     });
     res.status(201).json(data);
+  };
+
+  relocatePremises = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const { premises } = req.body as RelocateCompanyPremisesRequest;
+    const company = await this.service.relocatePremises(userId, companyId, premises as any);
+    res.status(200).json(company);
   };
 }
 
