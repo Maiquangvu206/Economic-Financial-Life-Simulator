@@ -99,7 +99,7 @@ export function RecruitmentPage() {
     <div className="space-y-5">
       <PageHeader
         title="Tuyển dụng"
-        description="Bảng tin tuyển dụng từ các nhân vật/công ty. Chủ công ty có thể đăng tuyển; nhân vật mới ra trường (đã tốt nghiệp, chưa có công ty, chưa có việc làm) có thể ứng tuyển."
+        description="Bảng tin tuyển dụng từ các nhân vật/công ty. Chủ công ty có thể đăng tuyển; nhân vật có thể ứng tuyển nếu đáp ứng yêu cầu vị trí (có bằng cấp/chứng chỉ khi được yêu cầu), không giới hạn vị trí làm việc."
       />
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -219,10 +219,9 @@ export function RecruitmentPage() {
 
           <Panel title="Điều kiện ứng tuyển" borderColor="amber">
             <ul className="space-y-1 text-xs text-slate-700 list-disc pl-4">
-              <li>Là nhân vật <b>mới ra trường</b>: đã tốt nghiệp ít nhất 1 bằng cấp.</li>
-              <li><b>Chưa sở hữu công ty</b> (active/IPO).</li>
-              <li><b>Chưa có việc làm đang hoạt động</b>.</li>
-              <li>Đáp ứng yêu cầu của vị trí (bằng cấp/điểm tín dụng nếu có).</li>
+              <li><b>Chưa có việc làm đang hoạt động</b> (mỗi nhân vật chỉ làm 1 việc tại một thời điểm).</li>
+              <li>Đáp ứng yêu cầu của vị trí: có <b>bằng cấp/chứng chỉ</b> (nếu vị trí yêu cầu) và đủ <b>điểm tín dụng</b> (nếu có).</li>
+              <li><b>Không giới hạn</b> do sở hữu công ty hay vị trí làm việc — chỉ cần đáp ứng yêu cầu/bằng của vị trí.</li>
             </ul>
           </Panel>
         </div>

@@ -27,25 +27,15 @@ export class RecruitmentService {
   async getOverview(userId: string): Promise<RecruitmentOverviewDto> {
     const db = this.repo.db;
     const character = await requireCharacterByUserId(db, userId);
-    const [jobs, employment, myCompanies, graduatedCount] = await Promise.all([
+    const [jobs, employment, myCompanies] = await Promise.all([
       this.repo.listCompanyJobs(db),
       this.repo.getActiveEmployment(character.id, db),
       this.repo.listMyCompanies(character.id, db),
-      this.repo.countGraduatedDegrees(character.id, db),
     ]);
 
     const ownsCompany = myCompanies.length > 0;
-    const isNewGraduate = graduatedCount > 0;
-    const canApplyJobs = isNewGraduate && !ownsCompany && !employment;
-    const applyBlocker = canApplyJobs
-      ? null
-      : employment
-        ? 'Bạn đang có việc làm, không thể ứng tuyển vị trí mới.'
-        : !isNewGraduate
-          ? 'Chỉ nhân vật mới ra trường (đã tốt nghiệp ít nhất 1 bằng) mới có thể ứng tuyển tại trang tuyển dụng.'
-          : ownsCompany
-            ? 'Nhân vật đã có công ty không thể ứng tuyển tại trang tuyển dụng.'
-            : 'Không đủ điều kiện ứng tuyển.';
+    const canApplyJobs = !employment;
+    const applyBlocker = canApplyJobs ? null : 'Bạn đang có việc làm, không thể ứng tuyển vị trí mới.';
 
     const creditScore = Number((character as any).credit_score ?? 0);
     const degreeCodesRes = await db.query<{ degree_code: string }>(
@@ -129,11 +119,9 @@ export class RecruitmentService {
   async apply(userId: string, jobId: string) {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
-      const [job, employment, myCompanies, graduatedCount] = await Promise.all([
+      const [job, employment] = await Promise.all([
         this.repo.getJob(jobId, client),
         this.repo.getActiveEmployment(character.id, client),
-        this.repo.listMyCompanies(character.id, client),
-        this.repo.countGraduatedDegrees(character.id, client),
       ]);
 
       if (!job) throw AppError.notFound('Job');
@@ -142,12 +130,10 @@ export class RecruitmentService {
       }
       if (job.openings <= 0) throw AppError.conflict('no_openings', 'Vị trí này đã hết chỉ tiêu tuyển dụng.');
       if (employment) throw AppError.conflict('already_employed', 'Bạn đang có việc làm, không thể ứng tuyển.');
-      if (graduatedCount <= 0) throw AppError.forbidden('Chỉ nhân vật mới ra trường (đã tốt nghiệp ít nhất 1 bằng) mới có thể ứng tuyển.');
-      if (myCompanies.length > 0) throw AppError.forbidden('Nhân vật đã có công ty không thể ứng tuyển tại trang tuyển dụng.');
 
       if (job.requiredDegree) {
         const deg = await client.query(`SELECT 1 FROM degrees WHERE character_id = $1 AND status = 'graduated' AND degree_code = $2 LIMIT 1`, [character.id, job.requiredDegree]);
-        if (!deg.rows[0]) throw AppError.forbidden(`Bạn chưa đáp ứng yêu cầu bằng cấp: ${job.requiredDegree}.`);
+        if (!deg.rows[0]) throw AppError.forbidden(`Bạn chưa đáp ứng yêu cầu bằng cấp/chứng chỉ: ${job.requiredDegree}.`);
       }
       const creditScore = Number((character as any).credit_score ?? 0);
       if (creditScore < Number(job.minCreditScore ?? 0)) {
