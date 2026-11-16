@@ -73,6 +73,21 @@ export interface ServerToClientEvents {
     moneySupply: { amount: number; currency: 'VND' };
     at: number;
   }) => void;
+  'game:time': (payload: {
+    currentDay?: number;
+    dayOfYear?: number;
+    currentYear?: number;
+    currentMonth?: number;
+    currentDayOfMonth?: number;
+    season?: string;
+    period?: string;
+    hour?: number;
+    minute?: number;
+    tick?: number;
+    at?: string;
+    tickUpdatedAt?: string;
+    standard?: string;
+  }) => void;
 }
 
 export interface ClientToServerEvents {

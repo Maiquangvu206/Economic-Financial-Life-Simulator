@@ -865,7 +865,7 @@ export async function processGameTick(): Promise<GameTickResult> {
     await client.query('COMMIT');
     logger.info({ tick, appliedCount: applied.length }, 'Game tick committed');
 
-    // Publish đồng bộ thời gian game cho toàn bộ người dùng (best-effort)
+    // Publish đồng bộ thời gian game cho toàn bộ client (best-effort, realtime channel)
     try {
       const nowIso = new Date().toISOString();
       const payload = {
@@ -876,21 +876,16 @@ export async function processGameTick(): Promise<GameTickResult> {
         currentDayOfMonth: nextTime.day,
         season: nextSeason,
         period: nextTime.period,
-        hour: 0,
-        minute: 0,
+        hour: nextTime.hour ?? 0,
+        minute: nextTime.minute ?? 0,
         tick,
         at: nowIso,
         tickUpdatedAt: nowIso,
         standard: '1_day_game_per_1_real_minute',
       };
-      const usersRes = await pool.query<{ id: string }>(`SELECT id FROM users`);
-      await Promise.all(
-        usersRes.rows.map((u) =>
-          publishClient.publish(
-            env.DOMAIN_EVENT_CHANNEL,
-            JSON.stringify({ room: Rooms.character(u.id), event: 'game:time', payload }),
-          ),
-        ),
+      await publishClient.publish(
+        env.REALTIME_CHANNEL,
+        JSON.stringify({ room: '*', event: 'game:time', payload }),
       );
     } catch (err) {
       logger.warn({ err }, 'Failed to publish game time tick (best-effort)');

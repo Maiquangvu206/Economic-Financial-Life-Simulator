@@ -20,7 +20,12 @@ export async function attachRedis(io: Server): Promise<{ close: () => Promise<vo
         event: string;
         payload: unknown;
       };
-      if (!envelope.room || !envelope.event) return;
+      if (!envelope.event) return;
+      if (envelope.room === '*' || envelope.room === '__broadcast__') {
+        io.emit(envelope.event, envelope.payload);
+        return;
+      }
+      if (!envelope.room) return;
       io.to(envelope.room).emit(envelope.event, envelope.payload);
     } catch (error) {
       logger.warn({ err: error }, 'Dropped malformed realtime envelope');
