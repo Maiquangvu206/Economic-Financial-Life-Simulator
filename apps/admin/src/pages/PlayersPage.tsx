@@ -384,20 +384,22 @@ export function PlayersPage() {
                         <td className="py-2.5 px-3 text-[11px] text-slate-400">—</td>
                         <td className="py-2.5 px-3 text-[11px] text-slate-400">—</td>
                         <td className="py-2.5 px-3">
-                          <div className="flex flex-wrap gap-1">
-                            <button disabled={busy!=null} onClick={() => doAction(p.id,'ban', p.fullName)} className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50" title="Khóa tài khoản">Khóa</button>
-                            <button disabled={busy!=null} onClick={() => doAction(p.id,'unban', p.fullName)} className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50" title="Mở khóa tài khoản">Mở khóa</button>
-                            {isSuperAdmin && (
+                          {isSuperAdmin ? (
+                            <div className="flex flex-wrap gap-1">
+                              <button disabled={busy!=null} onClick={() => doAction(p.id,'ban', p.fullName)} className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50" title="Khóa tài khoản">Khóa</button>
+                              <button disabled={busy!=null} onClick={() => doAction(p.id,'unban', p.fullName)} className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50" title="Mở khóa tài khoản">Mở khóa</button>
                               <button
                                 disabled={busy!=null}
                                 onClick={() => doAction(p.id,'force_delete', `${p.fullName}${p.email ? ` (${p.email})` : ''}`)}
                                 className="rounded-lg bg-red-700 border border-red-800 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-600 disabled:opacity-50"
-                                title="Chỉ super admin: xóa cưỡng chế (không thể hoàn tác)"
+                                title="Xóa cưỡng chế (không thể hoàn tác)"
                               >
                                 Xóa
                               </button>
-                            )}
-                          </div>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-500">Chỉ admin mới thao tác với tài khoản quản trị/điều hành</span>
+                          )}
                         </td>
                       </>
                     )}

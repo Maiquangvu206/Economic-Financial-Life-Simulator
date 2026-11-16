@@ -186,6 +186,15 @@ export async function adminPlayerAction(req: Request, res: Response): Promise<vo
     | undefined;
   if (!ch) throw AppError.notFound('Nhân vật');
 
+  const targetRole = String(ch.user_role ?? 'player');
+  const targetIsStaff = targetRole === 'admin' || targetRole === 'moderator';
+  if (targetIsStaff && req.actorRole !== 'admin') {
+    throw AppError.forbidden('Chỉ quản trị viên (admin) mới được thao tác với tài khoản quản trị/điều hành.');
+  }
+  if (req.actorRole === 'moderator' && targetRole !== 'player') {
+    throw AppError.forbidden('Điều hành viên chỉ được thao tác với tài khoản người chơi.');
+  }
+
   if (action === 'set_death_age') {
     if (ch.is_alive === false) {
       throw AppError.badRequest('Không thể cấu hình tuổi thọ cho nhân vật đã qua đời.');
