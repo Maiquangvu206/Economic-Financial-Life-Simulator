@@ -336,6 +336,13 @@ export function AppLayout() {
     } catch { /* ignore */ }
   }
 
+  async function markNotificationRead(id: string) {
+    try {
+      await apiRequest('/api/v1/notifications/read', { method: 'POST', body: JSON.stringify({ ids: [id] }) });
+      await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    } catch { /* ignore */ }
+  }
+
   function handleLogout() {
     clearSession();
     navigate('/login', { replace: true });
@@ -582,7 +589,22 @@ export function AppLayout() {
                       <div className="p-4 text-center text-xs text-slate-500">Chưa có thông báo.</div>
                     ) : (
                       notifications.map((n) => (
-                        <div key={n.id} className={clsx('p-3', !n.readAt && 'bg-emerald-50/40')}>
+                        <div
+                          key={n.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => { if (!n.readAt) void markNotificationRead(n.id); }}
+                          onKeyDown={(e) => {
+                            if ((e.key === 'Enter' || e.key === ' ') && !n.readAt) {
+                              e.preventDefault();
+                              void markNotificationRead(n.id);
+                            }
+                          }}
+                          className={clsx(
+                            'p-3 transition-colors',
+                            !n.readAt ? 'cursor-pointer bg-emerald-50/40 hover:bg-emerald-50/70' : 'bg-white',
+                          )}
+                        >
                           <div className="flex items-center justify-between text-[10px] text-slate-500">
                             <span className="font-medium">{n.kind}</span>
                             <span>{fmtDate(n.createdAt)}</span>
