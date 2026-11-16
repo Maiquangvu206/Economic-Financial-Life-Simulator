@@ -4,16 +4,19 @@ import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import { CorporationController } from './corporation.controller.js';
 import {
+  BuyShareOfferingRequestSchema,
   CompanyInvestRequestSchema,
   CompanyOperationRequestSchema,
   CreateCompanyRequestSchema,
   CreateCompanyTaxFilingRequestSchema,
   CreateHiringPlanRequestSchema,
   CreateLedgerEntryRequestSchema,
+  CreateShareOfferingRequestSchema,
   DecideHiringCandidateRequestSchema,
   DividendRequestSchema,
   IpoCompanyRequestSchema,
   RelocateCompanyPremisesRequestSchema,
+  SetRevenueRetainRequestSchema,
   TakeoverRequestSchema,
 } from '@efls/contracts';
 
@@ -28,6 +31,15 @@ corporationRouter.get('/', asyncHandler(controller.getOverview));
 
 /** Địa điểm/cơ sở khả dụng để thành lập công ty (đất nền sở hữu hoặc BĐS thuộc công ty khác). */
 corporationRouter.get('/premises-options', asyncHandler(controller.getPremisesOptions));
+
+/** Danh sách đợt chào bán cổ phần (thị trường). */
+corporationRouter.get('/share-offerings', asyncHandler(controller.listShareOfferings));
+/** Mua cổ phần trong đợt chào bán (ai mua trước được trước). */
+corporationRouter.post(
+  '/share-offerings/:offeringId/buy',
+  validateBody(BuyShareOfferingRequestSchema),
+  asyncHandler(controller.buyShareOffering),
+);
 
 /** Chọn/đổi trụ sở công ty (bắt buộc khi trụ sở cũ bị phá dỡ). */
 corporationRouter.post(
@@ -136,4 +148,19 @@ corporationRouter.post(
   '/:companyId/tax-filings',
   validateBody(CreateCompanyTaxFilingRequestSchema),
   asyncHandler(controller.createTaxFiling),
+);
+
+/** 2B: Cấu hình % giữ lại doanh thu tự động vào quỹ công ty (áp dụng kỳ tiếp theo). */
+corporationRouter.put(
+  '/:companyId/revenue-retain',
+  validateBody(SetRevenueRetainRequestSchema),
+  asyncHandler(controller.setRevenueRetain),
+);
+
+/** 4: Đợt chào bán cổ phần (IPO) - danh sách theo công ty / tạo đợt / thị trường đã có route riêng. */
+corporationRouter.get('/:companyId/share-offerings', asyncHandler(controller.listShareOfferings));
+corporationRouter.post(
+  '/:companyId/share-offerings',
+  validateBody(CreateShareOfferingRequestSchema),
+  asyncHandler(controller.createShareOffering),
 );

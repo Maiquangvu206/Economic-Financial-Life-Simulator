@@ -667,8 +667,9 @@ export async function processGameTick(): Promise<GameTickResult> {
           industry: string;
           valuation_minor: string;
           cash_minor: string;
+          revenue_retain_pct: string | number;
         }>(
-          `SELECT c.id, c.owner_character_id, c.industry, c.valuation_minor, c.cash_minor
+          `SELECT c.id, c.owner_character_id, c.industry, c.valuation_minor, c.cash_minor, COALESCE(c.revenue_retain_pct,0) AS revenue_retain_pct
            FROM companies c
            WHERE c.status = 'active'
              AND EXISTS (SELECT 1 FROM business_licenses bl WHERE bl.company_id = c.id AND bl.status = 'active')
@@ -695,19 +696,37 @@ export async function processGameTick(): Promise<GameTickResult> {
           }
 
           try {
-            // 1) 100% doanh thu thực tế về ví chủ sở hữu (không vào quỹ công ty)
-            await postLedger(client, {
-              kind: 'COMPANY_REVENUE_PAYOUT',
-              description: `Doanh thu tự động kỳ ${periodKey}`,
-              referenceType: 'company_revenue_settlement',
-              referenceId: co.id,
-              legs: [
-                { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID, kind: 'cash', deltaMinor: -actualRevenue },
-                { ownerType: 'character', ownerId: co.owner_character_id, kind: 'cash', deltaMinor: actualRevenue },
-              ],
-            });
+            const retainPct = Math.max(0, Math.min(100, Number(co.revenue_retain_pct ?? 0)));
+            const retainedMinor = Math.min(actualRevenue, Math.max(0, Math.round(actualRevenue * (retainPct / 100))));
+            const ownerPayoutMinor = Math.max(0, actualRevenue - retainedMinor);
 
-            // 2) Bút toán đối chiếu ACTUAL trong sổ cái công ty (không làm tăng quỹ công ty)
+            // 1) Phân bổ doanh thu thực tế: một phần giữ lại quỹ công ty (2B), phần còn lại về ví chủ sở hữu
+            if (ownerPayoutMinor > 0) {
+              await postLedger(client, {
+                kind: 'COMPANY_REVENUE_PAYOUT',
+                description: `Doanh thu tự động kỳ ${periodKey} (trả về chủ sở hữu)`,
+                referenceType: 'company_revenue_settlement',
+                referenceId: co.id,
+                legs: [
+                  { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID, kind: 'cash', deltaMinor: -ownerPayoutMinor },
+                  { ownerType: 'character', ownerId: co.owner_character_id, kind: 'cash', deltaMinor: ownerPayoutMinor },
+                ],
+              });
+            }
+            if (retainedMinor > 0) {
+              await postLedger(client, {
+                kind: 'COMPANY_REVENUE_RETAINED',
+                description: `Doanh thu tự động kỳ ${periodKey} (giữ lại quỹ công ty ${retainPct}%)`,
+                referenceType: 'company_revenue_settlement',
+                referenceId: co.id,
+                legs: [
+                  { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID, kind: 'cash', deltaMinor: -retainedMinor },
+                  { ownerType: 'company', ownerId: co.id, kind: 'cash', deltaMinor: retainedMinor },
+                ],
+              });
+            }
+
+            // 2) Bút toán đối chiếu ACTUAL trong sổ cái công ty (ghi nhận tổng doanh thu thực tế của kỳ)
             await client.query(
               `INSERT INTO company_ledger_entries
                  (company_id, entry_type, amount_minor, declared_amount_minor, description, is_evasion, meta, ledger_kind, period_key)
@@ -715,8 +734,8 @@ export async function processGameTick(): Promise<GameTickResult> {
               [
                 co.id,
                 actualRevenue,
-                `Doanh thu thực tế tự động kỳ ${periodKey} (đã chuyển cho chủ sở hữu)`,
-                JSON.stringify({ source: 'auto_30d', periodKey, baseCapitalMinor: baseCapital, monthlyRatePct: ratePct, seasonMultiplier: revenueMultiplier }),
+                `Doanh thu thực tế tự động kỳ ${periodKey} (trả chủ sở hữu ${ownerPayoutMinor}, giữ lại quỹ ${retainedMinor}, tỉ lệ giữ ${retainPct}%)`,
+                JSON.stringify({ source: 'auto_30d', periodKey, baseCapitalMinor: baseCapital, monthlyRatePct: ratePct, seasonMultiplier: revenueMultiplier, retainPct, retainedMinor, ownerPayoutMinor }),
                 periodKey,
               ],
             );
@@ -724,17 +743,17 @@ export async function processGameTick(): Promise<GameTickResult> {
             // 3) Đánh dấu đã chốt kỳ (idempotent)
             await client.query(
               `INSERT INTO company_revenue_settlements
-                 (id, company_id, owner_character_id, period_key, game_year, game_month, base_capital_minor, monthly_rate_pct, season_multiplier, actual_revenue_minor, status)
-               VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, 'settled')
+                 (id, company_id, owner_character_id, period_key, game_year, game_month, base_capital_minor, monthly_rate_pct, season_multiplier, actual_revenue_minor, retained_minor, owner_payout_minor, status)
+               VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'settled')
                ON CONFLICT (company_id, period_key) DO NOTHING`,
-              [co.id, co.owner_character_id, periodKey, prevYear, prevMonth, Math.trunc(baseCapital), ratePct, revenueMultiplier, actualRevenue],
+              [co.id, co.owner_character_id, periodKey, prevYear, prevMonth, Math.trunc(baseCapital), ratePct, revenueMultiplier, actualRevenue, retainedMinor, ownerPayoutMinor],
             );
 
             await enqueueDomainEvent(client, {
               type: 'company.revenue.settled.v1',
               aggregateType: 'company',
               aggregateId: co.id,
-              payload: { companyId: co.id, ownerCharacterId: co.owner_character_id, periodKey, actualRevenueMinor: actualRevenue },
+              payload: { companyId: co.id, ownerCharacterId: co.owner_character_id, periodKey, actualRevenueMinor: actualRevenue, retainedMinor, ownerPayoutMinor, retainPct },
             });
             settled += 1;
           } catch (err) {

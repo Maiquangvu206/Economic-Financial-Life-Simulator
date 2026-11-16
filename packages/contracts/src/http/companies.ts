@@ -32,6 +32,8 @@ export const CompanyDtoSchema = z.object({
   tickerSymbol: z.string().nullable(),
   foundedAt: z.string().datetime(),
   isOwner: z.boolean(),
+  /** % doanh thu tự động 30 ngày giữ lại trong quỹ công ty (phần còn lại trả về ví chủ sở hữu), áp dụng kỳ tiếp theo. */
+  revenueRetainPct: z.number().min(0).max(100).optional().default(0),
   premises: CompanyPremisesDtoSchema.nullable().optional(),
   /** Cổ đông (chỉ có khi xem chi tiết công ty). */
   shareholders: z
@@ -253,6 +255,8 @@ export const CreateCompanyTaxFilingRequestSchema = z.object({
   period: z.string().min(3).max(20).optional(),
   /** Doanh thu do chủ sở hữu khai báo cho kỳ (có thể khác doanh thu thực tế). */
   declaredRevenue: MoneySchema,
+  /** Nếu quỹ công ty không đủ, tự động dùng ví cá nhân chủ sở hữu để bù phần thiếu (thuế + cổ tức). */
+  usePersonalFundsForShortfall: z.boolean().optional().default(false),
   notes: z.string().max(500).optional(),
 });
 export type CreateCompanyTaxFilingRequest = z.infer<typeof CreateCompanyTaxFilingRequestSchema>;
@@ -275,3 +279,53 @@ export const RelocateCompanyPremisesRequestSchema = z.object({
   }),
 });
 export type RelocateCompanyPremisesRequest = z.infer<typeof RelocateCompanyPremisesRequestSchema>;
+
+export const SetRevenueRetainRequestSchema = z.object({
+  retainPct: z.number().min(0).max(100),
+});
+export type SetRevenueRetainRequest = z.infer<typeof SetRevenueRetainRequestSchema>;
+
+// --- IPO share offerings (primary issuance / gọi vốn thêm) ---
+export const ShareOfferingStatusSchema = z.enum(['open', 'closed', 'completed', 'cancelled']);
+export type ShareOfferingStatus = z.infer<typeof ShareOfferingStatusSchema>;
+
+export const CompanyShareOfferingDtoSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  companyName: z.string().optional(),
+  companyTicker: z.string().nullable().optional(),
+  createdByCharacterId: IdSchema,
+  totalShares: z.number().int().positive(),
+  remainingShares: z.number().int().nonnegative(),
+  pricePerShare: MoneySchema,
+  status: ShareOfferingStatusSchema,
+  startsAt: z.string().datetime(),
+  endsAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+  closedAt: z.string().datetime().nullable().optional(),
+});
+export type CompanyShareOfferingDto = z.infer<typeof CompanyShareOfferingDtoSchema>;
+
+export const CreateShareOfferingRequestSchema = z.object({
+  totalShares: z.number().int().positive().max(1_000_000_000),
+  pricePerShare: MoneySchema,
+  /** Thời hạn đợt chào bán (giờ, theo thời gian thực) */
+  durationHours: z.number().int().min(1).max(24 * 30),
+});
+export type CreateShareOfferingRequest = z.infer<typeof CreateShareOfferingRequestSchema>;
+
+export const BuyShareOfferingRequestSchema = z.object({
+  shares: z.number().int().positive().max(1_000_000_000),
+});
+export type BuyShareOfferingRequest = z.infer<typeof BuyShareOfferingRequestSchema>;
+
+export const BuyShareOfferingResponseSchema = z.object({
+  ok: z.literal(true),
+  offeringId: IdSchema,
+  companyId: IdSchema,
+  sharesPurchased: z.number().int().positive(),
+  totalCost: MoneySchema,
+  remainingShares: z.number().int().nonnegative(),
+  status: ShareOfferingStatusSchema,
+});
+export type BuyShareOfferingResponse = z.infer<typeof BuyShareOfferingResponseSchema>;

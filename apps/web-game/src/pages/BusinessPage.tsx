@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '@efls/ui';
@@ -92,6 +92,12 @@ export function BusinessPage() {
   const [filingPeriod, setFilingPeriod] = useState('');
   const [declaredRevenueInput, setDeclaredRevenueInput] = useState('0');
   const [filingNotes, setFilingNotes] = useState('');
+  const [usePersonalFundsForShortfall, setUsePersonalFundsForShortfall] = useState(false);
+  const [retainPctInput, setRetainPctInput] = useState('0');
+  const [offerTotalShares, setOfferTotalShares] = useState('100000');
+  const [offerPrice, setOfferPrice] = useState('10000');
+  const [offerHours, setOfferHours] = useState('24');
+  const [buyOfferShares, setBuyOfferShares] = useState<Record<string, string>>({});
 
   const { data: me } = useQuery<{ id: string; fullName: string }>({
     queryKey: ['characters', 'me'],
@@ -123,6 +129,12 @@ export function BusinessPage() {
   const selectedCompany = detail ?? overview?.companies.find((c) => c.id === selectedId) ?? null;
   const canManage = !!selectedCompany?.isOwner;
 
+  useEffect(() => {
+    if (detail && typeof (detail as any).revenueRetainPct === 'number') {
+      setRetainPctInput(String((detail as any).revenueRetainPct));
+    }
+  }, [detail?.id, (detail as any)?.revenueRetainPct]);
+
   const { data: employeesData, isLoading: employeesLoading } = useQuery<CompanyEmployeesDto>({
     queryKey: ['corporations', 'employees', selectedId],
     queryFn: () => apiRequest<CompanyEmployeesDto>(`/api/v1/corporations/${selectedId}/employees`),
@@ -134,6 +146,16 @@ export function BusinessPage() {
     queryFn: () =>
       apiRequest<CompanyHrAccountingDto>(`/api/v1/corporations/${selectedId}/hr-accounting`),
     enabled: !!selectedId && canManage && detail?.isOwner === true,
+  });
+
+  const { data: shareOfferings } = useQuery<any[]>({
+    queryKey: ['corporations', 'share-offerings', selectedId],
+    queryFn: () => apiRequest<any[]>(`/api/v1/corporations/${selectedId}/share-offerings`),
+    enabled: !!selectedId,
+  });
+  const { data: marketOfferings } = useQuery<any[]>({
+    queryKey: ['corporations', 'share-offerings', 'market'],
+    queryFn: () => apiRequest<any[]>('/api/v1/corporations/share-offerings'),
   });
 
   const companies = overview?.companies ?? [];
@@ -419,6 +441,7 @@ export function BusinessPage() {
         body: JSON.stringify({
           period: filingPeriod.trim() || undefined,
           declaredRevenue: money(Number(declaredRevenueInput) || 0),
+          usePersonalFundsForShortfall,
           notes: filingNotes.trim() || undefined,
         }),
       }),
@@ -435,6 +458,52 @@ export function BusinessPage() {
     },
     onError: (e: Error) =>
       toast({ title: 'Khai thuế thất bại', description: e.message, variant: 'error' }),
+  });
+
+  const setRevenueRetain = useMutation({
+    mutationFn: (companyId: string) =>
+      apiRequest(`/api/v1/corporations/${companyId}/revenue-retain`, {
+        method: 'PUT',
+        body: JSON.stringify({ retainPct: Number(retainPctInput) || 0 }),
+      }),
+    onSuccess: async () => {
+      toast({ title: 'Đã cập nhật tỉ lệ giữ lại doanh thu', description: 'Áp dụng cho các kỳ chốt 30 ngày tiếp theo.' });
+      await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ['corporations', 'detail', selectedId] });
+    },
+    onError: (e: Error) => toast({ title: 'Cập nhật thất bại', description: e.message, variant: 'error' }),
+  });
+
+  const createShareOffering = useMutation({
+    mutationFn: (companyId: string) =>
+      apiRequest(`/api/v1/corporations/${companyId}/share-offerings`, {
+        method: 'POST',
+        body: JSON.stringify({
+          totalShares: Number(offerTotalShares) || 0,
+          pricePerShare: money(Number(offerPrice) || 0),
+          durationHours: Number(offerHours) || 0,
+        }),
+      }),
+    onSuccess: async () => {
+      toast({ title: 'Đã tạo đợt chào bán cổ phần', description: 'Người mua có thể mua theo cơ chế ai trước được trước.' });
+      await queryClient.invalidateQueries({ queryKey: ['corporations', 'share-offerings'] });
+      await invalidate();
+    },
+    onError: (e: Error) => toast({ title: 'Tạo đợt chào bán thất bại', description: e.message, variant: 'error' }),
+  });
+
+  const buyShareOffering = useMutation({
+    mutationFn: ({ offeringId, shares }: { offeringId: string; shares: number }) =>
+      apiRequest(`/api/v1/corporations/share-offerings/${offeringId}/buy`, {
+        method: 'POST',
+        body: JSON.stringify({ shares }),
+      }),
+    onSuccess: async () => {
+      toast({ title: 'Mua cổ phần thành công', description: 'Tiền đã chuyển vào quỹ công ty và tỉ lệ cổ đông được cập nhật.' });
+      await queryClient.invalidateQueries({ queryKey: ['corporations'] });
+      await queryClient.invalidateQueries({ queryKey: ['characters', 'me'] });
+    },
+    onError: (e: Error) => toast({ title: 'Mua cổ phần thất bại', description: e.message, variant: 'error' }),
   });
 
   const topShareholders = useMemo(() => detail?.shareholders ?? [], [detail]);
@@ -803,7 +872,19 @@ export function BusinessPage() {
             {canManage && selectedCompany.status !== 'bankrupt' && (
               <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/30 p-3">
                 <p className="text-xs font-semibold text-emerald-800">Vận hành (chủ sở hữu)</p>
-                <p className="text-[11px] text-slate-600">Doanh thu được hệ thống tự động tính/chốt mỗi 30 ngày game theo ngành và chuyển trực tiếp về ví chủ sở hữu. Chủ sở hữu chỉ chi OPEX và nạp vốn/bơm quỹ công ty.</p>
+                <p className="text-[11px] text-slate-600">Doanh thu được hệ thống tự động tính/chốt mỗi 30 ngày game theo ngành. Bạn có thể cấu hình % giữ lại trong quỹ công ty (phần còn lại chuyển về ví chủ sở hữu, áp dụng kỳ tiếp theo). Chủ sở hữu chi OPEX và nộp thuế từ quỹ công ty.</p>
+                <div className="rounded-lg border border-emerald-100 bg-white p-2 space-y-1.5">
+                  <p className="text-[11px] font-semibold text-slate-700">2B. Tỉ lệ giữ lại doanh thu tự động vào quỹ công ty</p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <div className="flex-1 sm:max-w-xs">
+                      <GameInput label="% giữ lại trong quỹ công ty (0-100)" type="number" min={0} max={100} value={retainPctInput} onChange={(e) => setRetainPctInput(e.target.value)} />
+                    </div>
+                    <GameButton variant="outline" onClick={() => setRevenueRetain.mutate(selectedCompany.id)} disabled={setRevenueRetain.isPending}>
+                      {setRevenueRetain.isPending ? '...' : 'Lưu tỉ lệ (kỳ sau)'}
+                    </GameButton>
+                  </div>
+                  <p className="text-[11px] text-slate-500">Hiện tại: {(selectedCompany as any).revenueRetainPct ?? 0}% giữ lại quỹ công ty, {100 - Number((selectedCompany as any).revenueRetainPct ?? 0)}% trả về ví chủ sở hữu.</p>
+                </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="space-y-1 sm:col-span-2 sm:max-w-md">
                     <GameInput
@@ -1103,7 +1184,7 @@ export function BusinessPage() {
                     Khai thuế doanh nghiệp (chu kỳ 30 ngày game)
                   </p>
                   <p className="text-[11px] text-slate-500">
-                    Hệ thống đã tự chốt doanh thu thực tế mỗi 30 ngày và chuyển 100% về ví chủ sở hữu. Khi khai thuế, bạn nhập <b>doanh thu khai báo</b> cho kỳ: thuế 10% tính trên doanh thu khai báo và trừ từ <b>quỹ công ty</b>. Sau khi trừ thuế và OPEX trong kỳ, phần còn lại (nếu dương) sẽ tự động chia cổ tức theo tỉ lệ cổ phần.
+                    Hệ thống tự chốt doanh thu thực tế mỗi 30 ngày: theo tỉ lệ giữ lại do chủ sở hữu cấu hình (2B), một phần giữ trong <b>quỹ công ty</b> và phần còn lại chuyển về <b>ví chủ sở hữu</b>. Khi khai thuế, bạn nhập <b>doanh thu khai báo</b> cho kỳ: thuế 10% tính trên doanh thu khai báo và trừ từ quỹ công ty. Sau khi trừ thuế và OPEX trong kỳ, phần còn lại (nếu dương) sẽ tự động chia cổ tức theo tỉ lệ cổ phần.
                   </p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <GameInput
@@ -1127,6 +1208,14 @@ export function BusinessPage() {
                     onChange={(e) => setFilingNotes(e.target.value)}
                     placeholder="Giải trình (nếu có)..."
                   />
+                  <label className="flex items-center gap-2 text-[11px] text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={usePersonalFundsForShortfall}
+                      onChange={(e) => setUsePersonalFundsForShortfall(e.target.checked)}
+                    />
+                    Dùng ví cá nhân chủ sở hữu để bù phần thiếu (thuế + cổ tức) nếu quỹ công ty không đủ (nếu ví cá nhân thiếu sẽ bị chặn)
+                  </label>
                   <p className="text-[11px] text-amber-700">
                     Lưu ý: khai thấp hơn doanh thu thực tế sẽ tạo chênh lệch trốn thuế, tăng điểm rủi ro và heat; cơ quan thuế có thể truy thu phần thiếu + phạt 1.5x nếu phát hiện.
                   </p>
@@ -1341,6 +1430,46 @@ export function BusinessPage() {
               )}
             </div>
 
+            {selectedCompany.status === 'ipo' && (
+              <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50/40 p-3">
+                <p className="text-xs font-semibold text-sky-800">Đợt chào bán cổ phần (IPO / gọi vốn thêm)</p>
+                <p className="text-[11px] text-slate-600">Chủ sở hữu tạo đợt phát hành cổ phần mới (giá cố định, có thời hạn). Mọi người chơi có thể mua, ai mua trước được trước. Tiền về quỹ công ty, tổng cổ phần tăng và tỉ lệ cổ đông được cập nhật.</p>
+                {canManage && (
+                  <div className="rounded-lg border border-sky-100 bg-white p-2 space-y-2">
+                    <p className="text-[11px] font-semibold text-slate-700">Tạo đợt chào bán (chủ sở hữu)</p>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <GameInput label="Số cổ phần" type="number" min={1} value={offerTotalShares} onChange={(e)=>setOfferTotalShares(e.target.value)} />
+                      <GameInput label="Giá/CP (VND)" type="number" min={1} value={offerPrice} onChange={(e)=>setOfferPrice(e.target.value)} />
+                      <GameInput label="Thời hạn (giờ)" type="number" min={1} value={offerHours} onChange={(e)=>setOfferHours(e.target.value)} />
+                    </div>
+                    <GameButton variant="primary" onClick={() => createShareOffering.mutate(selectedCompany.id)} disabled={createShareOffering.isPending}>{createShareOffering.isPending ? '...' : 'Tạo đợt chào bán'}</GameButton>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-semibold text-slate-700">Danh sách đợt chào bán</p>
+                  {(shareOfferings ?? []).length === 0 ? <p className="text-[11px] text-slate-500">Chưa có đợt chào bán.</p> : (shareOfferings ?? []).map((o: any) => {
+                    const open = o.status === 'open' && new Date(o.endsAt).getTime() > Date.now() && Number(o.remainingShares) > 0;
+                    const qtyStr = buyOfferShares[o.id] ?? '1';
+                    return (
+                      <div key={o.id} className="rounded-md border border-slate-200 bg-white p-2 text-[11px] space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium">{formatMoney(o.pricePerShare?.amount ?? 0)}/CP · còn {Number(o.remainingShares).toLocaleString('vi-VN')}/{Number(o.totalShares).toLocaleString('vi-VN')}</span>
+                          <Badge variant={open ? 'success' : 'default'}>{open ? 'open' : o.status}</Badge>
+                        </div>
+                        <div className="text-slate-500">Hết hạn: {new Date(o.endsAt).toLocaleString('vi-VN')}</div>
+                        {open && (
+                          <div className="flex flex-wrap items-end gap-2">
+                            <div className="w-32"><GameInput label="Số CP mua" type="number" min={1} value={qtyStr} onChange={(e)=>setBuyOfferShares(prev=>({...prev,[o.id]:e.target.value}))} /></div>
+                            <GameButton variant="outline" onClick={() => buyShareOffering.mutate({ offeringId: o.id, shares: Number(qtyStr) || 1 })} disabled={buyShareOffering.isPending}>{buyShareOffering.isPending ? '...' : 'Mua'}</GameButton>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {canManage && selectedCompany.status !== 'bankrupt' && (
               <div className="space-y-2 rounded-xl border border-rose-200 bg-rose-50/40 p-3">
                 <p className="text-xs font-semibold text-rose-800">Giải thể công ty</p>
@@ -1369,3 +1498,4 @@ export function BusinessPage() {
     </div>
   );
 }
+

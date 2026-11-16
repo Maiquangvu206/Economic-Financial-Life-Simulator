@@ -59,6 +59,7 @@ function toCompanyDto(
     tickerSymbol: row.tickerSymbol,
     foundedAt: row.foundedAt.toISOString(),
     isOwner: false, // điền lại ở caller nếu cần
+    revenueRetainPct: Number((row as any).revenueRetainPct ?? 0),
     premises: premisesFromRow(row),
   };
 }
@@ -89,7 +90,7 @@ export class CorporationService {
     const company = await this.repository.getCompany(companyId, db);
     if (!company) throw AppError.notFound('Company');
     const shareholders = await this.repository.listShareholders(companyId);
-    const ownerShares = shareholders.find((s) => s.characterId === company.ownerCharacterId);
+    const totalShares = shareholders.reduce((sum, s) => sum + Number(s.shares || 0), 0);
 
     return {
       ...toCompanyDto(company),
@@ -97,10 +98,10 @@ export class CorporationService {
       shareholders: shareholders.map((s) => ({
         characterId: s.characterId,
         characterName: s.characterName,
-        shares: s.shares,
+        shares: Number(s.shares),
         isOwner: s.characterId === company.ownerCharacterId,
         isMe: s.characterId === character.id,
-        percentage: ownerShares ? Math.round((s.shares / ownerShares.shares) * 10000) / 100 : 0,
+        percentage: totalShares > 0 ? Math.round((Number(s.shares) / totalShares) * 10000) / 100 : 0,
       })),
     };
   }
@@ -1097,6 +1098,7 @@ export class CorporationService {
     input: {
       period?: string;
       declaredRevenueMinor: number;
+      usePersonalFundsForShortfall?: boolean;
       notes?: string;
     },
   ): Promise<CompanyHrAccountingDto> {
@@ -1131,7 +1133,36 @@ export class CorporationService {
       const taxDueMinor = Math.round(declaredRevenue * 0.1);
       const dividendPool = declaredRevenue - taxDueMinor - opexTotal;
 
-      const companyCash = Number((await this.repository.getCompany(companyId, client))?.cashMinor ?? company.cashMinor ?? 0);
+      let companyCash = Number((await this.repository.getCompany(companyId, client))?.cashMinor ?? company.cashMinor ?? 0);
+      const requiredTotal = taxDueMinor + (dividendPool > 0 ? dividendPool : 0);
+      const shortfall = Math.max(0, requiredTotal - companyCash);
+      const ownerChar = await requireLivingCharacterByUserId(client, userId);
+
+      if (shortfall > 0) {
+        if (!input.usePersonalFundsForShortfall) {
+          if (companyCash < taxDueMinor) {
+            throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế kỳ ${periodKey}. Cần ${formatMinor(taxDueMinor)} (có thể chọn dùng ví cá nhân bù thiếu).`);
+          }
+          throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế và chia cổ tức kỳ ${periodKey}. (Có thể chọn dùng ví cá nhân bù thiếu)`);
+        }
+        const ownerCash = toMinor(ownerChar.cash_minor);
+        if (ownerCash < shortfall) {
+          throw AppError.conflict('insufficient_funds', `Ví cá nhân không đủ để bù thiếu ${formatMinor(shortfall)} cho kỳ ${periodKey} (thuế + cổ tức).`);
+        }
+        await ledger.transfer(client, {
+          from: { ownerType: 'character', ownerId: ownerChar.id, kind: 'cash' },
+          to: { ownerType: 'company', ownerId: companyId, kind: 'cash' },
+          amountMinor: shortfall,
+          kind: 'company_tax_shortfall_cover',
+          description: `Bù thiếu quỹ công ty cho kỳ ${periodKey} (thuế/cổ tức) từ ví cá nhân`,
+          referenceType: 'company_tax_filing',
+          referenceId: companyId,
+        });
+        // đảm bảo quỹ công ty phản ánh đủ (ledger có thể sync; cập nhật tường minh)
+        await this.repository.adjustCash(client, companyId, shortfall);
+        companyCash += shortfall;
+      }
+
       if (companyCash < taxDueMinor) {
         throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế kỳ ${periodKey}. Cần ${formatMinor(taxDueMinor)}.`);
       }
@@ -1299,6 +1330,186 @@ export class CorporationService {
       const dto = await this.repository.getCompanyAnyStatus(companyId, client);
       if (!dto) throw new Error('Company disappeared after relocate premises');
       return { ...toCompanyDto(dto), isOwner: true };
+    });
+  }
+
+  async setRevenueRetain(userId: string, companyId: string, retainPct: number): Promise<CompanyDto> {
+    return withTransaction(async (client) => {
+      const { company } = await this.assertOwner(client, userId, companyId);
+      const pct = Math.max(0, Math.min(100, Number(retainPct)));
+      await this.repository.setRevenueRetainPct(client, companyId, pct);
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Cập nhật tỉ lệ giữ lại doanh thu',
+        body: `Công ty "${company.name}" sẽ giữ lại ${pct}% doanh thu tự động mỗi kỳ 30 ngày vào quỹ công ty (áp dụng từ các kỳ chốt tiếp theo).`,
+        payload: { companyId, retainPct: pct },
+      });
+      const dto = await this.repository.getCompany(companyId, client);
+      if (!dto) throw AppError.notFound('Company');
+      const shareholders = await this.repository.listShareholders(companyId);
+      const totalShares = shareholders.reduce((sum, s) => sum + Number(s.shares || 0), 0);
+      return {
+        ...toCompanyDto(dto),
+        isOwner: true,
+        shareholders: shareholders.map((s) => ({
+          characterId: s.characterId,
+          characterName: s.characterName,
+          shares: Number(s.shares),
+          isOwner: s.characterId === dto.ownerCharacterId,
+          isMe: s.characterId === company.ownerCharacterId,
+          percentage: totalShares > 0 ? Math.round((Number(s.shares) / totalShares) * 10000) / 100 : 0,
+        })),
+      };
+    });
+  }
+
+  async listShareOfferings(userId: string, companyId?: string): Promise<any[]> {
+    await requireCharacterByUserId(this.repository.db, userId);
+    const rows = await this.repository.listShareOfferings(this.repository.db, { companyId });
+    return rows.map((o: any) => ({
+      id: o.id,
+      companyId: o.companyId,
+      companyName: o.companyName,
+      companyTicker: o.companyTicker ?? null,
+      createdByCharacterId: o.createdByCharacterId,
+      totalShares: Number(o.totalShares),
+      remainingShares: Number(o.remainingShares),
+      pricePerShare: money(Number(o.pricePerShareMinor)),
+      status: o.status,
+      startsAt: new Date(o.startsAt).toISOString(),
+      endsAt: new Date(o.endsAt).toISOString(),
+      createdAt: new Date(o.createdAt).toISOString(),
+      closedAt: o.closedAt ? new Date(o.closedAt).toISOString() : null,
+    }));
+  }
+
+  async createShareOffering(userId: string, companyId: string, input: { totalShares: number; pricePerShareMinor: number; durationHours: number }): Promise<any> {
+    return withTransaction(async (client) => {
+      const { company } = await this.assertOwner(client, userId, companyId);
+      if (company.status !== 'ipo') {
+        throw AppError.badRequest('Chỉ công ty đã IPO/niêm yết mới được tạo đợt chào bán cổ phần.');
+      }
+      const totalShares = Math.max(1, Math.trunc(Number(input.totalShares)));
+      const price = Math.max(1, Math.trunc(Number(input.pricePerShareMinor)));
+      const hours = Math.max(1, Math.trunc(Number(input.durationHours)));
+      const endsAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+      const id = await this.repository.createShareOffering(client, {
+        companyId,
+        createdByCharacterId: company.ownerCharacterId,
+        totalShares,
+        pricePerShareMinor: price,
+        endsAt,
+      });
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Tạo đợt chào bán cổ phần',
+        body: `Công ty "${company.name}" mở chào bán ${totalShares.toLocaleString('vi-VN')} CP giá ${formatMinor(price)}/CP (hạn ${hours}h).`,
+        payload: { companyId, offeringId: id, totalShares, pricePerShareMinor: price, durationHours: hours },
+      });
+      const rows = await this.repository.listShareOfferings(client, { companyId });
+      return rows.find((x: any) => x.id === id) ? (await this.listShareOfferings(userId, companyId)).find((x: any) => x.id === id) : { id, companyId };
+    });
+  }
+
+  async buyShareOffering(userId: string, offeringId: string, shares: number): Promise<any> {
+    return withTransaction(async (client) => {
+      const buyer = await requireLivingCharacterByUserId(client, userId);
+      const offering = await this.repository.getShareOfferingForUpdate(client, offeringId);
+      if (!offering) throw AppError.notFound('Share offering');
+      const now = Date.now();
+      const endsAt = new Date(offering.endsAt).getTime();
+      let status = offering.status as string;
+      if (status === 'open' && (endsAt <= now || Number(offering.remainingShares) <= 0)) {
+        status = Number(offering.remainingShares) <= 0 ? 'completed' : 'closed';
+      }
+      if (status !== 'open') {
+        throw AppError.badRequest('Đợt chào bán không còn mở.');
+      }
+      if (String(offering.companyStatus) !== 'ipo') {
+        throw AppError.badRequest('Công ty không còn ở trạng thái IPO.');
+      }
+      const qty = Math.max(1, Math.trunc(Number(shares)));
+      const remaining = Number(offering.remainingShares);
+      if (qty > remaining) {
+        throw AppError.conflict('insufficient_shares', `Số cổ phần còn lại không đủ (còn ${remaining}).`);
+      }
+      const price = Number(offering.pricePerShareMinor);
+      const totalCost = qty * price;
+      const buyerCash = toMinor(buyer.cash_minor);
+      if (buyerCash < totalCost) {
+        throw AppError.conflict('insufficient_funds', 'Không đủ tiền mặt để mua cổ phần.');
+      }
+
+      await ledger.transfer(client, {
+        from: { ownerType: 'character', ownerId: buyer.id, kind: 'cash' },
+        to: { ownerType: 'company', ownerId: offering.companyId, kind: 'cash' },
+        amountMinor: totalCost,
+        kind: 'company_share_offering_purchase',
+        description: `Mua ${qty} cổ phần chào bán (đợt ${offeringId})`,
+        referenceType: 'company_share_offering',
+        referenceId: offeringId,
+      });
+
+      // tăng cổ phần cho người mua (pha loãng tỉ lệ các cổ đông khác)
+      await this.repository.upsertShareholder(client, offering.companyId, buyer.id, qty);
+
+      // nếu có ticker thì cộng vào stock_holdings để có thể giao dịch trên thị trường
+      const tickerRes = await client.query<{ id: string }>(
+        `SELECT id FROM stock_tickers WHERE company_id = $1 LIMIT 1`,
+        [offering.companyId],
+      );
+      const tickerId = tickerRes.rows[0]?.id;
+      if (tickerId) {
+        await client.query(
+          `INSERT INTO stock_holdings (character_id, ticker_id, shares, avg_cost_minor, updated_at)
+           VALUES ($1,$2,$3,$4,now())
+           ON CONFLICT (character_id, ticker_id)
+           DO UPDATE SET
+             avg_cost_minor = CASE
+               WHEN COALESCE(stock_holdings.avg_cost_minor, 0) <= 0 OR stock_holdings.shares <= 0 THEN $4::bigint
+               ELSE ROUND(((COALESCE(stock_holdings.avg_cost_minor, $4::bigint) * stock_holdings.shares) + ($4::bigint * $3))::numeric / GREATEST(stock_holdings.shares + $3, 1))::bigint
+             END,
+             shares = stock_holdings.shares + $3,
+             updated_at = now()`,
+          [buyer.id, tickerId, qty, price],
+        );
+      }
+
+      // proceeds về quỹ công ty + điều chỉnh valuation theo proceeds
+      await client.query(
+        `UPDATE companies SET cash_minor = cash_minor + $2::bigint, valuation_minor = valuation_minor + $2::bigint, updated_at = now() WHERE id = $1`,
+        [offering.companyId, totalCost],
+      );
+
+      await this.repository.recordOfferingPurchase(client, {
+        offeringId,
+        companyId: offering.companyId,
+        buyerCharacterId: buyer.id,
+        shares: qty,
+        pricePerShareMinor: price,
+        totalCostMinor: totalCost,
+      });
+
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Mua cổ phần chào bán thành công',
+        body: `Bạn đã mua ${qty.toLocaleString('vi-VN')} cổ phần của "${offering.companyName}" với tổng ${formatMinor(totalCost)}.`,
+        payload: { offeringId, companyId: offering.companyId, shares: qty, totalCost },
+      });
+
+      const remainingAfter = remaining - qty;
+      return {
+        ok: true,
+        offeringId,
+        companyId: offering.companyId,
+        sharesPurchased: qty,
+        totalCost: money(totalCost),
+        remainingShares: remainingAfter,
+        status: remainingAfter <= 0 ? 'completed' : 'open',
+      };
     });
   }
 }

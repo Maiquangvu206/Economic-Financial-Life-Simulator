@@ -191,6 +191,7 @@ export class CorporationController {
     const data = await this.service.createTaxFiling(userId, companyId, {
       period: body.period,
       declaredRevenueMinor: body.declaredRevenue.amount,
+      usePersonalFundsForShortfall: Boolean((body as any).usePersonalFundsForShortfall),
       notes: body.notes,
     });
     res.status(201).json(data);
@@ -202,6 +203,41 @@ export class CorporationController {
     const { premises } = req.body as RelocateCompanyPremisesRequest;
     const company = await this.service.relocatePremises(userId, companyId, premises as any);
     res.status(200).json(company);
+  };
+
+  setRevenueRetain = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const { retainPct } = req.body as { retainPct: number };
+    const company = await this.service.setRevenueRetain(userId, companyId, retainPct);
+    res.status(200).json(company);
+  };
+
+  listShareOfferings = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const companyId = (req.params as any).companyId as string | undefined;
+    const data = await this.service.listShareOfferings(userId, companyId);
+    res.status(200).json(data);
+  };
+
+  createShareOffering = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const body = req.body as any;
+    const data = await this.service.createShareOffering(userId, companyId, {
+      totalShares: Number(body.totalShares),
+      pricePerShareMinor: Number(body.pricePerShare?.amount ?? 0),
+      durationHours: Number(body.durationHours),
+    });
+    res.status(201).json(data);
+  };
+
+  buyShareOffering = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { offeringId } = req.params as { offeringId: string };
+    const body = req.body as any;
+    const data = await this.service.buyShareOffering(userId, offeringId, Number(body.shares));
+    res.status(200).json(data);
   };
 }
 

@@ -24,6 +24,7 @@ export interface CompanyRow {
   premisesHostCompanyName: string | null;
   premisesNeedsReselection: boolean;
   premisesInvalidReason: string | null;
+  revenueRetainPct: number;
 }
 
 export interface CompanyEmployeeRow {
@@ -104,8 +105,9 @@ export class CorporationRepository {
            hp.owner_company_id AS "premisesHostCompanyId",
            host.name AS "premisesHostCompanyName",
            COALESCE(c.premises_needs_reselection, false) AS "premisesNeedsReselection",
-           c.premises_invalid_reason AS "premisesInvalidReason"
-    FROM companies c
+           c.premises_invalid_reason AS "premisesInvalidReason",
+            COALESCE(c.revenue_retain_pct, 0)::float AS "revenueRetainPct"
+     FROM companies c
     JOIN characters ch ON ch.id = c.owner_character_id
     LEFT JOIN properties cp ON cp.id = c.premises_core_property_id
     LEFT JOIN province_land_properties plp ON plp.id = c.premises_province_land_property_id
@@ -997,6 +999,94 @@ export class CorporationRepository {
               updated_at = now()
         WHERE id = $1`,
       [companyId, premises.type, premises.provinceCode, premises.corePropertyId, premises.provinceLandPropertyId, premises.companyPropertyId],
+    );
+  }
+
+  async setRevenueRetainPct(db: Db, companyId: string, retainPct: number): Promise<void> {
+    await db.query(
+      `UPDATE companies SET revenue_retain_pct = $2, updated_at = now() WHERE id = $1`,
+      [companyId, retainPct],
+    );
+  }
+
+  // --- Share offerings (IPO primary issuance) ---
+  async createShareOffering(db: Db, input: { companyId: string; createdByCharacterId: string; totalShares: number; pricePerShareMinor: number; endsAt: Date }): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO company_share_offerings
+         (company_id, created_by_character_id, total_shares, remaining_shares, price_per_share_minor, status, ends_at)
+       VALUES ($1,$2,$3,$3,$4,'open',$5)
+       RETURNING id`,
+      [input.companyId, input.createdByCharacterId, input.totalShares, input.pricePerShareMinor, input.endsAt],
+    );
+    return r.rows[0]!.id;
+  }
+
+  async listShareOfferings(db: Db, opts?: { companyId?: string; openOnly?: boolean }): Promise<any[]> {
+    const params: any[] = [];
+    const where: string[] = [];
+    if (opts?.companyId) { params.push(opts.companyId); where.push(`o.company_id = $${params.length}`); }
+    if (opts?.openOnly) { where.push(`o.status = 'open' AND o.ends_at > now() AND o.remaining_shares > 0`); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await db.query(
+      `SELECT o.id, o.company_id AS "companyId", c.name AS "companyName", c.ticker_symbol AS "companyTicker",
+              o.created_by_character_id AS "createdByCharacterId",
+              o.total_shares AS "totalShares", o.remaining_shares AS "remainingShares",
+              o.price_per_share_minor AS "pricePerShareMinor", o.status,
+              o.starts_at AS "startsAt", o.ends_at AS "endsAt", o.created_at AS "createdAt", o.closed_at AS "closedAt"
+       FROM company_share_offerings o
+       JOIN companies c ON c.id = o.company_id
+       ${whereSql}
+       ORDER BY (o.status = 'open') DESC, o.created_at DESC
+       LIMIT 200`,
+      params,
+    );
+    return r.rows.map((row: any) => {
+      if (row.status === 'open' && (new Date(row.endsAt).getTime() <= Date.now() || Number(row.remainingShares) <= 0)) {
+        return { ...row, status: Number(row.remainingShares) <= 0 ? 'completed' : 'closed' };
+      }
+      return row;
+    });
+  }
+
+  async getShareOfferingForUpdate(db: Db, offeringId: string): Promise<any | null> {
+    const r = await db.query(
+      `SELECT o.id, o.company_id AS "companyId", o.created_by_character_id AS "createdByCharacterId",
+              o.total_shares AS "totalShares", o.remaining_shares AS "remainingShares",
+              o.price_per_share_minor AS "pricePerShareMinor", o.status,
+              o.starts_at AS "startsAt", o.ends_at AS "endsAt",
+              c.name AS "companyName", c.ticker_symbol AS "companyTicker", c.status AS "companyStatus"
+       FROM company_share_offerings o
+       JOIN companies c ON c.id = o.company_id
+       WHERE o.id = $1
+       FOR UPDATE`,
+      [offeringId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async upsertShareholder(db: Db, companyId: string, holderCharacterId: string, deltaShares: number): Promise<void> {
+    await db.query(
+      `INSERT INTO company_shareholders (id, company_id, holder_character_id, shares)
+       VALUES (gen_random_uuid(), $1, $2, $3)
+       ON CONFLICT (company_id, holder_character_id)
+       DO UPDATE SET shares = company_shareholders.shares + $3`,
+      [companyId, holderCharacterId, deltaShares],
+    );
+  }
+
+  async recordOfferingPurchase(db: Db, input: { offeringId: string; companyId: string; buyerCharacterId: string; shares: number; pricePerShareMinor: number; totalCostMinor: number }): Promise<void> {
+    await db.query(
+      `INSERT INTO company_share_offering_purchases (offering_id, company_id, buyer_character_id, shares, price_per_share_minor, total_cost_minor)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [input.offeringId, input.companyId, input.buyerCharacterId, input.shares, input.pricePerShareMinor, input.totalCostMinor],
+    );
+    await db.query(
+      `UPDATE company_share_offerings
+          SET remaining_shares = remaining_shares - $2,
+              status = CASE WHEN remaining_shares - $2 <= 0 THEN 'completed' ELSE status END,
+              closed_at = CASE WHEN remaining_shares - $2 <= 0 THEN now() ELSE closed_at END
+        WHERE id = $1`,
+      [input.offeringId, input.shares],
     );
   }
 }
