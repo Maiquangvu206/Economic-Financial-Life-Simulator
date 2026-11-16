@@ -181,6 +181,14 @@ export class AuctionService {
         await this.settleAuction(client, auction);
       });
     }
+    // Đồng thời quyết toán các phiên đấu giá đất tỉnh/thành đã hết hạn.
+    try {
+      await provinceLandAuctionService.settleExpired(now);
+    } catch (err) {
+      // best-effort: không chặn việc kết thúc đấu giá BĐS lõi
+      // eslint-disable-next-line no-console
+      console.error('province land auction settle error', err);
+    }
     return expired.length;
   }
 
@@ -219,13 +227,31 @@ export class AuctionService {
         referenceId: auctionId,
       });
 
-      // Chuyển chủ sở hữu propriétés cho người thắng.
+      // Chuyển chủ sở hữu cho người thắng (toàn bộ cụm nếu BĐS thuộc hợp thửa/công trình).
+      const groupRes = await client.query<{ id: string }>(
+        `WITH seed AS (
+           SELECT id, merge_group_id, merged_into_property_id FROM properties WHERE id = $1
+         ), gid AS (
+           SELECT COALESCE(s.merge_group_id, p.merge_group_id) AS merge_group_id
+           FROM seed s LEFT JOIN properties p ON p.id = s.merged_into_property_id
+         )
+         SELECT pr.id
+         FROM properties pr
+         LEFT JOIN gid ON true
+         WHERE pr.id = $1
+            OR (gid.merge_group_id IS NOT NULL AND pr.merge_group_id = gid.merge_group_id)`,
+        [auction.propertyId],
+      );
+      const groupIds = groupRes.rows.map((r) => r.id);
+      const targetIds = groupIds.length > 0 ? groupIds : [auction.propertyId];
       await client.query(
         `UPDATE properties
            SET owner_character_id = $2, owner_company_id = NULL,
-               status = 'owned', updated_at = now()
-           WHERE id = $1 AND status IN ('listed', 'owned')`,
-        [auction.propertyId, winner.winnerId],
+               status = 'owned', asking_price_minor = NULL, sale_notes = NULL, rent_listing_active = false,
+               updated_at = now()
+           WHERE id = ANY($1::uuid[])
+             AND status IN ('listed', 'owned', 'auction', 'unowned')`,
+        [targetIds, winner.winnerId],
       );
 
       await this.notifyCharacter(client, winner.winnerId, {

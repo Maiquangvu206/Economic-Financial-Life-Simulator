@@ -36,6 +36,7 @@ export const CONSTRUCTION_OPTIONS: Record<OwnedCluster['tier'], ConstructionOpti
     { id: 'house4', label: 'Nhà cấp 4', valueMultiplier: 1.2, minTiles: 1 },
     { id: 'shop', label: 'Cửa hàng nhỏ', valueMultiplier: 1.5, minTiles: 1 },
     { id: 'garage', label: 'Gara kinh doanh', valueMultiplier: 1.1, minTiles: 1 },
+    { id: 'company_hq', label: 'Xây dựng công ty (trụ sở)', valueMultiplier: 1.5, minTiles: 1 },
   ],
   small: [
     { id: 'mini-apartment', label: 'Chung cư mini', valueMultiplier: 2, minTiles: 2 },
