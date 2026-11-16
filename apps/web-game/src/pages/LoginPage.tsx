@@ -120,12 +120,11 @@ export function LoginPage() {
 
       const parsed = TokenPairSchema.safeParse(response);
       if (!parsed.success) {
-        setError('Phản hồi đăng nhập không hợp lệ.');
+        setError('Đăng nhập chưa thành công. Vui lòng thử lại.');
         return;
       }
 
-      // Một cổng duy nhất: quản trị viên được bàn giao sang bảng điều khiển,
-      // người chơi ở lại ứng dụng game.
+      // Quản trị viên sẽ được chuyển sang trang quản lý; người chơi vào trò chơi.
       if (isStaffRole(parsed.data.user.role)) {
         setRedirecting(true);
         const handoffResponse = await apiRequest<unknown>('/api/v1/auth/sso/handoff', {
@@ -135,7 +134,7 @@ export function LoginPage() {
         const handoff = SsoHandoffResponseSchema.safeParse(handoffResponse);
         if (!handoff.success) {
           setRedirecting(false);
-          setError('Không thể chuyển sang bảng điều khiển quản trị.');
+          setError('Không thể chuyển sang trang quản lý. Vui lòng thử lại.');
           return;
         }
         window.location.assign(`${env.adminUrl}/sso?code=${encodeURIComponent(handoff.data.code)}`);

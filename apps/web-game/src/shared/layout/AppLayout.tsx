@@ -38,7 +38,7 @@ const NAV_ITEMS = [
   { to: '/politics', label: 'Chính trị', symbol: '⚖' },
   { to: '/underworld', label: 'Chợ đen', symbol: '☠' },
   { to: '/gift-codes', label: 'Mã quà tặng', symbol: '🎁' },
-  { to: '/recap', label: 'Offline Recap', symbol: '◷' },
+  { to: '/recap', label: 'Khi vắng mặt', symbol: '◷' },
 ];
 
 function getActiveDays(createdAt?: string | null) {
@@ -222,13 +222,13 @@ export function AppLayout() {
         const meaningful = !!result.processed || (result.recap?.events ?? []).some((e) => e.type !== 'info');
         if (settings.showRecapOnLogin && hasRecap && meaningful && location.pathname !== '/recap') {
           toast({
-            title: 'Báo cáo offline',
-            description: result.message || 'Đã xử lý thời gian bạn vắng mặt. Mở trang Recap để xem chi tiết.',
+            title: 'Tóm tắt khi vắng mặt',
+            description: result.message || 'Đã cập nhật những thay đổi trong thời gian bạn vắng mặt.',
             variant: 'info',
           });
           navigate('/recap');
         } else if (meaningful && result.message) {
-          toast({ title: 'Đã xử lý offline', description: result.message, variant: 'info' });
+          toast({ title: 'Cập nhật khi vắng mặt', description: result.message, variant: 'info' });
         }
       } catch {
         // best-effort: không chặn trải nghiệm nếu offline API chưa sẵn sàng
@@ -543,7 +543,7 @@ export function AppLayout() {
               <span className={clsx('font-mono font-bold', energy < 30 ? 'text-rose-600' : 'text-emerald-600')}>{energy}%</span>
             </div>
             <div className="hidden items-center gap-2 sm:flex">
-              <span className="text-slate-500">Heat:</span>
+              <span className="text-slate-500">Mức chú ý:</span>
               <Badge variant={heatLevel > 50 ? 'error' : 'default'}>{heatLevel}/100</Badge>
             </div>
 

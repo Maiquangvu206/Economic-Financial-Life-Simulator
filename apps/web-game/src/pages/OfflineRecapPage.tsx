@@ -90,9 +90,9 @@ export function OfflineRecapPage() {
   if (settingsQ.isLoading || recapQ.isLoading) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Offline & Báo cáo" description="Cấu hình xử lý khi vắng mặt và xem tóm tắt sau khi quay lại." />
+        <PageHeader title="Khi vắng mặt" description="Chọn cách hệ thống hỗ trợ khi bạn vắng và xem tóm tắt khi quay lại." />
         <Panel title="Đang tải" borderColor="default">
-          <div className="text-sm text-slate-600">Đang tải dữ liệu offline...</div>
+          <div className="text-sm text-slate-600">Đang tải thông tin...</div>
         </Panel>
       </div>
     );
@@ -101,8 +101,8 @@ export function OfflineRecapPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Offline & Báo cáo"
-        description="Cấu hình xử lý khi bạn vắng mặt (bù tiến trình có giới hạn, tự nhận phúc lợi, tự trả hóa đơn/nợ) và xem recap khi quay lại."
+        title="Khi vắng mặt"
+        description="Chọn cách hệ thống hỗ trợ bạn trong lúc vắng (trong giới hạn cho phép), và xem lại những gì đã diễn ra khi bạn quay lại."
       />
 
       {message ? (
@@ -111,21 +111,21 @@ export function OfflineRecapPage() {
 
       {(settingsQ.isError || recapQ.isError) && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-          Không thể tải đầy đủ dữ liệu offline. Vui lòng thử tải lại trang hoặc bấm "Xử lý offline ngay &amp; cập nhật recap".
+          Không thể tải đầy đủ thông tin. Vui lòng thử tải lại trang hoặc bấm "Cập nhật tóm tắt ngay".
         </div>
       )}
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Panel title="Cài đặt offline của bạn" borderColor="emerald">
+        <Panel title="Cài đặt của bạn" borderColor="emerald">
           <div className="space-y-3 text-sm">
-            <p className="text-xs text-slate-600">Các tùy chọn này áp dụng theo chính sách hệ thống do admin cấu hình (giới hạn thời gian bù, cho phép tác vụ tự động).</p>
+            <p className="text-xs text-slate-600">Các lựa chọn bên dưới sẽ hoạt động trong phạm vi hệ thống cho phép.</p>
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
                 checked={!!form.offlineProcessingEnabled}
                 onChange={(e) => setForm((f) => ({ ...f, offlineProcessingEnabled: e.target.checked }))}
               />
-              Bật xử lý khi tôi offline
+              Bật hỗ trợ khi tôi vắng mặt
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -133,7 +133,7 @@ export function OfflineRecapPage() {
                 checked={!!form.catchupEnabled}
                 onChange={(e) => setForm((f) => ({ ...f, catchupEnabled: e.target.checked }))}
               />
-              Bù tiến trình/mô phỏng thời gian offline (trong giới hạn)
+              Bù một phần thời gian đã vắng (trong giới hạn)
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -141,7 +141,7 @@ export function OfflineRecapPage() {
                 checked={!!form.autoClaimWelfare}
                 onChange={(e) => setForm((f) => ({ ...f, autoClaimWelfare: e.target.checked }))}
               />
-              Tự nhận phúc lợi/lợi ích định kỳ đủ điều kiện
+              Tự nhận hỗ trợ/phúc lợi đủ điều kiện
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -149,7 +149,7 @@ export function OfflineRecapPage() {
                 checked={!!form.autoPay}
                 onChange={(e) => setForm((f) => ({ ...f, autoPay: e.target.checked }))}
               />
-              Tự trả hóa đơn/thuế/khoản vay đến hạn (khi đủ tiền)
+              Tự thanh toán các khoản đến hạn (khi đủ tiền)
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -157,12 +157,12 @@ export function OfflineRecapPage() {
                 checked={!!form.showRecapOnLogin}
                 onChange={(e) => setForm((f) => ({ ...f, showRecapOnLogin: e.target.checked }))}
               />
-              Hiển thị/ghi nhận recap khi quay lại
+              Hiển thị tóm tắt khi tôi quay lại
             </label>
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600 space-y-1">
-              <div>Mốc xử lý gần nhất: <b>{fmtDate(settingsQ.data?.lastOfflineProcessedAt)}</b></div>
-              <div>Một số tác vụ có thể bị bỏ qua nếu chính sách admin tắt hoặc không đủ điều kiện/tiền.</div>
+              <div>Lần cập nhật gần nhất: <b>{fmtDate(settingsQ.data?.lastOfflineProcessedAt)}</b></div>
+              <div>Một số việc có thể không thực hiện được nếu chưa đủ điều kiện, không đủ tiền hoặc hệ thống chưa cho phép.</div>
             </div>
 
             <div className="flex flex-wrap gap-2 pt-1">
@@ -180,15 +180,15 @@ export function OfflineRecapPage() {
                 disabled={process.isPending}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
-                {process.isPending ? 'Đang xử lý...' : 'Xử lý offline ngay & cập nhật recap'}
+                {process.isPending ? 'Đang cập nhật...' : 'Cập nhật tóm tắt ngay'}
               </button>
             </div>
           </div>
         </Panel>
 
-        <Panel title="Tóm tắt lần xử lý gần nhất" borderColor="default">
+        <Panel title="Tóm tắt gần đây" borderColor="default">
           {!recap ? (
-            <div className="text-sm text-slate-600">Chưa có bản recap. Khi bạn quay lại sau thời gian offline, hệ thống sẽ tạo tóm tắt tại đây (hoặc bấm "Xử lý offline ngay").</div>
+            <div className="text-sm text-slate-600">Chưa có tóm tắt. Khi bạn quay lại sau thời gian vắng mặt, hệ thống sẽ ghi nhận và hiển thị tại đây (hoặc bấm "Cập nhật tóm tắt ngay").</div>
           ) : (
             <div className="space-y-3">
               <div className="grid gap-2 sm:grid-cols-3">
@@ -198,7 +198,7 @@ export function OfflineRecapPage() {
               </div>
               <div className="text-xs text-slate-600 space-y-1">
                 <div>Khoảng thời gian: <b>{fmtDate(recap.from)}</b> → <b>{fmtDate(recap.to)}</b></div>
-                <div className="text-slate-500">Chỉ ghi nhận tác vụ tự động và bù tiến trình trong giới hạn chính sách/cài đặt của bạn.</div>
+                <div className="text-slate-500">Chỉ ghi nhận các việc hệ thống hỗ trợ tự động trong giới hạn cho phép.</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 {summaryBadges.map((b) => (
@@ -212,12 +212,12 @@ export function OfflineRecapPage() {
         </Panel>
       </div>
 
-      <Panel title="Sự kiện & thay đổi trong thời gian offline" borderColor="default">
+      <Panel title="Những thay đổi trong thời gian bạn vắng mặt" borderColor="default">
         {events.length === 0 ? (
           <div className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-slate-50/50">
             <div>
-              <div className="font-semibold text-slate-800">Chưa có sự kiện</div>
-              <div className="mt-1 text-xs text-slate-500">Các khoản tự nhận phúc lợi, tự trả hóa đơn/nợ và ghi nhận bù tiến trình sẽ hiển thị tại đây.</div>
+              <div className="font-semibold text-slate-800">Chưa có thay đổi</div>
+              <div className="mt-1 text-xs text-slate-500">Khi có khoản hỗ trợ được nhận tự động, thanh toán tự động hoặc thời gian được bù, thông tin sẽ hiển thị tại đây.</div>
             </div>
             <Badge variant="default">Bình thường</Badge>
           </div>
@@ -239,8 +239,8 @@ export function OfflineRecapPage() {
       </Panel>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
-        <div><b>Lưu ý:</b> Hệ thống xử lý offline theo <b>chính sách admin</b> và cài đặt cá nhân (giới hạn thời gian bù, cho phép tác vụ tự động).</div>
-        <div>Hiện hỗ trợ: ghi nhận khoảng offline có giới hạn, tự nhận phúc lợi đủ điều kiện (idempotent), và tự trả thuế/khoản vay đến hạn (best-effort, khi đủ tiền). Không mô phỏng lại toàn bộ tick thế giới.</div>
+        <div><b>Lưu ý:</b> Hệ thống chỉ hỗ trợ trong giới hạn cho phép và theo cài đặt của bạn.</div>
+        <div>Có thể nhận hỗ trợ/phúc lợi đủ điều kiện và thanh toán các khoản đến hạn khi đủ tiền. Hệ thống không tự thực hiện mọi hoạt động thay bạn trong thời gian vắng mặt.</div>
       </div>
     </div>
   );
