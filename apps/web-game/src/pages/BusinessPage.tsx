@@ -98,6 +98,7 @@ export function BusinessPage() {
   const [offerPrice, setOfferPrice] = useState('10000');
   const [offerHours, setOfferHours] = useState('24');
   const [buyOfferShares, setBuyOfferShares] = useState<Record<string, string>>({});
+  const [suggestionPlan, setSuggestionPlan] = useState<any | null>(null);
 
   const { data: me } = useQuery<{ id: string; fullName: string }>({
     queryKey: ['characters', 'me'],
@@ -128,6 +129,7 @@ export function BusinessPage() {
 
   const selectedCompany = detail ?? overview?.companies.find((c) => c.id === selectedId) ?? null;
   const canManage = !!selectedCompany?.isOwner;
+  useEffect(() => { setSuggestionPlan(null); }, [selectedId]);
 
   useEffect(() => {
     if (detail && typeof (detail as any).revenueRetainPct === 'number') {
@@ -336,59 +338,53 @@ export function BusinessPage() {
 
   const createHiringPlan = useMutation({
     mutationFn: (companyId: string) =>
-      apiRequest(`/api/v1/corporations/${companyId}/hiring-plans`, {
+      apiRequest<any>(`/api/v1/corporations/${companyId}/hiring-plans`, {
         method: 'POST',
         body: JSON.stringify({
           roleFocus: roleFocus.trim() || 'Vận hành',
           headcount: Math.max(1, Math.min(20, Number(headcount) || 3)),
         }),
       }),
-    onSuccess: async () => {
-      toast({
-        title: 'AI đã đề xuất ứng viên',
-        description: 'Danh sách ứng viên đã sẵn sàng để bạn duyệt.',
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ['corporations', 'hr-accounting', selectedId],
-      });
+    onSuccess: async (plan) => {
+      setSuggestionPlan(plan);
+      toast({ title: 'AI đã đề xuất ứng viên', description: 'Phiên gợi ý tạm thời đã sẵn sàng (sẽ mất khi tuyển/từ chối xong hoặc đóng).' });
     },
     onError: (e: Error) =>
       toast({ title: 'Tạo kế hoạch thất bại', description: e.message, variant: 'error' }),
   });
 
   const decideCandidate = useMutation({
-    mutationFn: (input: {
-      companyId: string;
-      planId: string;
-      candidateId: string;
-      decision: 'approved' | 'rejected';
-    }) =>
-      apiRequest(
+    mutationFn: (input: { companyId: string; planId: string; candidateId: string; decision: 'approved' | 'rejected' }) =>
+      apiRequest<{ plan: any | null }>(
         `/api/v1/corporations/${input.companyId}/hiring-plans/${input.planId}/candidates/${input.candidateId}/decision`,
         { method: 'POST', body: JSON.stringify({ decision: input.decision }) },
       ),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['corporations', 'hr-accounting', selectedId],
-      });
+    onSuccess: async (res, vars) => {
+      setSuggestionPlan(res?.plan ?? null);
+      if (vars.decision === 'rejected') toast({ title: 'Đã từ chối ứng viên', description: 'Gợi ý đã được loại bỏ.' });
     },
-    onError: (e: Error) =>
-      toast({ title: 'Cập nhật thất bại', description: e.message, variant: 'error' }),
+    onError: (e: Error) => toast({ title: 'Cập nhật thất bại', description: e.message, variant: 'error' }),
   });
 
   const applyHiringPlan = useMutation({
     mutationFn: (input: { companyId: string; planId: string }) =>
-      apiRequest(`/api/v1/corporations/${input.companyId}/hiring-plans/${input.planId}/apply`, {
-        method: 'POST',
-      }),
-    onSuccess: async () => {
-      toast({ title: 'Đã tuyển dụng', description: 'Các ứng viên đã duyệt đã được tuyển.' });
-      await queryClient.invalidateQueries({
-        queryKey: ['corporations', 'hr-accounting', selectedId],
-      });
+      apiRequest<{ hired: number; plan: null }>(`/api/v1/corporations/${input.companyId}/hiring-plans/${input.planId}/apply`, { method: 'POST' }),
+    onSuccess: async (res) => {
+      setSuggestionPlan(null);
+      toast({ title: 'Đã tuyển dụng', description: `Đã tuyển ${res?.hired ?? 0} ứng viên. Gợi ý tạm đã được xóa.` });
+      await queryClient.invalidateQueries({ queryKey: ['corporations', 'hr-accounting', selectedId] });
     },
-    onError: (e: Error) =>
-      toast({ title: 'Áp dụng thất bại', description: e.message, variant: 'error' }),
+    onError: (e: Error) => toast({ title: 'Áp dụng thất bại', description: e.message, variant: 'error' }),
+  });
+
+  const dismissHiringPlan = useMutation({
+    mutationFn: (input: { companyId: string; planId: string }) =>
+      apiRequest(`/api/v1/corporations/${input.companyId}/hiring-plans/${input.planId}/dismiss`, { method: 'POST' }),
+    onSuccess: async () => {
+      setSuggestionPlan(null);
+      toast({ title: 'Đã đóng gợi ý', description: 'Phiên gợi ý AI đã được xóa.' });
+    },
+    onError: (e: Error) => toast({ title: 'Đóng gợi ý thất bại', description: e.message, variant: 'error' }),
   });
 
   const fireStaff = useMutation({
@@ -508,7 +504,6 @@ export function BusinessPage() {
 
   const topShareholders = useMemo(() => detail?.shareholders ?? [], [detail]);
   const activeEmployees = (employeesData?.employees ?? []).filter((e) => e.status === 'active');
-  const plans = hrAcc?.plans ?? [];
   const staff = hrAcc?.staff?.filter((s) => s.status === 'active') ?? [];
   const ledger = hrAcc?.ledger;
   const filings = hrAcc?.filings ?? [];
@@ -914,427 +909,89 @@ export function BusinessPage() {
             {canManage && detail?.isOwner && (
               <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/30 p-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-sky-900">
-                    Tuyển dụng AI (AI sắp xếp, bạn duyệt)
-                  </p>
+                  <p className="text-xs font-semibold text-sky-900">Đề xuất tuyển dụng AI (tạm thời)</p>
                   {hrAccLoading && <span className="text-[11px] text-slate-500">Đang tải...</span>}
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_110px_auto] sm:items-end">
-                  <GameInput
-                    label="Nhu cầu/vị trí"
-                    value={roleFocus}
-                    onChange={(e) => setRoleFocus(e.target.value)}
-                    placeholder="VD: Kế toán, bán hàng..."
-                  />
-                  <GameInput
-                    label="Số lượng"
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={headcount}
-                    onChange={(e) => setHeadcount(e.target.value)}
-                  />
-                  <GameButton
-                    variant="primary"
-                    onClick={() => createHiringPlan.mutate(selectedCompany.id)}
-                    disabled={createHiringPlan.isPending || selectedCompany.status === 'bankrupt'}
-                    className="w-full sm:w-auto"
-                  >
+                  <GameInput label="Nhu cầu/vị trí" value={roleFocus} onChange={(e) => setRoleFocus(e.target.value)} placeholder="VD: Kế toán, bán hàng..." />
+                  <GameInput label="Số lượng" type="number" min={1} max={20} value={headcount} onChange={(e) => setHeadcount(e.target.value)} />
+                  <GameButton variant="primary" onClick={() => createHiringPlan.mutate(selectedCompany.id)} disabled={createHiringPlan.isPending || selectedCompany.status === 'bankrupt'} className="w-full sm:w-auto">
                     {createHiringPlan.isPending ? 'AI đang sắp...' : 'Nhờ AI đề xuất'}
                   </GameButton>
                 </div>
-                <p className="text-[11px] text-slate-600">
-                  AI chỉ đề xuất ứng viên; bạn cần duyệt từng người và bấm “Áp dụng tuyển” để tuyển
-                  chính thức.
-                </p>
+                <p className="text-[11px] text-slate-600">Danh mục gợi ý chỉ hiển thị khi bấm “Nhờ AI đề xuất” và là phiên tạm thời: mất khi tuyển dụng thành công, khi từ chối/loại bỏ hết ứng viên, hoặc khi đóng (không lưu trữ lâu dài).</p>
 
-                {plans.slice(0, 3).map((plan) => (
-                  <div
-                    key={plan.id}
-                    className="space-y-2 rounded-lg border border-slate-200 bg-white p-2"
-                  >
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-medium text-slate-800">
-                        Kế hoạch: {plan.roleFocus} · {plan.headcount} người
-                      </span>
-                      <Badge
-                        variant={
-                          plan.status === 'applied'
-                            ? 'success'
-                            : plan.status === 'pending'
-                              ? 'warning'
-                              : 'default'
-                        }
-                      >
-                        {plan.status}
-                      </Badge>
-                    </div>
-                    {plan.rationale && (
-                      <p className="text-[11px] text-slate-600">{plan.rationale}</p>
-                    )}
-                    <div className="space-y-1.5">
-                      {plan.candidates.map((c) => (
-                        <div
-                          key={c.id}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5 text-xs"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-medium text-slate-800">
-                              {c.fullName} · {c.roleTitle} ({c.seniority})
-                            </div>
-                            <div className="text-slate-500">
-                              Lương đề xuất: {formatMoney(c.proposedSalary.amount)} · Fit:{' '}
-                              {c.fitScore}/100
-                            </div>
-                            {c.riskNote && (
-                              <div className="text-[11px] text-amber-700">Rủi ro: {c.riskNote}</div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Badge
-                              variant={
-                                c.status === 'approved' || c.status === 'hired'
-                                  ? 'success'
-                                  : c.status === 'rejected'
-                                    ? 'error'
-                                    : 'default'
-                              }
-                            >
-                              {c.status}
-                            </Badge>
-                            {plan.status !== 'applied' && c.status !== 'hired' && (
-                              <>
-                                <GameButton
-                                  variant="primary"
-                                  onClick={() =>
-                                    decideCandidate.mutate({
-                                      companyId: selectedCompany.id,
-                                      planId: plan.id,
-                                      candidateId: c.id,
-                                      decision: 'approved',
-                                    })
-                                  }
-                                  disabled={decideCandidate.isPending}
-                                >
-                                  Duyệt
-                                </GameButton>
-                                <GameButton
-                                  variant="outline"
-                                  onClick={() =>
-                                    decideCandidate.mutate({
-                                      companyId: selectedCompany.id,
-                                      planId: plan.id,
-                                      candidateId: c.id,
-                                      decision: 'rejected',
-                                    })
-                                  }
-                                  disabled={decideCandidate.isPending}
-                                >
-                                  Từ chối
-                                </GameButton>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {plan.status !== 'applied' && (
-                      <GameButton
-                        variant="primary"
-                        onClick={() =>
-                          applyHiringPlan.mutate({ companyId: selectedCompany.id, planId: plan.id })
-                        }
-                        disabled={applyHiringPlan.isPending}
-                      >
-                        {applyHiringPlan.isPending ? '...' : 'Áp dụng tuyển (ứng viên đã duyệt)'}
-                      </GameButton>
-                    )}
-                  </div>
-                ))}
-                {plans.length === 0 && (
-                  <p className="text-[11px] text-slate-500">
-                    Chưa có kế hoạch tuyển dụng AI. Nhấn “Nhờ AI đề xuất”.
-                  </p>
-                )}
-
-                <div className="space-y-1">
-                  <p className="text-[11px] font-semibold text-slate-700">Nhân sự đã tuyển (AI)</p>
-                  {staff.length === 0 ? (
-                    <p className="text-[11px] text-slate-500">
-                      Chưa có nhân sự AI-tuyển đang làm việc.
-                    </p>
-                  ) : (
-                    staff.map((s) => (
-                      <div
-                        key={s.id}
-                        className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1.5 text-xs border border-slate-100"
-                      >
-                        <div>
-                          <div className="font-medium text-slate-800">{s.fullName}</div>
-                          <div className="text-slate-500">
-                            {s.roleTitle} · {formatMoney(s.salary.amount)}/kỳ
-                          </div>
-                        </div>
-                        <GameButton
-                          variant="outline"
-                          onClick={() =>
-                            fireStaff.mutate({ companyId: selectedCompany.id, staffId: s.id })
-                          }
-                          disabled={fireStaff.isPending}
-                        >
-                          Sa thải
+                {suggestionPlan ? (
+                  <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="font-medium text-slate-800">Gợi ý: {suggestionPlan.roleFocus} · {suggestionPlan.headcount} người</span>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="warning">tạm thời</Badge>
+                        <GameButton variant="outline" onClick={() => dismissHiringPlan.mutate({ companyId: selectedCompany.id, planId: suggestionPlan.id })} disabled={dismissHiringPlan.isPending}>
+                          {dismissHiringPlan.isPending ? '...' : 'Đóng/Bỏ gợi ý'}
                         </GameButton>
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-
-            {canManage && detail?.isOwner && (
-              <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/30 p-3">
-                <p className="text-xs font-semibold text-amber-900">
-                  Sổ cái / Kế toán & Khai thuế (trốn thuế, lách luật)
-                </p>
-                {ledger && (
-                  <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-3">
-                    <div>
-                      Doanh thu thực tế: <b>{formatMoney(ledger.totals.revenue.amount)}</b>
                     </div>
-                    <div>
-                      Chi phí thực tế: <b>{formatMoney(ledger.totals.expense.amount)}</b>
-                    </div>
-                    <div>
-                      Lợi nhuận: <b>{formatMoney(ledger.totals.profit.amount)}</b>
-                    </div>
-                    <div>
-                      Khai DT: <b>{formatMoney(ledger.totals.declaredRevenue.amount)}</b>
-                    </div>
-                    <div>
-                      Khai CP: <b>{formatMoney(ledger.totals.declaredExpense.amount)}</b>
-                    </div>
-                    <div>
-                      Chênh lệch (tax gap):{' '}
-                      <b className="text-rose-700">{formatMoney(ledger.totals.taxGap.amount)}</b>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-2">
-                  <p className="text-[11px] font-semibold text-slate-700">
-                    Ghi bút toán (có thể khai báo khác thực tế)
-                  </p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="text-[11px] uppercase tracking-wider text-slate-500">
-                        Loại
-                      </label>
-                      <select
-                        value={entryType}
-                        onChange={(e) => setEntryType(e.target.value as any)}
-                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm"
-                      >
-                        {ENTRY_TYPES.map((t) => (
-                          <option key={t.value} value={t.value}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <GameInput
-                      label="Số tiền thực tế (VND)"
-                      type="number"
-                      min={0}
-                      value={entryAmount}
-                      onChange={(e) => setEntryAmount(e.target.value)}
-                    />
-                    <GameInput
-                      label="Số tiền khai báo (để trống = như thực tế)"
-                      type="number"
-                      min={0}
-                      value={declaredAmount}
-                      onChange={(e) => setDeclaredAmount(e.target.value)}
-                    />
-                    <GameInput
-                      label="Diễn giải"
-                      value={entryDesc}
-                      onChange={(e) => setEntryDesc(e.target.value)}
-                      placeholder="Hóa đơn, ghi chú..."
-                    />
-                  </div>
-                  <label className="flex items-center gap-2 text-[11px] text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={entryEvasion}
-                      onChange={(e) => setEntryEvasion(e.target.checked)}
-                    />
-                    Đánh dấu khai báo lệch/trốn thuế/lách luật (tăng rủi ro kiểm toán)
-                  </label>
-                  <GameButton
-                    variant="primary"
-                    onClick={() => addLedgerEntry.mutate(selectedCompany.id)}
-                    disabled={addLedgerEntry.isPending || selectedCompany.status === 'bankrupt'}
-                  >
-                    {addLedgerEntry.isPending ? '...' : 'Ghi sổ & áp dụng quỹ'}
-                  </GameButton>
-                </div>
-
-                <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-2">
-                  <p className="text-[11px] font-semibold text-slate-700">
-                    Khai thuế doanh nghiệp (chu kỳ 30 ngày game)
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    Hệ thống tự chốt doanh thu thực tế mỗi 30 ngày: theo tỉ lệ giữ lại do chủ sở hữu cấu hình (2B), một phần giữ trong <b>quỹ công ty</b> và phần còn lại chuyển về <b>ví chủ sở hữu</b>. Khi khai thuế, bạn nhập <b>doanh thu khai báo</b> cho kỳ: thuế 10% tính trên doanh thu khai báo và trừ từ quỹ công ty. Sau khi trừ thuế và OPEX trong kỳ, phần còn lại (nếu dương) sẽ tự động chia cổ tức theo tỉ lệ cổ phần.
-                  </p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <GameInput
-                      label="Kỳ (periodKey, tùy chọn)"
-                      value={filingPeriod}
-                      onChange={(e) => setFilingPeriod(e.target.value)}
-                      placeholder="VD: 2000-01 (để trống = kỳ gần nhất)"
-                    />
-                    <GameInput
-                      label="Doanh thu khai báo (VND)"
-                      type="number"
-                      min={0}
-                      value={declaredRevenueInput}
-                      onChange={(e) => setDeclaredRevenueInput(e.target.value)}
-                      placeholder="Nhập doanh thu bạn khai báo"
-                    />
-                  </div>
-                  <GameInput
-                    label="Ghi chú/lý do"
-                    value={filingNotes}
-                    onChange={(e) => setFilingNotes(e.target.value)}
-                    placeholder="Giải trình (nếu có)..."
-                  />
-                  <label className="flex items-center gap-2 text-[11px] text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={usePersonalFundsForShortfall}
-                      onChange={(e) => setUsePersonalFundsForShortfall(e.target.checked)}
-                    />
-                    Dùng ví cá nhân chủ sở hữu để bù phần thiếu (thuế + cổ tức) nếu quỹ công ty không đủ (nếu ví cá nhân thiếu sẽ bị chặn)
-                  </label>
-                  <p className="text-[11px] text-amber-700">
-                    Lưu ý: khai thấp hơn doanh thu thực tế sẽ tạo chênh lệch trốn thuế, tăng điểm rủi ro và heat; cơ quan thuế có thể truy thu phần thiếu + phạt 1.5x nếu phát hiện.
-                  </p>
-                  <GameButton
-                    variant="primary"
-                    onClick={() => createFiling.mutate(selectedCompany.id)}
-                    disabled={createFiling.isPending || selectedCompany.status === 'bankrupt'}
-                  >
-                    {createFiling.isPending ? '...' : 'Nộp thuế & chốt kỳ'}
-                  </GameButton>
-                </div>
-
-                {filings.length > 0 && (
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold text-slate-700">
-                      Hồ sơ khai thuế gần đây
-                    </p>
-                    {filings.slice(0, 5).map((f) => (
-                      <div
-                        key={f.id}
-                        className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11px]"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium">{f.period}</span>
-                          <Badge
-                            variant={
-                              f.riskScore >= 60
-                                ? 'error'
-                                : f.riskScore >= 30
-                                  ? 'warning'
-                                  : 'success'
-                            }
-                          >
-                            Rủi ro {f.riskScore}
-                          </Badge>
-                        </div>
-                        <div className="text-slate-600">
-                          Thuế: {formatMoney(f.taxDue.amount)} · DT khai/thực: {formatMoney(f.declaredRevenue.amount)}/{formatMoney(f.actualRevenue.amount)}
-                        </div>
-                        <div className="text-slate-600">
-                          OPEX kỳ: {formatMoney((f.opexTotal ?? f.declaredExpense).amount)} · Cổ tức đã chia: {formatMoney((f.dividendDistributed ?? { amount: 0, currency: 'VND' } as any).amount)} {Number((f.dividendPool ?? { amount: 0 } as any).amount) > 0 && Number((f.dividendDistributed ?? { amount: 0 } as any).amount) <= 0 ? '(không đủ quỹ/không chia)' : ''}
-                        </div>
-                        {Number((f.evasionGap ?? { amount: 0 } as any).amount) > 0 && (
-                          <div className="text-rose-700">Chênh lệch trốn thuế: {formatMoney((f.evasionGap as any).amount)}</div>
-                        )}
-                        {f.notes && <div className="text-slate-500">{f.notes}</div>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {ledger && ledger.entries.length > 0 && (
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold text-slate-700">Bút toán gần đây</p>
-                    <div className="max-h-40 overflow-auto space-y-1">
-                      {ledger.entries.slice(0, 10).map((e) => (
-                        <div
-                          key={e.id}
-                          className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1 text-[11px] border border-slate-100"
-                        >
-                          <div>
-                            <span className="font-medium">{e.entryType}</span>
-                            {e.ledgerKind === 'ACTUAL' && <span className="ml-1 rounded bg-sky-50 px-1 text-sky-700">ACTUAL</span>}
-                            {e.periodKey && <span className="ml-1 text-slate-500">[{e.periodKey}]</span>}
-                            {' · '}
-                            {e.description || '—'}
-                            {e.isEvasion && <span className="ml-1 text-rose-700">(lệch khai)</span>}
+                    {suggestionPlan.rationale && <p className="text-[11px] text-slate-600">{suggestionPlan.rationale}</p>}
+                    <div className="space-y-1.5">
+                      {(suggestionPlan.candidates ?? []).map((c: any) => (
+                        <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5 text-xs">
+                          <div className="min-w-0">
+                            <div className="font-medium text-slate-800">{c.fullName} · {c.roleTitle} ({c.seniority})</div>
+                            <div className="text-slate-500">Lương đề xuất: {formatMoney(c.proposedSalary?.amount ?? c.proposedSalary ?? 0)} · Fit: {c.fitScore}/100</div>
+                            {c.riskNote && <div className="text-[11px] text-amber-700">Rủi ro: {c.riskNote}</div>}
                           </div>
-                          <div className="text-right">
-                            <div>TT: {formatMoney(e.amount.amount)}</div>
-                            <div className="text-slate-500">
-                              Khai: {formatMoney(e.declaredAmount.amount)}
-                            </div>
+                          <div className="flex items-center gap-1">
+                            <Badge variant={c.status === 'approved' ? 'success' : 'default'}>{c.status}</Badge>
+                            <GameButton variant="primary" onClick={() => decideCandidate.mutate({ companyId: selectedCompany.id, planId: suggestionPlan.id, candidateId: c.id, decision: 'approved' })} disabled={decideCandidate.isPending}>Duyệt</GameButton>
+                            <GameButton variant="outline" onClick={() => decideCandidate.mutate({ companyId: selectedCompany.id, planId: suggestionPlan.id, candidateId: c.id, decision: 'rejected' })} disabled={decideCandidate.isPending}>Từ chối</GameButton>
                           </div>
                         </div>
                       ))}
+                      {(suggestionPlan.candidates ?? []).length === 0 && <p className="text-[11px] text-slate-500">Không còn ứng viên gợi ý.</p>}
                     </div>
+                    <GameButton variant="primary" onClick={() => applyHiringPlan.mutate({ companyId: selectedCompany.id, planId: suggestionPlan.id })} disabled={applyHiringPlan.isPending}>
+                      {applyHiringPlan.isPending ? '...' : 'Áp dụng tuyển (ứng viên đã duyệt)'}
+                    </GameButton>
                   </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500">Chưa có phiên gợi ý nào. Nhấn “Nhờ AI đề xuất” để tạo gợi ý tạm thời.</p>
                 )}
               </div>
             )}
 
             {canManage && detail?.isOwner && (
               <div className="space-y-2 rounded-xl border border-slate-200 p-3">
-                <p className="text-xs font-semibold text-slate-700">Nhân sự (hợp đồng)</p>
-                {employeesLoading ? (
+                <p className="text-xs font-semibold text-slate-700">Nhân sự (gộp: hợp đồng + AI tuyển)</p>
+                <p className="text-[11px] text-slate-500">Danh sách gộp; mỗi nhân sự có chú thích nguồn.</p>
+                {(employeesLoading || hrAccLoading) ? (
                   <p className="text-xs text-slate-500">Đang tải...</p>
-                ) : activeEmployees.length === 0 ? (
-                  <p className="text-xs text-slate-500">Chưa có nhân sự hợp đồng đang làm việc.</p>
+                ) : (activeEmployees.length === 0 && staff.length === 0) ? (
+                  <p className="text-xs text-slate-500">Chưa có nhân sự đang làm việc.</p>
                 ) : (
-                  activeEmployees.map((e) => (
-                    <div
-                      key={e.employmentId}
-                      className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs"
-                    >
-                      <div>
-                        <div className="font-medium text-slate-800">{e.characterName}</div>
-                        <div className="text-slate-500">
-                          {e.jobTitle} · {formatMoney(e.salary.amount)}/kỳ
+                  <div className="space-y-1.5">
+                    {activeEmployees.map((e) => (
+                      <div key={`emp-${e.employmentId}`} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs">
+                        <div>
+                          <div className="font-medium text-slate-800">{e.characterName} <span className="ml-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">Hợp đồng</span></div>
+                          <div className="text-slate-500">{e.jobTitle} · {formatMoney(e.salary.amount)}/kỳ</div>
                         </div>
+                        <GameButton variant="outline" onClick={() => fireEmployee.mutate({ companyId: selectedCompany.id, employmentId: e.employmentId })} disabled={fireEmployee.isPending}>Sa thải</GameButton>
                       </div>
-                      <GameButton
-                        variant="outline"
-                        onClick={() =>
-                          fireEmployee.mutate({
-                            companyId: selectedCompany.id,
-                            employmentId: e.employmentId,
-                          })
-                        }
-                        disabled={fireEmployee.isPending}
-                      >
-                        Sa thải
-                      </GameButton>
-                    </div>
-                  ))
+                    ))}
+                    {staff.map((s) => (
+                      <div key={`ai-${s.id}`} className="flex items-center justify-between gap-2 rounded-lg bg-sky-50 px-2 py-1.5 text-xs border border-sky-100">
+                        <div>
+                          <div className="font-medium text-slate-800">{s.fullName} <span className="ml-1 rounded bg-sky-200 px-1.5 py-0.5 text-[10px] font-medium text-sky-800">AI tuyển</span></div>
+                          <div className="text-slate-500">{s.roleTitle} · {formatMoney(s.salary.amount)}/kỳ</div>
+                        </div>
+                        <GameButton variant="outline" onClick={() => fireStaff.mutate({ companyId: selectedCompany.id, staffId: s.id })} disabled={fireStaff.isPending}>Sa thải</GameButton>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
-
             {canManage && selectedCompany.status === 'active' && (
               <div className="space-y-2 rounded-xl border border-slate-200 p-3">
                 <p className="text-xs font-semibold text-slate-700">IPO (chủ sở hữu)</p>

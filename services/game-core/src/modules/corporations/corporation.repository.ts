@@ -600,13 +600,34 @@ export class CorporationRepository {
     candidateId: string,
     decision: 'approved' | 'rejected',
   ): Promise<boolean> {
+    if (decision === 'rejected') {
+      const r = await db.query(
+        `DELETE FROM company_hiring_candidates WHERE id = $2 AND plan_id = $1 RETURNING id`,
+        [planId, candidateId],
+      );
+      return (r.rowCount ?? 0) > 0;
+    }
     const r = await db.query(
-      `UPDATE company_hiring_candidates SET status = $3
-       WHERE id = $2 AND plan_id = $1 AND status IN ('proposed','approved','rejected')
+      `UPDATE company_hiring_candidates SET status = 'approved'
+       WHERE id = $2 AND plan_id = $1 AND status IN ('proposed','approved')
        RETURNING id`,
-      [planId, candidateId, decision],
+      [planId, candidateId],
     );
     return (r.rowCount ?? 0) > 0;
+  }
+
+  async deleteHiringPlan(db: Db, planId: string): Promise<void> {
+    await db.query(`DELETE FROM company_hiring_plans WHERE id = $1`, [planId]);
+  }
+
+  async cleanupEmptyHiringPlan(db: Db, planId: string): Promise<void> {
+    const r = await db.query<{ c: string }>(
+      `SELECT COUNT(*)::text AS c FROM company_hiring_candidates WHERE plan_id = $1`,
+      [planId],
+    );
+    if (Number(r.rows[0]?.c ?? 0) === 0) {
+      await this.deleteHiringPlan(db, planId);
+    }
   }
 
   async applyHiringPlan(db: Db, planId: string): Promise<number> {
@@ -638,10 +659,10 @@ export class CorporationRepository {
       await db.query(`UPDATE company_hiring_candidates SET status = 'hired' WHERE id = $1`, [c.id]);
       hired++;
     }
-    await db.query(
-      `UPDATE company_hiring_plans SET status = 'applied', applied_at = now(), decided_at = COALESCE(decided_at, now()) WHERE id = $1`,
-      [planId],
-    );
+    // Tuyển dụng thành công: không lưu trữ phiên gợi ý lâu dài (ứng viên còn lại cũng bị xóa cùng kế hoạch)
+    if (hired > 0) {
+      await db.query(`DELETE FROM company_hiring_plans WHERE id = $1`, [planId]);
+    }
     return hired;
   }
 

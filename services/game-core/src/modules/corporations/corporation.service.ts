@@ -865,8 +865,7 @@ export class CorporationService {
     if (company.ownerCharacterId !== character.id) {
       throw AppError.forbidden('Chỉ chủ sở hữu mới xem HR & kế toán.');
     }
-    const [plansRaw, staff, entries, totals, filings] = await Promise.all([
-      this.repository.listHiringPlans(companyId, db),
+    const [staff, entries, totals, filings] = await Promise.all([
       this.repository.listCompanyStaff(companyId, db),
       this.repository.listLedgerEntries(companyId, 100, db),
       this.repository.ledgerTotals(companyId, db),
@@ -874,7 +873,8 @@ export class CorporationService {
     ]);
     return {
       companyId,
-      plans: plansRaw.map((p) => this.mapHiringPlan(p)),
+      // Gợi ý AI là phiên tạm (hiển thị khi bấm Đề xuất), không lưu trữ lâu dài
+      plans: [],
       staff: staff.map((s: any) => ({
         id: s.id,
         fullName: s.fullName ?? s.full_name,
@@ -995,7 +995,7 @@ export class CorporationService {
     planId: string,
     candidateId: string,
     decision: 'approved' | 'rejected',
-  ): Promise<HiringPlanDto> {
+  ): Promise<HiringPlanDto | null> {
     return withTransaction(async (client) => {
       await this.assertOwner(client, userId, companyId);
       const plan = await this.repository.getHiringPlan(planId, client);
@@ -1003,12 +1003,15 @@ export class CorporationService {
       if (plan.status === 'applied') throw AppError.badRequest('Kế hoạch đã được áp dụng.');
       const ok = await this.repository.decideHiringCandidate(client, planId, candidateId, decision);
       if (!ok) throw AppError.notFound('Ứng viên');
+      if (decision === 'rejected') {
+        await this.repository.cleanupEmptyHiringPlan(client, planId);
+      }
       const updated = await this.repository.getHiringPlan(planId, client);
-      return this.mapHiringPlan(updated);
+      return updated ? this.mapHiringPlan(updated) : null;
     });
   }
 
-  async applyHiringPlan(userId: string, companyId: string, planId: string): Promise<HiringPlanDto> {
+  async applyHiringPlan(userId: string, companyId: string, planId: string): Promise<{ hired: number; plan: null }> {
     return withTransaction(async (client) => {
       const { company } = await this.assertOwner(client, userId, companyId);
       await this.requireActiveLicense(client, companyId);
@@ -1016,6 +1019,9 @@ export class CorporationService {
       if (!plan || plan.companyId !== companyId) throw AppError.notFound('Kế hoạch tuyển dụng');
       if (plan.status === 'applied') throw AppError.badRequest('Kế hoạch đã được áp dụng.');
       const hired = await this.repository.applyHiringPlan(client, planId);
+      if (hired <= 0) {
+        throw AppError.badRequest('Chưa có ứng viên nào được duyệt để tuyển. Hãy duyệt ít nhất một ứng viên rồi bấm "Áp dụng tuyển".');
+      }
       await notify(client, {
         userId,
         kind: 'company',
@@ -1023,8 +1029,17 @@ export class CorporationService {
         body: `Đã tuyển ${hired} ứng viên đã duyệt cho "${company.name}".`,
         payload: { companyId, planId, hired },
       });
-      const updated = await this.repository.getHiringPlan(planId, client);
-      return this.mapHiringPlan(updated);
+      // Phiên gợi ý bị xóa sau khi tuyển thành công (không lưu trữ lâu dài)
+      return { hired, plan: null };
+    });
+  }
+
+  async dismissHiringPlan(userId: string, companyId: string, planId: string): Promise<void> {
+    return withTransaction(async (client) => {
+      await this.assertOwner(client, userId, companyId);
+      const plan = await this.repository.getHiringPlan(planId, client);
+      if (!plan || plan.companyId !== companyId) throw AppError.notFound('Kế hoạch tuyển dụng');
+      await this.repository.deleteHiringPlan(client, planId);
     });
   }
 

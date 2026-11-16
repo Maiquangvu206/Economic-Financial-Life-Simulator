@@ -133,6 +133,12 @@ corporationRouter.post(
   asyncHandler(controller.applyHiringPlan),
 );
 
+/** Đóng/bỏ phiên gợi ý AI (không lưu trữ lâu dài). */
+corporationRouter.post(
+  '/:companyId/hiring-plans/:planId/dismiss',
+  asyncHandler(controller.dismissHiringPlan),
+);
+
 /** Sa thải nhân sự (AI-tuyển / company_staff). */
 corporationRouter.post('/:companyId/staff/:staffId/fire', asyncHandler(controller.fireStaff));
 

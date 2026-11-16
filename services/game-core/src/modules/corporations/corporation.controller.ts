@@ -152,14 +152,21 @@ export class CorporationController {
       candidateId,
       decision,
     );
-    res.status(200).json(plan);
+    res.status(200).json({ plan });
   };
 
   applyHiringPlan = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
     const { companyId, planId } = req.params as { companyId: string; planId: string };
-    const plan = await this.service.applyHiringPlan(userId, companyId, planId);
-    res.status(200).json(plan);
+    const result = await this.service.applyHiringPlan(userId, companyId, planId);
+    res.status(200).json(result);
+  };
+
+  dismissHiringPlan = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId, planId } = req.params as { companyId: string; planId: string };
+    await this.service.dismissHiringPlan(userId, companyId, planId);
+    res.status(204).end();
   };
 
   fireStaff = async (req: Request, res: Response): Promise<void> => {
