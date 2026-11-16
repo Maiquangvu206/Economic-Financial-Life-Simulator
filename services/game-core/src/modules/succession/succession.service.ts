@@ -138,11 +138,16 @@ export class SuccessionService {
         const birthplace = '001';
         const cccd = await this.uniqueCccd(client, birthplace, 18);
         const accountNumber = await this.uniqueAccountNumber(client);
+        const gs = await (client as any).query(`SELECT current_year, current_day FROM game_state WHERE id = 1`);
+        const currentYear = Number(gs.rows[0]?.current_year ?? 2000);
+        const currentDay = Number(gs.rows[0]?.current_day ?? 0);
+        const birthYear = currentYear - 18;
+        const birthDay = ((Math.floor(currentDay) % 360) + 360) % 360;
         const created = await (client as any).query(
-          `INSERT INTO characters (id,user_id,full_name,account_number,cccd,birthplace,age,health_energy,cash_minor,credit_score,heat_level,is_alive,marital_status,location_x,location_y)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 18, 100, 500000, 650, 0, true, 'single', 0, 2)
+          `INSERT INTO characters (id,user_id,full_name,account_number,cccd,birthplace,age,health_energy,cash_minor,credit_score,heat_level,is_alive,marital_status,location_x,location_y,birth_game_year,birth_game_day)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 18, 100, 500000, 650, 0, true, 'single', 0, 2, $6, $7)
            RETURNING id`,
-          [userId, fullName, accountNumber, cccd, birthplace],
+          [userId, fullName, accountNumber, cccd, birthplace, birthYear, birthDay],
         );
         activeCharacterId = created.rows[0]!.id;
       }

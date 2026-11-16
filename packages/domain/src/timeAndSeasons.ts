@@ -105,6 +105,33 @@ export const GAME_TICK_INTERVAL_MS_DEFAULT = 60_000;
 export const GAME_MS_PER_DAY = GAME_TICK_INTERVAL_MS_DEFAULT;
 export const GAME_MS_PER_MONTH = GAME_DAYS_PER_MONTH * GAME_MS_PER_DAY; // 30 phút thực = 1 tháng game
 
+/** Tính tuổi (năm) từ mốc sinh trong thời gian game. */
+export function computeGameAge(params: {
+  birthYear: number;
+  birthDayOfYear: number; // 0-359
+  currentYear: number;
+  currentDayOfYear: number; // 0-359
+}): number {
+  const birthDay = ((Math.floor(params.birthDayOfYear) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
+  const currentDay = ((Math.floor(params.currentDayOfYear) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
+  let age = Math.floor(params.currentYear) - Math.floor(params.birthYear);
+  if (currentDay < birthDay) age -= 1;
+  return Math.max(0, age);
+}
+
+/** Tính mốc sinh trong thời gian game từ tuổi khởi tạo tại thời điểm hiện tại. */
+export function birthGameTimeForAge(params: {
+  age: number;
+  currentYear: number;
+  currentDayOfYear: number; // 0-359
+}): { birthYear: number; birthDayOfYear: number } {
+  const currentDay = ((Math.floor(params.currentDayOfYear) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
+  return {
+    birthYear: Math.floor(params.currentYear) - Math.max(0, Math.floor(params.age)),
+    birthDayOfYear: currentDay,
+  };
+}
+
 export function gameDaysToMs(days: number): number {
   return Math.max(0, Math.round(days)) * GAME_MS_PER_DAY;
 }

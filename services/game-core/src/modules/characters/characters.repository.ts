@@ -194,13 +194,27 @@ export class CharactersRepository {
       accountNumber: string;
       age?: number;
       cashMinor?: number;
+      birthGameYear?: number | null;
+      birthGameDay?: number | null;
     },
   ): Promise<CharacterRow> {
+    const age = input.age ?? 18;
+    let birthGameYear = input.birthGameYear ?? null;
+    let birthGameDay = input.birthGameDay ?? null;
+    if (birthGameYear == null || birthGameDay == null) {
+      const gs = await client.query<{ current_year: string; current_day: string }>(
+        `SELECT current_year, current_day FROM game_state WHERE id = 1`,
+      );
+      const currentYear = Number(gs.rows[0]?.current_year ?? 2000);
+      const currentDay = Number(gs.rows[0]?.current_day ?? 0);
+      birthGameYear = currentYear - age;
+      birthGameDay = ((Math.floor(currentDay) % 360) + 360) % 360;
+    }
     const result = await client.query<CharacterRow>(
       `INSERT INTO characters
          (id, user_id, full_name, account_number, cccd, birthplace, age, health_energy, cash_minor,
-          credit_score, heat_level, is_alive, marital_status, location_x, location_y)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $8, 100, $9, 650, 0, true, 'single', $6, $7)
+          credit_score, heat_level, is_alive, marital_status, location_x, location_y, birth_game_year, birth_game_day)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $8, 100, $9, 650, 0, true, 'single', $6, $7, $10, $11)
        RETURNING id, user_id, full_name, account_number, cccd, birthplace, NULL::text AS birthplace_name,
                  age, health_energy, cash_minor, credit_score, heat_level, is_alive,
                  marital_status, spouse_id, location_x, location_y, created_at`,
@@ -212,8 +226,10 @@ export class CharactersRepository {
         input.birthplace,
         input.locationX,
         input.locationY,
-        input.age ?? 18,
+        age,
         input.cashMinor ?? 500000,
+        birthGameYear,
+        birthGameDay,
       ],
     );
     return result.rows[0]!;

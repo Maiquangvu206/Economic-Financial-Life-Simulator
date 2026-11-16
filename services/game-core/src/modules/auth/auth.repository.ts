@@ -179,12 +179,19 @@ export class AuthRepository {
       const cashMinor = role === 'admin' ? 1_000_000_000_000 : role === 'moderator' ? 500_000_000_000 : 500_000;
       const creditScore = role === 'player' ? 650 : 800;
 
+      const gs = await client.query<{ current_year: string; current_day: string }>(
+        `SELECT current_year, current_day FROM game_state WHERE id = 1`,
+      );
+      const currentYear = Number(gs.rows[0]?.current_year ?? 2000);
+      const currentDay = Number(gs.rows[0]?.current_day ?? 0);
+      const birthYear = currentYear - 18;
+      const birthDay = ((Math.floor(currentDay) % 360) + 360) % 360;
       await client.query(
         `INSERT INTO characters
            (id, user_id, full_name, account_number, cccd, birthplace, age, health_energy, cash_minor, credit_score, heat_level,
-            marital_status, location_x, location_y, is_alive)
-         VALUES ($1, $2, $3, $4, $5, $6, 18, 100, $7, $8, 0, 'single', 12, 7, true)`,
-        [characterId, userId, input.fullName, accountNumber, cccd, birthplace, cashMinor, creditScore],
+            marital_status, location_x, location_y, is_alive, birth_game_year, birth_game_day)
+         VALUES ($1, $2, $3, $4, $5, $6, 18, 100, $7, $8, 0, 'single', 12, 7, true, $9, $10)`,
+        [characterId, userId, input.fullName, accountNumber, cccd, birthplace, cashMinor, creditScore, birthYear, birthDay],
       );
 
       await enqueueDomainEvent(client, {

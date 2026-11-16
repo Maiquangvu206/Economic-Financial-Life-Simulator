@@ -1,4 +1,4 @@
-import { generateCccd, provinceByCode, PROVINCES_34, maskCccd } from '@efls/domain';
+import { birthGameTimeForAge, generateCccd, provinceByCode, PROVINCES_34, maskCccd } from '@efls/domain';
 import type { AccountTier, CharacterDto, ProvinceDto, CreateCharacterRequest, ResolveCccdResponse, EligibleSuccessorDto } from '@efls/contracts';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction } from '../../shared/db/tx.js';
@@ -130,6 +130,12 @@ export class CharactersService {
       const anchor = provinceAnchor(birthplaceCode);
       const cccd = await this.uniqueCccd(client, birthplaceCode, 18);
       const accountNumber = await this.uniqueAccountNumber(client);
+      const gs = await client.query<{ current_year: string; current_day: string }>(
+        `SELECT current_year, current_day FROM game_state WHERE id = 1`,
+      );
+      const currentYear = Number(gs.rows[0]?.current_year ?? 2000);
+      const currentDay = Number(gs.rows[0]?.current_day ?? 0);
+      const birth = birthGameTimeForAge({ age: 18, currentYear, currentDayOfYear: currentDay });
       const created = await this.repository.createCharacter(client, {
         userId,
         fullName: input.fullName,
@@ -140,6 +146,8 @@ export class CharactersService {
         accountNumber,
         age: 18,
         cashMinor: 500000,
+        birthGameYear: birth.birthYear,
+        birthGameDay: birth.birthDayOfYear,
       });
       created.birthplace_name = province.name;
       const thresholds = await this.repository.getAccountTierThresholds(client);

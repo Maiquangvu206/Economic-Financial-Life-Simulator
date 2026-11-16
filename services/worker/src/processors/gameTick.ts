@@ -4,7 +4,7 @@ import { enqueueDomainEvent } from '../outboxEvents.js';
 import { publishClient } from '../publisher.js';
 import { env } from '../config/env.js';
 import { Rooms } from '@efls/contracts';
-import { accrueSimpleInterest, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR, normalizeSeasonRanges, resolveSeasonEffects } from '@efls/domain';
+import { accrueSimpleInterest, computeGameAge, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR, normalizeSeasonRanges, resolveSeasonEffects } from '@efls/domain';
 
 export interface GameTickResult {
   tick: number;
@@ -70,17 +70,34 @@ export async function processGameTick(): Promise<GameTickResult> {
       age: number;
       health_energy: number;
       death_age: number | null;
+      birth_game_year: number | null;
+      birth_game_day: number | null;
       is_alive: boolean | null;
-    }>(`SELECT id, age, health_energy, death_age, is_alive FROM characters WHERE COALESCE(is_alive,true)=true`);
+    }>(
+      `SELECT id, age, health_energy, death_age, birth_game_year, birth_game_day, is_alive
+       FROM characters WHERE COALESCE(is_alive,true)=true`,
+    );
 
     for (const c of characters.rows) {
-      let nextAge = c.age + (nextDay === 0 ? 1 : 0);
+      // Tuổi tính theo thời gian game hệ thống (1 năm = 360 ngày), tự tăng kể cả khi trước đó bỏ lỡ tick/offline.
+      let nextAge: number;
+      if (c.birth_game_year != null && c.birth_game_day != null) {
+        nextAge = computeGameAge({
+          birthYear: Number(c.birth_game_year),
+          birthDayOfYear: Number(c.birth_game_day),
+          currentYear: nextYear,
+          currentDayOfYear: nextDay,
+        });
+      } else {
+        // Fallback tương thích dữ liệu cũ: tăng 1 tuổi mỗi lần qua năm game.
+        nextAge = Number(c.age ?? 0) + (nextDay === 0 ? 1 : 0);
+      }
       const deathAge = c.death_age != null ? Number(c.death_age) : null;
       if (deathAge != null && nextAge >= deathAge) {
         nextAge = deathAge;
       }
-      // Tiêu hao thể lực chịu hiệu ứng mùa (seasonEffects.energyPct)
-      const nextHealth = Math.max(0, Math.min(100, c.health_energy + (nextDay === 0 ? -2 * seasonEffects.energy : 0)));
+      // Tiêu hao thể lực chịu hiệu ứng mùa (seasonEffects.energyPct), áp dụng theo năm game.
+      const nextHealth = Math.max(0, Math.min(100, Number(c.health_energy) + (nextDay === 0 ? -2 * seasonEffects.energy : 0)));
 
       await client.query(
         `UPDATE characters SET age = $1, health_energy = $2, updated_at = now() WHERE id = $3`,
@@ -279,15 +296,24 @@ export async function processGameTick(): Promise<GameTickResult> {
 
 
     // ---- 8. Death check (health <= 0, đạt tuổi thọ tối đa do admin cấu hình, hoặc rủi ro tuổi cao) ----
-    const deathCandidates = await client.query<{ id: string; user_id: string | null; age: number; health_energy: number; death_age: number | null; is_alive: boolean }>(
-      `SELECT id, user_id, age, health_energy, death_age, COALESCE(is_alive,true) as is_alive FROM characters WHERE COALESCE(is_alive,true)=true`,
+    const deathCandidates = await client.query<{ id: string; user_id: string | null; age: number; health_energy: number; death_age: number | null; birth_game_year: number | null; birth_game_day: number | null; is_alive: boolean }>(
+      `SELECT id, user_id, age, health_energy, death_age, birth_game_year, birth_game_day, COALESCE(is_alive,true) as is_alive FROM characters WHERE COALESCE(is_alive,true)=true`,
     );
     for (const ch of deathCandidates.rows) {
       let reason: string | null = null;
+      const effectiveAge =
+        ch.birth_game_year != null && ch.birth_game_day != null
+          ? computeGameAge({
+              birthYear: Number(ch.birth_game_year),
+              birthDayOfYear: Number(ch.birth_game_day),
+              currentYear: nextYear,
+              currentDayOfYear: nextDay,
+            })
+          : Number(ch.age);
       if (Number(ch.health_energy) <= 0) reason = 'Sức khỏe cạn kiệt';
-      else if (ch.death_age != null && Number(ch.age) >= Number(ch.death_age)) reason = 'Đạt tuổi thọ tối đa (do quản trị cấu hình)';
-      else if (Number(ch.age) >= 65) {
-        const pDeath = Math.min(0.95, Math.pow(1.12, Number(ch.age) - 65) * 0.02);
+      else if (ch.death_age != null && effectiveAge >= Number(ch.death_age)) reason = 'Đạt tuổi thọ tối đa (do quản trị cấu hình)';
+      else if (effectiveAge >= 65) {
+        const pDeath = Math.min(0.95, Math.pow(1.12, effectiveAge - 65) * 0.02);
         if (Math.random() < pDeath) reason = 'Tuổi cao đột tử';
       }
       if (!reason) continue;
