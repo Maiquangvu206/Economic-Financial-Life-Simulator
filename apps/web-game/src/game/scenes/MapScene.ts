@@ -20,8 +20,8 @@ export class MapScene extends Phaser.Scene {
   private nodePosMap: Map<string, { x: number; y: number }> = new Map();
   private zoneMap: Map<string, ZoneType> = new Map();
 
-  private cols = 40;
-  private rows = 24;
+  private cols = 50;
+  private rows = 38;
 
   private mapData: MapData | null = null;
   private mapLabel: string | null = null;

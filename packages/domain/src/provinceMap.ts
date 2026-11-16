@@ -35,8 +35,8 @@ export interface ProvinceMap {
   roads: ProvinceMapRoad[];
 }
 
-export const PROVINCE_MAP_COLS = 40;
-export const PROVINCE_MAP_ROWS = 28;
+export const PROVINCE_MAP_COLS = 50;
+export const PROVINCE_MAP_ROWS = 38;
 
 function hashSeed(code: string): number {
   let h = 2166136261;
@@ -90,8 +90,8 @@ function makeNoise(
 }
 
 /** Sinh bản đồ tỉnh (deterministic) — mỗi tỉnh có địa lý riêng:
- *  tâm đô thị lệch, bán kính CBD, hồ nước/rừng, hướng cảng biển và trục đường khác nhau
- *  (không cần bản đồ thật, chỉ cần khác biệt rõ rệt giữa các tỉnh).
+ *  tâm đô thị lệch, bán kính CBD, hồ/rừng, hướng cảng biển và trục đường khác nhau.
+ *  Kích thước 50x38, tỉ lệ vùng được tái cân bằng nhưng vẫn khác biệt theo tỉnh.
  */
 export function generateProvinceMap(code: string): ProvinceMap {
   const province = provinceByCode(code);
@@ -104,15 +104,16 @@ export function generateProvinceMap(code: string): ProvinceMap {
   const shapeGrid = provinceShapeGrid(code);
   const baseCx = PROVINCE_MAP_COLS / 2;
   const baseCy = PROVINCE_MAP_ROWS / 2;
-  // Địa lý riêng từng tỉnh: tâm đô thị lệch, hình dạng & bán kính CBD khác nhau.
-  const cx = baseCx + (rand() - 0.5) * 10;
-  const cy = baseCy + (rand() - 0.5) * 8;
-  const rx = 13 + rand() * 7;
-  const ry = 8 + rand() * 5;
-  const cbdR = 0.12 + rand() * 0.13;
-  const parkT = 0.68 + rand() * 0.18;
-  const civicT = 0.45 + rand() * 0.2;
-  const industrialT = 0.5 + rand() * 0.2;
+  // Địa lý riêng từng tỉnh: tâm đô thị lệch, hình dạng & bán kính CBD khác nhau (scale theo 50x38).
+  const cx = baseCx + (rand() - 0.5) * 12;
+  const cy = baseCy + (rand() - 0.5) * 10;
+  const rx = 16 + rand() * 8;
+  const ry = 11 + rand() * 6;
+  const cbdR = 0.11 + rand() * 0.07; // CBD gọn, rõ ràng
+  // Ngưỡng tái cân bằng vùng (vẫn dao động theo tỉnh để bản đồ khác nhau)
+  const parkT = 0.6 + rand() * 0.12;
+  const civicT = 0.34 + rand() * 0.16;
+  const industrialT = 0.58 + rand() * 0.12;
   const coastal = code === '079' || province?.isCity === true || noise2(baseCx, baseCy) > 0.45;
   // Hướng cảng biển riêng từng tỉnh: 0 đông, 1 tây, 2 bắc, 3 nam.
   const portSide = Math.floor(rand() * 4);
@@ -121,30 +122,33 @@ export function generateProvinceMap(code: string): ProvinceMap {
   const lakeCount = Math.floor(rand() * 3);
   for (let i = 0; i < lakeCount; i += 1) {
     lakes.push({
-      lx: 4 + rand() * (PROVINCE_MAP_COLS - 8),
-      ly: 3 + rand() * (PROVINCE_MAP_ROWS - 6),
-      lr: 1 + rand() * 2.5,
+      lx: 5 + rand() * (PROVINCE_MAP_COLS - 10),
+      ly: 4 + rand() * (PROVINCE_MAP_ROWS - 8),
+      lr: 1.2 + rand() * 2.8,
     });
   }
-  // Trục đường riêng: 2 hàng + 2 cột ngẫu nhiên (không nhất thiết giữa bản đồ).
+  // Trục đường riêng: 2-3 hàng + 2-3 cột ngẫu nhiên (không nhất thiết giữa bản đồ).
   const roadYs = new Set<number>([
-    Math.floor(rand() * PROVINCE_MAP_ROWS),
+    6 + Math.floor(rand() * 8),
+    16 + Math.floor(rand() * 8),
     Math.floor(rand() * PROVINCE_MAP_ROWS),
   ]);
   const roadXs = new Set<number>([
-    Math.floor(rand() * PROVINCE_MAP_COLS),
+    8 + Math.floor(rand() * 10),
+    28 + Math.floor(rand() * 10),
     Math.floor(rand() * PROVINCE_MAP_COLS),
   ]);
 
   function isPort(x: number, y: number, dist: number): boolean {
-    if (!coastal || dist < 0.6) return false;
-    if (portSide === 0) return x > cx + 2;
-    if (portSide === 1) return x < cx - 2;
-    if (portSide === 2) return y < cy - 1;
-    return y > cy + 1;
+    if (!coastal || dist < 0.58) return false;
+    if (portSide === 0) return x > cx + 3;
+    if (portSide === 1) return x < cx - 3;
+    if (portSide === 2) return y < cy - 2;
+    return y > cy + 2;
   }
 
   const nodes: ProvinceMapNode[] = [];
+  const idx = (x: number, y: number) => y * PROVINCE_MAP_COLS + x;
   for (let y = 0; y < PROVINCE_MAP_ROWS; y += 1) {
     for (let x = 0; x < PROVINCE_MAP_COLS; x += 1) {
       const dx = (x - cx) / rx;
@@ -154,70 +158,57 @@ export function generateProvinceMap(code: string): ProvinceMap {
       // Hồ nội địa: trong vòng hồ & có hạt giống → nước (kể cả khi trong địa giới).
       const inLake = lakes.some((l) => {
         const d = Math.sqrt((x - l.lx) ** 2 + (y - l.ly) ** 2);
-        return d < l.lr && noise2(x, y) > 0.35;
+        return d < l.lr && noise2(x, y) > 0.38;
       });
       let zone: ProvinceMapZone;
       if (inLake) {
         zone = 'water';
       } else {
-        // Địa giới thật: đất = trong mặt nạ GADM; ngoài = nước (ánh xạ tỷ lệ sang 40x28).
+        // Địa giới thật: đất = trong mặt nạ GADM; ngoài = nước (ánh xạ tỷ lệ sang 50x38).
         const sx = Math.min(31, Math.floor((x / PROVINCE_MAP_COLS) * 32));
         const sy = Math.min(19, Math.floor((y / PROVINCE_MAP_ROWS) * 20));
         const inShape = shapeGrid ? shapeGrid[sy * 32 + sx] : null;
-        if (shapeGrid) {
-          if (!inShape) {
-            zone = 'water';
-          } else {
-            if (edge < cbdR) zone = 'commercial';
-            else if (noise2(x, y) > parkT) zone = 'park';
-            else if (edge < 0.45) zone = 'residential';
-            else if (edge < 0.62 && noise2(x, y) > civicT) zone = 'civic';
-            else if (edge < 0.8) zone = 'residential';
-            else if (isPort(x, y, edge)) zone = 'port';
-            else if (noise(x, y) > industrialT) zone = 'industrial';
-            else zone = 'slum';
-            if (coastal && y < 2 && x < 6) zone = 'water';
-          }
+        const inside = shapeGrid ? !!inShape : edge <= (0.98 + (n - 0.5) * 0.24);
+        if (!inside) {
+          zone = 'water';
         } else {
-          // Fallback ellipse (chưa có dữ liệu shape)
-          const boundary = 0.98 + (n - 0.5) * 0.28;
-          if (edge > boundary) {
-            zone = 'water';
-          } else {
-            if (edge < cbdR) zone = 'commercial';
-            else if (noise2(x, y) > parkT) zone = 'park';
-            else if (edge < 0.45) zone = 'residential';
-            else if (edge < 0.62 && noise2(x, y) > civicT) zone = 'civic';
-            else if (edge < 0.8) zone = 'residential';
-            else if (isPort(x, y, edge)) zone = 'port';
-            else if (noise(x, y) > industrialT) zone = 'industrial';
-            else zone = 'slum';
-            if (coastal && y < 2 && x < 6) zone = 'water';
-          }
+          // Phân bổ vùng tái cân bằng: thương mại lõi, vành dân cư, civic/công viên xen kẽ,
+          // công nghiệp theo cụm rìa, khu cảng (nếu ven biển), slum hạn chế.
+          if (edge < cbdR) zone = 'commercial';
+          else if (edge < 0.22 && noise2(x, y) > 0.55) zone = 'civic';
+          else if (edge < 0.4) zone = 'residential';
+          else if (noise2(x, y) > parkT) zone = 'park';
+          else if (edge < 0.58 && n > civicT) zone = 'civic';
+          else if (edge < 0.72) zone = 'residential';
+          else if (isPort(x, y, edge) && noise(x, y) > 0.35) zone = 'port';
+          else if (n > industrialT) zone = 'industrial';
+          else if (edge > 0.82 && noise2(x, y) < 0.28) zone = 'slum';
+          else zone = 'residential';
+          // Góc ven biển giữ một dải nước nhỏ (đa dạng theo tỉnh)
+          if (coastal && y < 2 && x < 7 && noise2(x, y) > 0.3) zone = 'water';
         }
       }
-      nodes.push({
-        x,
-        y,
-        zone,
-        name: `Ô [${x},${y}] ${name}`,
-      });
+      nodes.push({ x, y, zone, name: `Ô [${x},${y}] ${name}` });
     }
   }
 
   // Đường chính: theo các trục riêng của tỉnh (hàng ngang + cột dọc ngẫu nhiên).
   const roads: ProvinceMapRoad[] = [];
-  for (const y of roadYs) {
+  const byCoord = new Map<string, ProvinceMapNode>();
+  for (const n of nodes) byCoord.set(`${n.x}-${n.y}`, n);
+  for (const ryLine of roadYs) {
+    if (ryLine < 0 || ryLine >= PROVINCE_MAP_ROWS) continue;
     for (let x = 0; x < PROVINCE_MAP_COLS; x += 1) {
-      if (nodes.find((n) => n.x === x && n.y === y)?.zone !== 'water') {
-        roads.push({ x, y, roadType: x % 8 === 0 ? 'highway' : 'arterial' });
+      if (byCoord.get(`${x}-${ryLine}`)?.zone !== 'water') {
+        roads.push({ x, y: ryLine, roadType: x % 10 === 0 ? 'highway' : 'arterial' });
       }
     }
   }
-  for (const x of roadXs) {
+  for (const rxLine of roadXs) {
+    if (rxLine < 0 || rxLine >= PROVINCE_MAP_COLS) continue;
     for (let y = 0; y < PROVINCE_MAP_ROWS; y += 1) {
-      if (nodes.find((n) => n.x === x && n.y === y)?.zone !== 'water') {
-        roads.push({ x, y, roadType: y % 5 === 0 ? 'arterial' : 'local' });
+      if (byCoord.get(`${rxLine}-${y}`)?.zone !== 'water') {
+        roads.push({ x: rxLine, y, roadType: y % 7 === 0 ? 'arterial' : 'local' });
       }
     }
   }

@@ -171,9 +171,9 @@ describe('province map', () => {
   it('generates deterministic boundary with water outside', () => {
     const a = generateProvinceMap('079');
     const b = generateProvinceMap('079');
-    expect(a.nodes).toHaveLength(40 * 28);
-    expect(a.cols).toBe(40);
-    expect(a.rows).toBe(28);
+    expect(a.nodes).toHaveLength(50 * 38);
+    expect(a.cols).toBe(50);
+    expect(a.rows).toBe(38);
     expect(a.nodes).toEqual(b.nodes);
     const water = a.nodes.filter((n) => n.zone === 'water');
     expect(water.length).toBeGreaterThan(50);
