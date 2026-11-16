@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@efls/ui';
 import type {
@@ -76,7 +76,13 @@ export function RealEstatePage() {
   const [bidTarget, setBidTarget] = useState<AuctionDto | null>(null);
   const [bidAmount, setBidAmount] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const { toast } = useToast();
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const {
     data: overview,
@@ -253,6 +259,13 @@ export function RealEstatePage() {
 
   const provinceLabel = (p: UnifiedProperty) =>
     p.__provinceName || provinceNameByCode.get(p.__provinceCode ?? '') || p.province || '—';
+
+  const auctionTimeLeftLabel = (endsAt: string) => {
+    const sec = Math.max(0, Math.floor((new Date(endsAt).getTime() - now) / 1000));
+    const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+    const ss = String(sec % 60).padStart(2, '0');
+    return sec > 0 ? `${mm}:${ss}` : 'Đang chốt phiên';
+  };
 
   async function respondOfferUnified(offerId: string, action: 'accept' | 'reject' | 'cancel', property: UnifiedProperty) {
     if (property.__source === 'province-land') {
@@ -639,7 +652,13 @@ export function RealEstatePage() {
                   <span className="font-semibold text-slate-800">{a.propertyName}</span>
                   <Badge variant="warning">Đang đấu giá phát mãi</Badge>
                 </div>
-                <div className="mt-1 text-xs text-slate-500">Người bán: {a.sellerName} · Kết thúc: {new Date(a.endsAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Người bán: {a.sellerName} · Thời lượng: <b>3 ngày game</b> (3 phút thực)
+                </div>
+                <div className="mt-1 text-xs text-slate-600">
+                  Còn lại: <span className="font-mono font-semibold text-rose-700">{auctionTimeLeftLabel(a.endsAt)}</span>
+                  {' · '}Kết thúc (thực): {new Date(a.endsAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="font-mono text-lg font-bold text-emerald-700">{formatMoney(a.currentBid.amount)}</span>
                   <span className="text-xs text-slate-500">(khởi điểm {formatMoney(a.startingPrice.amount)})</span>
@@ -723,6 +742,8 @@ export function RealEstatePage() {
           <div className="space-y-3">
             <div className="flex justify-between text-sm"><span className="text-slate-600">Tài sản</span><span className="font-medium">{bidTarget.propertyName}</span></div>
             <div className="flex justify-between text-sm"><span className="text-slate-600">Giá hiện tại</span><span className="font-mono text-emerald-700">{formatMoney(bidTarget.currentBid.amount)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-slate-600">Còn lại / Kết thúc</span><span className="font-mono text-rose-700">{auctionTimeLeftLabel(bidTarget.endsAt)} · {new Date(bidTarget.endsAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></div>
+            <div className="text-[11px] text-slate-500">Thời lượng phiên: 3 ngày game (3 phút thực).</div>
             <GameInput label="Giá bạn đặt (VNĐ)" type="number" value={bidAmount} onChange={(e) => setBidAmount(e.target.value)} />
             <p className="text-[11px] text-slate-500">Tiền được khóa trong escrow; nếu bị vượt giá sẽ hoàn trả. Cần đủ số dư để đặt giá.</p>
             <GameButton variant="primary" loading={isBusy(bidTarget.id)} disabled={isBusy(bidTarget.id)} onClick={() => { const v = Math.round(Number(bidAmount)); if (!Number.isFinite(v) || v <= bidTarget.currentBid.amount) { toast({ title: 'Giá đặt không hợp lệ', description: `Giá phải lớn hơn giá hiện tại (${formatMoney(bidTarget.currentBid.amount)}).`, variant: 'error' }); return; } runAction(bidTarget.id, async () => { await apiRequest(`/api/v1/auctions/${bidTarget.id}/bid`, { method: 'POST', body: JSON.stringify({ auctionId: bidTarget.id, amount: { amount: v, currency: 'VND' } }) }); setBidTarget(null); }, `Đã đặt giá ${formatMoney(v)} cho "${bidTarget.propertyName}". Tiền đã được giữ trong escrow; nếu bị vượt giá sẽ được hoàn trả.`); }}>Đặt giá</GameButton>

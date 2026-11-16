@@ -966,9 +966,15 @@ export function CityPage() {
                                                                             Phiên đang mở
                                                                           </span>
                                                                           <span className="rounded-full bg-rose-50 border border-rose-200 px-2.5 py-0.5 font-mono text-xs font-bold text-rose-700">
-                                                                            {activeAuction ? `⏱ ${countdownLabel}` : '—'}
+                                                                            {activeAuction ? (auctionCountdown > 0 ? `⏱ Còn ${countdownLabel}` : '⏱ Đang chốt phiên') : '—'}
                                                                           </span>
                                                                         </div>
+                                                                        {activeAuction && (
+                                                                          <div className="mt-2 text-[11px] text-slate-500">
+                                                                            Thời lượng phiên: <b>3 ngày game</b> (3 phút thực).{' '}
+                                                                            Kết thúc (thực): {new Date(activeAuction.endsAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                                          </div>
+                                                                        )}
 
                                                                         {activeAuction ? (
                                                                           <div className="mt-3 space-y-2.5 text-xs">
