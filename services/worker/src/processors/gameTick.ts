@@ -203,6 +203,20 @@ export async function processGameTick(): Promise<GameTickResult> {
     const macro = (gameState.rows[0]?.macro && typeof gameState.rows[0].macro === 'object') ? { ...(gameState.rows[0].macro as any) } : {};
     const normalizedCurrentDay = ((Math.floor(currentDayRaw) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
 
+    if (macro?.maintenance?.enabled === true) {
+      await client.query('COMMIT');
+      logger.info({ tick }, 'Game tick skipped: maintenance enabled');
+      return {
+        tick,
+        inGameYear: Math.max(GAME_START_YEAR, Math.floor(currentYear)),
+        inGameMonth: Math.floor(normalizedCurrentDay / 30) + 1,
+        inGameDay: (normalizedCurrentDay % 30) + 1,
+        dayOfYear: normalizedCurrentDay,
+        season: String(gameState.rows[0]?.season ?? 'spring'),
+        applied: ['maintenance: paused'],
+      };
+    }
+
     let nextDay = normalizedCurrentDay + 1;
     let nextYear = currentYear;
     if (nextDay >= GAME_DAYS_PER_YEAR) {

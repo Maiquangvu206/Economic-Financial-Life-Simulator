@@ -458,6 +458,7 @@ export async function getGameConfig(req: Request, res: Response): Promise<void> 
     ...time,
     otRatePercent: Number((macro as any).otRatePercent ?? 300),
     restrictionContact: normalizeRestrictionContact((macro as any).restrictionContact),
+    maintenance: normalizeMaintenance((macro as any).maintenance),
     macro,
   });
 }
@@ -472,6 +473,7 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
     seasonEffects?: Record<string, { productivityPct: number; energyPct: number; taxPct: number; revenuePct: number }>;
     macro?: Record<string, unknown>;
     restrictionContact?: Record<string, unknown>;
+    maintenance?: Record<string, unknown>;
   };
   const existing = await pool.query(`SELECT macro FROM game_state WHERE id = 1`);
   const prevMacro = (existing.rows[0]?.macro && typeof existing.rows[0].macro === 'object') ? (existing.rows[0].macro as any) : {};
@@ -486,6 +488,13 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
     nextMacro.restrictionContact = {
       ...normalizeRestrictionContact(prevMacro.restrictionContact),
       ...body.restrictionContact,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  if (body.maintenance != null) {
+    nextMacro.maintenance = {
+      ...normalizeMaintenance(prevMacro.maintenance),
+      ...body.maintenance,
       updatedAt: new Date().toISOString(),
     };
   }
@@ -535,8 +544,17 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
     currentYear: body.currentYear ?? null,
     otRatePercent: (nextMacro as any).otRatePercent ?? null,
     restrictionContact: body.restrictionContact ? true : null,
+    maintenance: body.maintenance != null ? normalizeMaintenance((nextMacro as any).maintenance) : null,
   });
-  await publishToAllUsers('notification', { kind: 'info', title: 'Cấu hình hệ thống đã cập nhật', body: 'Cấu hình khoảng thời gian mùa/liên hệ hỗ trợ đã được cập nhật bởi quản trị.', at: Date.now() });
+  const maintenanceEnabled = !!normalizeMaintenance((nextMacro as any).maintenance).enabled;
+  await publishToAllUsers('notification', {
+    kind: 'info',
+    title: maintenanceEnabled ? 'Hệ thống tạm dừng bảo trì' : 'Cấu hình hệ thống đã cập nhật',
+    body: maintenanceEnabled
+      ? 'Hệ thống đang tạm dừng để bảo trì/nâng cấp. Bạn có thể cần chờ đến khi hệ thống hoạt động lại.'
+      : 'Cấu hình hệ thống đã được cập nhật bởi quản trị.',
+    at: Date.now(),
+  });
   await getGameConfig(req, res);
 }
 
@@ -551,6 +569,17 @@ function normalizeRestrictionContact(raw: any) {
     zalo: String(d.zalo ?? '').slice(0, 200),
     discord: String(d.discord ?? '').slice(0, 200),
     other: String(d.other ?? '').slice(0, 500),
+    updatedAt: typeof d.updatedAt === 'string' ? d.updatedAt : undefined,
+  };
+}
+
+function normalizeMaintenance(raw: any) {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  return {
+    enabled: d.enabled === true,
+    title: String(d.title ?? 'Hệ thống đang bảo trì').slice(0, 200),
+    message: String(d.message ?? 'Hệ thống đang tạm dừng để nâng cấp hoặc sửa chữa. Vui lòng quay lại sau.').slice(0, 2000),
+    updatedAt: typeof d.updatedAt === 'string' ? d.updatedAt : undefined,
   };
 }
 
@@ -563,6 +592,7 @@ export async function getGameConfigPublic(_req: Request, res: Response): Promise
     ...time,
     otRatePercent: Number((macro as any).otRatePercent ?? 300),
     restrictionContact: normalizeRestrictionContact((macro as any).restrictionContact),
+    maintenance: normalizeMaintenance((macro as any).maintenance),
   });
 }
 

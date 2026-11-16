@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { to: '/industry-revenue', label: 'Doanh thu công ty (30 ngày)', icon: '🏭' },
   { to: '/stock-market-control', label: 'Điều chỉnh chứng khoán', icon: '📈' },
   { to: '/offline', label: 'Cấu hình Offline', icon: '🌙' },
-  { to: '/restriction', label: 'Hạn chế & Liên hệ', icon: '🚫' },
+  { to: '/restriction', label: 'Bảo trì & Hạn chế', icon: '🛠️' },
   { to: '/map-editor', label: 'Map Editor', icon: '🗺️' },
   { to: '/players', label: 'Người chơi', icon: '👥' },
   { to: '/ai-events', label: 'AI & Sự kiện', icon: '🤖' },

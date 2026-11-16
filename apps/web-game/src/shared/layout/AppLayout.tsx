@@ -164,6 +164,7 @@ export function AppLayout() {
     minute?: number;
     period?: 'dawn' | 'day' | 'dusk' | 'night';
     restrictionContact?: RestrictionContact;
+    maintenance?: { enabled?: boolean; title?: string; message?: string };
     seasonEffects?: Record<string, { productivityPct: number; energyPct: number; taxPct: number; revenuePct: number }>;
   }>({
     queryKey: ['game-config'],
@@ -171,6 +172,9 @@ export function AppLayout() {
     staleTime: 15000,
     refetchInterval: 30000,
   });
+
+  const maintenance = gameConfig?.maintenance;
+  const isMaintenance = !!maintenance?.enabled && user?.role === 'player';
 
   useEffect(() => {
     if (!gameConfig) return;
@@ -206,7 +210,7 @@ export function AppLayout() {
 
   // Xử lý offline khi quay lại (một lần mỗi phiên tải app): cập nhật mốc/recap và hiển thị nếu được bật
   useEffect(() => {
-    if (isRestricted) return;
+    if (isRestricted || isMaintenance) return;
     if (!me || offlineChecked) return;
     let cancelled = false;
     (async () => {
@@ -239,7 +243,7 @@ export function AppLayout() {
     return () => {
       cancelled = true;
     };
-  }, [me, offlineChecked, queryClient, navigate, location.pathname, isRestricted]);
+  }, [me, offlineChecked, queryClient, navigate, location.pathname, isRestricted, isMaintenance]);
 
   // Nhận thông báo & thời gian game realtime -> đồng bộ dữ liệu/toast/clock
   useEffect(() => {
@@ -304,12 +308,12 @@ export function AppLayout() {
 
   // Chuẩn hệ thống: 1 ngày trong game = 1 phút thực tế (24 phút game mỗi giây thực, đồng bộ từ server tick)
   useEffect(() => {
-    if (isPaused || isDead) return;
+    if (isPaused || isDead || isMaintenance) return;
     const interval = setInterval(() => {
       tickTime(24);
     }, 1000);
     return () => clearInterval(interval);
-  }, [isPaused, isDead, tickTime]);
+  }, [isPaused, isDead, isMaintenance, tickTime]);
 
   // Overlay pastel nhẹ thay đổi theo giờ trong ngày
   const ambientOverlayStyle = useMemo(() => {
@@ -361,6 +365,35 @@ export function AppLayout() {
           className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[1px] lg:hidden"
           onClick={() => setMenuOpen(false)}
         />
+      )}
+      {isMaintenance && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-3xl border border-amber-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-2xl">🛠️</div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-heading font-black text-slate-900">
+                  {maintenance?.title?.trim() || 'Hệ thống đang bảo trì'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
+                  {maintenance?.message?.trim() || 'Hệ thống đang tạm dừng để nâng cấp hoặc sửa chữa. Vui lòng quay lại sau.'}
+                </p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Trong thời gian này, các thao tác trong trò chơi sẽ tạm dừng để đảm bảo dữ liệu an toàn. Bạn có thể đăng xuất và quay lại sau.
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                Đăng xuất
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {isRestricted && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
@@ -646,7 +679,9 @@ export function AppLayout() {
 
         {/* Main */}
         <main className="w-full flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6">
-          {isRestricted ? (
+          {isMaintenance ? (
+            <div className="flex h-full items-center justify-center text-slate-500 text-sm">Hệ thống đang bảo trì. Vui lòng quay lại sau.</div>
+          ) : isRestricted ? (
             <div className="flex h-full items-center justify-center text-slate-500 text-sm">Tài khoản đang bị hạn chế. Vui lòng xem thông báo và liên hệ quản trị viên để được gỡ.</div>
           ) : isDead ? (
             <div className="flex h-full items-center justify-center text-slate-500">Nhân vật đã qua đời. Vui lòng hoàn tất kế thừa.</div>

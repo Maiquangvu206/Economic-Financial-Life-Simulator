@@ -174,6 +174,14 @@ export const RestrictionContactConfigSchema = z.object({
 });
 export type RestrictionContactConfig = z.infer<typeof RestrictionContactConfigSchema>;
 
+export const MaintenanceConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  title: z.string().max(200).default('Hệ thống đang bảo trì'),
+  message: z.string().max(2000).default('Hệ thống đang tạm dừng để nâng cấp hoặc sửa chữa. Vui lòng quay lại sau.'),
+  updatedAt: z.string().datetime().optional(),
+});
+export type MaintenanceConfig = z.infer<typeof MaintenanceConfigSchema>;
+
 export const SeasonRangeConfigSchema = z.object({
   season: z.enum(['spring', 'summer', 'autumn', 'winter']),
   startMonth: z.number().int().min(1).max(12),
@@ -207,6 +215,7 @@ export const UpdateGameConfigRequestSchema = z.object({
   seasonRanges: SeasonRangesConfigSchema.optional(),
   seasonEffects: SeasonEffectsConfigSchema.optional(),
   restrictionContact: RestrictionContactConfigSchema.partial().optional(),
+  maintenance: MaintenanceConfigSchema.partial().optional(),
 });
 export type UpdateGameConfigRequest = z.infer<typeof UpdateGameConfigRequestSchema>;
 
