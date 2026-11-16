@@ -82,7 +82,7 @@ export function AppLayout() {
   const {
     netWorth, cash, heatLevel, energy, year, month, day, hour, minute,
     isPaused, season, period, activeHoliday,
-    lastHolidayLetter, claimHolidayGift, dismissHolidayLetter, tickTime, setSeason, setGameState,
+    lastHolidayLetter, claimHolidayGift, dismissHolidayLetter, tickTime, setSeason, setGameState, syncServerTime,
   } = useGameStore();
   const queryClient = useQueryClient();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -136,19 +136,48 @@ export function AppLayout() {
     other?: string;
   };
   const { data: gameConfig } = useQuery<{
-    season: 'spring' | 'summer' | 'autumn' | 'winter';
-    currentDay: number;
-    currentYear: number;
+    season?: 'spring' | 'summer' | 'autumn' | 'winter';
+    currentDay?: number;
+    dayOfYear?: number;
+    currentYear?: number;
+    currentMonth?: number;
+    currentDayOfMonth?: number;
+    hour?: number;
+    minute?: number;
+    period?: 'dawn' | 'day' | 'dusk' | 'night';
     restrictionContact?: RestrictionContact;
   }>({
     queryKey: ['game-config'],
     queryFn: () => apiRequest('/api/v1/game-config'),
-    staleTime: 60000,
+    staleTime: 15000,
+    refetchInterval: 30000,
   });
 
   useEffect(() => {
-    if (gameConfig?.season) setSeason(gameConfig.season);
-  }, [gameConfig?.season, setSeason]);
+    if (!gameConfig) return;
+    syncServerTime({
+      currentYear: gameConfig.currentYear,
+      currentMonth: gameConfig.currentMonth,
+      currentDay: gameConfig.currentDay,
+      currentDayOfMonth: gameConfig.currentDayOfMonth,
+      dayOfYear: gameConfig.dayOfYear,
+      hour: gameConfig.hour,
+      minute: gameConfig.minute,
+      season: gameConfig.season,
+      period: gameConfig.period,
+    });
+  }, [
+    gameConfig?.currentYear,
+    gameConfig?.currentMonth,
+    gameConfig?.currentDay,
+    gameConfig?.currentDayOfMonth,
+    gameConfig?.dayOfYear,
+    gameConfig?.hour,
+    gameConfig?.minute,
+    gameConfig?.season,
+    gameConfig?.period,
+    syncServerTime,
+  ]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -191,7 +220,7 @@ export function AppLayout() {
     };
   }, [me, offlineChecked, queryClient, navigate, location.pathname, isRestricted]);
 
-  // Nhận thông báo realtime (broadcast/can thiệp admin/sự kiện vĩ mô) -> làm mới dữ liệu và hiển thị toast
+  // Nhận thông báo & thời gian game realtime -> đồng bộ dữ liệu/toast/clock
   useEffect(() => {
     const socket = getGameSocket();
     const onNotification = (payload: any) => {
@@ -223,11 +252,28 @@ export function AppLayout() {
         });
       }
     };
+    const onGameTime = (payload: any) => {
+      if (!payload) return;
+      syncServerTime({
+        currentYear: payload.currentYear,
+        currentMonth: payload.currentMonth,
+        currentDay: payload.currentDay ?? payload.dayOfYear,
+        currentDayOfMonth: payload.currentDayOfMonth,
+        dayOfYear: payload.dayOfYear,
+        hour: payload.hour ?? 0,
+        minute: payload.minute ?? 0,
+        season: payload.season,
+        period: payload.period,
+      });
+      void queryClient.invalidateQueries({ queryKey: ['game-config'] });
+    };
     socket.on('notification', onNotification as never);
+    (socket as any).on('game:time', onGameTime);
     return () => {
       socket.off('notification', onNotification as never);
+      (socket as any).off('game:time', onGameTime);
     };
-  }, [queryClient, clearSession, navigate]);
+  }, [queryClient, clearSession, navigate, syncServerTime]);
 
   const unreadCount = notifications.filter((n) => !n.readAt).length;
   const hudBroadcasts = useMemo(
@@ -235,7 +281,7 @@ export function AppLayout() {
     [broadcasts, dismissedBroadcastIds],
   );
 
-  // Thời gian game cố định: 1 ngày trong game = 1 phút thực tế (24 phút game mỗi giây thực)
+  // Chuẩn hệ thống: 1 ngày trong game = 1 phút thực tế (24 phút game mỗi giây thực, đồng bộ từ server tick)
   useEffect(() => {
     if (isPaused || isDead) return;
     const interval = setInterval(() => {

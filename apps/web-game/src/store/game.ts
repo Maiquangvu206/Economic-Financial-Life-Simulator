@@ -54,6 +54,17 @@ export interface GameState {
   dismissHolidayLetter: () => void;
   claimHolidayGift: () => Promise<void>;
   tickTime: (deltaMinutes?: number) => void;
+  syncServerTime: (time: {
+    currentYear?: number;
+    currentMonth?: number;
+    currentDay?: number;
+    currentDayOfMonth?: number;
+    dayOfYear?: number;
+    hour?: number;
+    minute?: number;
+    season?: Season;
+    period?: DayPeriod;
+  }) => void;
   setTimeSpeed: (speed: number) => void;
   togglePause: () => void;
   setSeason: (season: Season) => void;
@@ -208,7 +219,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       hour %= 24;
     }
 
-    // 30 ngày mỗi tháng chuẩn hoá mô phỏng
+    // 30 ngày mỗi tháng, 360 ngày/năm (đồng bộ chuẩn hệ thống: 1 ngày game = 1 phút thực)
     if (day > 30) {
       month += Math.floor((day - 1) / 30);
       day = ((day - 1) % 30) + 1;
@@ -223,12 +234,11 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const season = calculateSeason(month);
     const period = calculateDayPeriod(hour);
-
     const holiday = DEFAULT_HOLIDAYS.find((h) => h.day === day && h.month === month) ?? null;
 
     let newLetter = state.lastHolidayLetter;
 
-    // Tự động gửi thư chúc mừng & Lì xì Tết / Tiền thưởng Lễ
+    // Tự động gửi thư chúc mừng & Lì xì Tết / Tiền thưởng Lễ (client-side prompt; claim thực tế qua server)
     if (holiday) {
       const claimKey = `${year}-${holiday.id}`;
       if (!holidayGiftClaimed[claimKey]) {
@@ -244,7 +254,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           content: isTet
             ? `Nhân dịp Tết Nguyên Đán năm ${year}, kính chúc công dân và gia đình An Khang Thịnh Vượng, Vạn Sự Như Ý! Ủy ban gửi tặng bạn phong bao lì xì may mắn để khởi đầu năm mới hanh thông.`
             : `Nhân dịp kỷ niệm ${holiday.nameVi}, xin gửi tới bạn lời chúc mừng nồng nhiệt cùng khoản tiền thưởng phúc lợi xã hội đã được chuyển vào tài khoản!`,
-          bonusCash: isTet ? 2_000_000 : 1_000_000, // 2 triệu lì xì Tết, 1 triệu ngày lễ
+          bonusCash: isTet ? 2_000_000 : 1_000_000,
         };
       }
     }
@@ -261,6 +271,29 @@ export const useGameStore = create<GameState>((set, get) => ({
       holidayGiftClaimed,
       lastHolidayLetter: newLetter,
     });
+  },
+
+  syncServerTime: (time) => {
+    const dayOfMonth = time.currentDayOfMonth ?? time.currentDay ?? get().day;
+    const nextMonth = time.currentMonth ?? get().month;
+    const nextYear = time.currentYear ?? get().year;
+    const nextHour = typeof time.hour === 'number' ? time.hour : 0;
+    const nextMinute = typeof time.minute === 'number' ? time.minute : 0;
+    const nextSeason = time.season ?? calculateSeason(nextMonth);
+    const nextPeriod = time.period ?? calculateDayPeriod(nextHour);
+    const holiday = DEFAULT_HOLIDAYS.find((h) => h.day === dayOfMonth && h.month === nextMonth) ?? null;
+    set((s) => ({
+      year: nextYear,
+      month: nextMonth,
+      day: dayOfMonth,
+      hour: nextHour,
+      minute: nextMinute,
+      season: nextSeason,
+      period: nextPeriod,
+      activeHoliday: holiday,
+      // reset quà năm nếu năm server thay đổi
+      holidayGiftClaimed: nextYear !== s.year ? {} : s.holidayGiftClaimed,
+    }));
   },
 
   setTimeSpeed: (_speed) => set({ timeSpeed: 1 }),

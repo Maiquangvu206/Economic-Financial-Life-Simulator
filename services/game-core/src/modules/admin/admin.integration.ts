@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { deriveCanonicalGameTime } from '@efls/domain';
 import { pool } from '../../shared/db/pool.js';
 import { AppError } from '../../shared/http/errors.js';
 import { listActionLogs, writeActionLog } from '../../shared/audit/actionLog.js';
@@ -10,6 +11,24 @@ import { underworldService } from '../underworld/underworld.service.js';
 import { adjustStateFund, creditStateFund, debitStateFund, getStateFundBalance } from '../../shared/state-fund/stateFund.js';
 import { supportCompaniesFromStateFund } from '../../shared/state-fund/supportCompanies.js';
 import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequest, SetUserRoleRequest, AdminTriggerSweepRequest, UpdateInterestRateConfigRequest, InterestRateConfigDto, AdjustStateFundRequest, SupportCompaniesFromStateFundRequest } from '@efls/contracts';
+
+function gameTimePayload(row: { current_day: any; current_year: any; season: any; updated_at?: any; macro?: any }) {
+  const dayOfYear = Number(row.current_day ?? 0);
+  const year = Number(row.current_year ?? 1);
+  const t = deriveCanonicalGameTime({ dayOfYear, year, tickUpdatedAt: row.updated_at ?? null });
+  return {
+    currentDay: dayOfYear,
+    dayOfYear,
+    currentYear: t.year,
+    currentMonth: t.month,
+    currentDayOfMonth: t.day,
+    hour: t.hour,
+    minute: t.minute,
+    season: t.season,
+    period: t.period,
+    tickUpdatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+  };
+}
 
 function ensureAdmin(req: Request): void {
   if (req.actorRole !== 'admin' && req.actorRole !== 'moderator') {
@@ -374,13 +393,12 @@ export async function adminPlayerAction(req: Request, res: Response): Promise<vo
 
 export async function getGameConfig(req: Request, res: Response): Promise<void> {
   ensureAdmin(req);
-  const r = await pool.query(`SELECT current_day, current_year, season, macro FROM game_state WHERE id = 1`);
-  const row = r.rows[0] ?? { current_day: 0, current_year: 1, season: 'spring', macro: {} };
+  const r = await pool.query(`SELECT current_day, current_year, season, macro, updated_at FROM game_state WHERE id = 1`);
+  const row = r.rows[0] ?? { current_day: 0, current_year: 1, season: 'spring', macro: {}, updated_at: null };
   const macro = (row.macro && typeof row.macro === 'object') ? row.macro : {};
+  const time = gameTimePayload(row);
   res.json({
-    currentDay: Number(row.current_day ?? 0),
-    currentYear: Number(row.current_year ?? 1),
-    season: row.season ?? 'spring',
+    ...time,
     otRatePercent: Number((macro as any).otRatePercent ?? 300),
     restrictionContact: normalizeRestrictionContact((macro as any).restrictionContact),
     macro,
@@ -450,13 +468,12 @@ function normalizeRestrictionContact(raw: any) {
 }
 
 export async function getGameConfigPublic(_req: Request, res: Response): Promise<void> {
-  const r = await pool.query(`SELECT current_day, current_year, season, macro FROM game_state WHERE id = 1`);
-  const row = r.rows[0] ?? { current_day: 0, current_year: 1, season: 'spring', macro: {} };
+  const r = await pool.query(`SELECT current_day, current_year, season, macro, updated_at FROM game_state WHERE id = 1`);
+  const row = r.rows[0] ?? { current_day: 0, current_year: 1, season: 'spring', macro: {}, updated_at: null };
   const macro = (row.macro && typeof row.macro === 'object') ? row.macro : {};
+  const time = gameTimePayload(row);
   res.json({
-    currentDay: Number(row.current_day ?? 0),
-    currentYear: Number(row.current_year ?? 1),
-    season: row.season ?? 'spring',
+    ...time,
     otRatePercent: Number((macro as any).otRatePercent ?? 300),
     restrictionContact: normalizeRestrictionContact((macro as any).restrictionContact),
   });

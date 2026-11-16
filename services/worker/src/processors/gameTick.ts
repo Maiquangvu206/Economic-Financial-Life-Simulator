@@ -1,11 +1,17 @@
 import { pool } from '../db.js';
 import { logger } from '../logger.js';
 import { enqueueDomainEvent } from '../outboxEvents.js';
-import { accrueSimpleInterest, evaluateLoanHealth } from '@efls/domain';
+import { publishClient } from '../publisher.js';
+import { env } from '../config/env.js';
+import { Rooms } from '@efls/contracts';
+import { accrueSimpleInterest, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR } from '@efls/domain';
 
 export interface GameTickResult {
   tick: number;
   inGameYear: number;
+  inGameMonth: number;
+  inGameDay: number;
+  dayOfYear: number;
   season: string;
   applied: string[];
 }
@@ -24,37 +30,31 @@ export async function processGameTick(): Promise<GameTickResult> {
     const applied: string[] = [];
 
     // ---- 1. Advance game clock ----
+    // Chuẩn hệ thống: 1 tick = 1 ngày game = 1 phút thực tế, 1 năm = 360 ngày (12 tháng x 30 ngày)
     const gameState = await client.query<{
       current_day: string;
       current_year: string;
       season: string;
     }>(`SELECT current_day, current_year, season FROM game_state WHERE id = 1`);
 
-    const currentDay = Number(gameState.rows[0]?.current_day ?? 0);
+    const currentDayRaw = Number(gameState.rows[0]?.current_day ?? 0);
     const currentYear = Number(gameState.rows[0]?.current_year ?? 1);
-    const currentSeason = gameState.rows[0]?.season ?? 'spring';
+    const normalizedCurrentDay = ((Math.floor(currentDayRaw) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
 
-    let nextDay = currentDay + 1;
+    let nextDay = normalizedCurrentDay + 1;
     let nextYear = currentYear;
-    let nextSeason = currentSeason;
-
-    if (nextDay >= 365) {
+    if (nextDay >= GAME_DAYS_PER_YEAR) {
       nextDay = 0;
       nextYear += 1;
     }
-    const nextSeasonMap: Record<string, string> = {
-      spring: 'summer',
-      summer: 'autumn',
-      autumn: 'winter',
-      winter: 'spring',
-    };
-    nextSeason = nextSeasonMap[currentSeason] ?? 'spring';
+    const nextTime = deriveCanonicalGameTime({ dayOfYear: nextDay, year: nextYear });
+    const nextSeason = nextTime.season;
 
     await client.query(
       `UPDATE game_state SET current_day = $1, current_year = $2, season = $3, updated_at = now() WHERE id = 1`,
       [nextDay, nextYear, nextSeason],
     );
-    applied.push(`game_state: day=${nextDay} year=${nextYear} season=${nextSeason}`);
+    applied.push(`game_state: day=${nextDay} month=${nextTime.month} dayOfMonth=${nextTime.day} year=${nextYear} season=${nextSeason}`);
 
     // ---- 2. Character aging, health, energy ----
     const characters = await client.query<{
@@ -423,7 +423,45 @@ export async function processGameTick(): Promise<GameTickResult> {
     await client.query('COMMIT');
     logger.info({ tick, appliedCount: applied.length }, 'Game tick committed');
 
-    return { tick, inGameYear: nextYear, season: nextSeason, applied };
+    // Publish đồng bộ thời gian game cho toàn bộ người dùng (best-effort)
+    try {
+      const nowIso = new Date().toISOString();
+      const payload = {
+        currentDay: nextDay,
+        dayOfYear: nextDay,
+        currentYear: nextYear,
+        currentMonth: nextTime.month,
+        currentDayOfMonth: nextTime.day,
+        season: nextSeason,
+        period: nextTime.period,
+        hour: 0,
+        minute: 0,
+        tick,
+        at: nowIso,
+        standard: '1_day_game_per_1_real_minute',
+      };
+      const usersRes = await pool.query<{ id: string }>(`SELECT id FROM users`);
+      await Promise.all(
+        usersRes.rows.map((u) =>
+          publishClient.publish(
+            env.DOMAIN_EVENT_CHANNEL,
+            JSON.stringify({ room: Rooms.character(u.id), event: 'game:time', payload }),
+          ),
+        ),
+      );
+    } catch (err) {
+      logger.warn({ err }, 'Failed to publish game time tick (best-effort)');
+    }
+
+    return {
+      tick,
+      inGameYear: nextYear,
+      inGameMonth: nextTime.month,
+      inGameDay: nextTime.day,
+      dayOfYear: nextDay,
+      season: nextSeason,
+      applied,
+    };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     logger.error({ err: error, tick }, 'Game tick failed');

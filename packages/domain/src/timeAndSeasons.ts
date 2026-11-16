@@ -96,6 +96,66 @@ export function getDayPeriod(hour: number): DayPeriodInfo {
   return DAY_PERIODS[3]!;
 }
 
+/** Chuẩn thời gian game: 1 ngày game = 1 phút thực tế, 1 năm = 360 ngày (12 tháng x 30 ngày). */
+export const GAME_DAYS_PER_YEAR = 360;
+export const GAME_DAYS_PER_MONTH = 30;
+export const GAME_TICK_INTERVAL_MS_DEFAULT = 60_000;
+
+export interface CanonicalGameTime {
+  year: number;
+  month: number; // 1-12
+  day: number; // 1-30 (ngày trong tháng)
+  dayOfYear: number; // 0-359
+  hour: number; // 0-23 (ước lượng theo tiến độ tick thực)
+  minute: number; // 0-59
+  season: Season;
+  period: DayPeriod;
+}
+
+export function getSeasonByMonth(month: number): Season {
+  if (month >= 2 && month <= 4) return 'spring';
+  if (month >= 5 && month <= 7) return 'summer';
+  if (month >= 8 && month <= 10) return 'autumn';
+  return 'winter';
+}
+
+export function deriveCanonicalGameTime(params: {
+  dayOfYear: number;
+  year: number;
+  tickUpdatedAt?: Date | string | number | null;
+  now?: Date | number;
+}): CanonicalGameTime {
+  const normalizedDay = ((Math.floor(params.dayOfYear) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
+  const month = Math.floor(normalizedDay / GAME_DAYS_PER_MONTH) + 1;
+  const day = (normalizedDay % GAME_DAYS_PER_MONTH) + 1;
+  const season = getSeasonByMonth(month);
+
+  let hour = 0;
+  let minute = 0;
+  if (params.tickUpdatedAt != null) {
+    const updatedMs = params.tickUpdatedAt instanceof Date ? params.tickUpdatedAt.getTime() : new Date(params.tickUpdatedAt).getTime();
+    const nowMs = params.now instanceof Date ? params.now.getTime() : (params.now ?? Date.now());
+    if (!Number.isNaN(updatedMs) && !Number.isNaN(nowMs)) {
+      const elapsed = Math.max(0, Math.min(GAME_TICK_INTERVAL_MS_DEFAULT - 1, nowMs - updatedMs));
+      const totalGameMinutes = Math.floor((elapsed / GAME_TICK_INTERVAL_MS_DEFAULT) * 24 * 60);
+      hour = Math.floor(totalGameMinutes / 60) % 24;
+      minute = totalGameMinutes % 60;
+    }
+  }
+  const period = getDayPeriod(hour).period;
+
+  return {
+    year: Math.max(1, Math.floor(params.year)),
+    month,
+    day,
+    dayOfYear: normalizedDay,
+    hour,
+    minute,
+    season,
+    period,
+  };
+}
+
 export interface VietnamHoliday {
   id: string;
   nameVi: string;
