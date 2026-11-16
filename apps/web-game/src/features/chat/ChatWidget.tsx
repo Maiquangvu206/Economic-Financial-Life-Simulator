@@ -64,12 +64,20 @@ export function ChatWidget() {
 
   const privateThreadCharIds = useMemo(() => Object.keys(dmChannelByChar), [dmChannelByChar]);
 
-  // Nối socket + lắng nghe chat:message, tự join kênh public.
+  // Nối socket + lắng nghe chat:message, tự join kênh public (kể cả khi reconnect).
   useEffect(() => {
     const socket = getGameSocket();
-    for (const ch of PUBLIC_CHANNELS) {
-      socket.emit('room:join', { room: `chat_room:${ch.id}` });
-    }
+
+    const joinPublicRooms = () => {
+      for (const ch of PUBLIC_CHANNELS) {
+        socket.emit('room:join', { room: `chat_room:${ch.id}` });
+      }
+    };
+
+    const onConnect = () => {
+      joinPublicRooms();
+    };
+
     const onMessage = (msg: ChatMessage) => {
       const id = `${msg.at}-${msg.characterId}-${++msgSeq}`;
       setThreads((prev) => ({
@@ -78,8 +86,14 @@ export function ChatWidget() {
       }));
       setUnread((n) => n + 1);
     };
+
+    if (socket.connected) {
+      joinPublicRooms();
+    }
+    socket.on('connect', onConnect);
     socket.on('chat:message', onMessage as never);
     return () => {
+      socket.off('connect', onConnect);
       socket.off('chat:message', onMessage as never);
     };
   }, []);
@@ -96,6 +110,10 @@ export function ChatWidget() {
     const trimmed = draft.trim();
     if (!trimmed || !currentChannelId) return;
     const socket = getGameSocket();
+    if (!socket.connected) {
+      socket.connect();
+      return;
+    }
     socket.emit('chat:send', { channelId: currentChannelId, message: trimmed });
     setDraft('');
   }
