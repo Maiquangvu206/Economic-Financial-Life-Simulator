@@ -1151,7 +1151,7 @@ export async function adminAdjustStockPrice(req: Request, res: Response): Promis
         const r = await client.query<{ id: string; company_id: string }>(
           `UPDATE stock_tickers st
               SET previous_close_minor = st.current_price_minor,
-                  current_price_minor = GREATEST(100, ROUND(st.current_price_minor * $1)::bigint)
+                  current_price_minor = GREATEST(100, ROUND((st.current_price_minor::numeric * $1::numeric))::bigint)
             FROM companies c
             WHERE c.id = st.company_id AND c.status = 'ipo'
           RETURNING st.id, st.company_id`,
@@ -1163,7 +1163,7 @@ export async function adminAdjustStockPrice(req: Request, res: Response): Promis
         const r = await client.query<{ id: string; company_id: string }>(
           `UPDATE stock_tickers st
               SET previous_close_minor = st.current_price_minor,
-                  current_price_minor = GREATEST(100, ROUND(st.current_price_minor * $2)::bigint)
+                  current_price_minor = GREATEST(100, ROUND((st.current_price_minor::numeric * $2::numeric))::bigint)
             FROM companies c
             WHERE c.id = st.company_id AND c.status = 'ipo' AND c.id = ANY($1::uuid[])
           RETURNING st.id, st.company_id`,

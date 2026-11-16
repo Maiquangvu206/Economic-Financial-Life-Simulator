@@ -191,6 +191,9 @@ export const CareersOverviewExtDtoSchema = CareersOverviewDtoSchema.extend({
 export type CareersOverviewExtDto = z.infer<typeof CareersOverviewExtDtoSchema>;
 
 // --- Recruitment (job board for company postings) ---
+export const RecruitmentJobPostingStatusSchema = z.enum(['open', 'closed', 'deleted']);
+export type RecruitmentJobPostingStatus = z.infer<typeof RecruitmentJobPostingStatusSchema>;
+
 export const RecruitmentJobDtoSchema = z.object({
   id: IdSchema,
   title: z.string(),
@@ -204,6 +207,13 @@ export const RecruitmentJobDtoSchema = z.object({
   companyName: z.string().nullable(),
   ownerCharacterId: IdSchema.nullable(),
   ownerName: z.string().nullable(),
+  postingStatus: RecruitmentJobPostingStatusSchema.default('open'),
+  closedAt: z.string().datetime().nullable().optional(),
+  closedGameYear: z.number().int().nullable().optional(),
+  closedGameDay: z.number().int().nullable().optional(),
+  canClose: z.boolean().default(false),
+  canDelete: z.boolean().default(false),
+  deleteEligibleAt: z.string().nullable().optional(),
   eligible: z.boolean(),
   blocker: z.string().nullable(),
   canApply: z.boolean(),
@@ -218,6 +228,12 @@ export const RecruitmentOverviewDtoSchema = z.object({
   canApplyJobs: z.boolean(),
   applyBlocker: z.string().nullable(),
   myCompanies: z.array(z.object({ id: IdSchema, name: z.string(), status: z.string() })),
+  currentGame: z
+    .object({
+      year: z.number().int(),
+      dayOfYear: z.number().int(),
+    })
+    .optional(),
 });
 export type RecruitmentOverviewDto = z.infer<typeof RecruitmentOverviewDtoSchema>;
 

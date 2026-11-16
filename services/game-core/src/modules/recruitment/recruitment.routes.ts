@@ -12,4 +12,6 @@ recruitmentRouter.use(attachActor);
 
 recruitmentRouter.get('/jobs', asyncHandler(controller.getOverview));
 recruitmentRouter.post('/jobs', validateBody(CreateRecruitmentJobRequestSchema), asyncHandler(controller.createJob));
+recruitmentRouter.post('/jobs/:jobId/close', asyncHandler(controller.closeJob));
+recruitmentRouter.delete('/jobs/:jobId', asyncHandler(controller.deleteJob));
 recruitmentRouter.post('/jobs/:jobId/apply', asyncHandler(controller.apply));

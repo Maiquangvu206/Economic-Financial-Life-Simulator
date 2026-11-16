@@ -28,6 +28,20 @@ export class RecruitmentController {
     res.status(201).json(result);
   };
 
+  closeJob = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { jobId } = req.params as { jobId: string };
+    const result = await this.service.closeJob(userId, jobId);
+    res.status(200).json(result);
+  };
+
+  deleteJob = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { jobId } = req.params as { jobId: string };
+    const result = await this.service.deleteJob(userId, jobId);
+    res.status(200).json(result);
+  };
+
   apply = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
     const { jobId } = req.params as { jobId: string };
