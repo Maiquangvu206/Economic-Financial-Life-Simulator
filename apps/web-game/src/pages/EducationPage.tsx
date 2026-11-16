@@ -188,8 +188,8 @@ export function EducationPage() {
       <div className="grid gap-4">
         <Panel title="Bằng cấp của bạn">
           <div className="space-y-3">
-            {degrees.length > 0 ? (
-              degrees.map((d) => {
+            {degrees.filter((d) => d.status !== 'dropped').length > 0 ? (
+              degrees.filter((d) => d.status !== 'dropped').map((d) => {
                 const now = Date.now();
                 const gradAt = d.graduatesAt ? new Date(d.graduatesAt).getTime() : 0;
                 const due = d.status === 'enrolled' && gradAt > 0 && now >= gradAt;
@@ -200,8 +200,8 @@ export function EducationPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-slate-800">{d.degreeCode ?? '—'}</span>
                         {d.universityName && <span className="text-xs text-slate-600">{d.universityName}</span>}
-                        <Badge variant={d.status === 'graduated' ? 'success' : 'warning'}>
-                          {d.status === 'graduated' ? 'Đã tốt nghiệp' : 'Đang theo học'}
+                        <Badge variant={d.status === 'graduated' ? 'success' : d.status === 'enrolled' ? 'warning' : 'default'}>
+                          {d.status === 'graduated' ? 'Đã tốt nghiệp' : d.status === 'enrolled' ? 'Đang theo học' : 'Đã bỏ học'}
                         </Badge>
                       </div>
                       <div className="mt-1 text-xs text-slate-500">

@@ -101,7 +101,7 @@ export class EducationRepository {
               u.duration_months AS "durationMonths", u.field
        FROM degrees d
        JOIN universities u ON u.id = d.university_id
-       WHERE d.character_id = $1
+       WHERE d.character_id = $1 AND d.status <> 'dropped'
        ORDER BY d.enrolled_at DESC`,
       [characterId],
     );

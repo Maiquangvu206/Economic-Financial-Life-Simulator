@@ -177,13 +177,31 @@ export class EducationService {
       const character = await requireLivingCharacterByUserId(client, userId);
       const degree = await this.repository.getDegreeForCharacter(degreeId, character.id, client);
       if (!degree) throw AppError.notFound('Degree');
+      if (degree.status === 'dropped') {
+        // Dữ liệu bỏ học cũ còn sót: dọn sạch để không hiển thị
+        await this.repository.deleteEnrolledDegree(client, degreeId, character.id);
+        await client.query(`DELETE FROM degrees WHERE id = $1 AND character_id = $2`, [degreeId, character.id]);
+        return this.getOverview(userId, client);
+      }
       if (degree.status !== 'enrolled') {
         throw AppError.badRequest('Chỉ có thể bỏ học chương trình đang theo học.');
       }
 
       const deleted = await this.repository.deleteEnrolledDegree(client, degreeId, character.id);
       if (!deleted) {
-        throw AppError.conflict('drop_failed', 'Không thể bỏ học chương trình này (có thể đã thay đổi trạng thái).');
+        // fallback: nếu vì lý do trạng thái/dữ liệu lệch, xóa hẳn bản ghi enrolled/dropped sót
+        await client.query(
+          `DELETE FROM education_early_grad_tests WHERE degree_id = $1 AND character_id = $2`,
+          [degreeId, character.id],
+        );
+        await client.query(
+          `DELETE FROM tuition_payments WHERE degree_id = $1 AND character_id = $2`,
+          [degreeId, character.id],
+        );
+        await client.query(
+          `DELETE FROM degrees WHERE id = $1 AND character_id = $2 AND status IN ('enrolled','dropped')`,
+          [degreeId, character.id],
+        );
       }
 
       await notify(client, {
