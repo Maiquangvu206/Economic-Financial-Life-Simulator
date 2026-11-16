@@ -76,8 +76,11 @@ export function OfflineRecapPage() {
 
   const summaryBadges = useMemo(() => {
     const s = (recap?.summary ?? {}) as Record<string, any>;
+    const elapsed = Number(s.elapsedMinutes ?? recap?.processedMinutes ?? 0);
+    const processed = Number(recap?.processedMinutes ?? s.processedMinutes ?? 0);
     return [
-      { label: 'Phút đã xử lý', value: String(recap?.processedMinutes ?? s.processedMinutes ?? 0) },
+      { label: 'Thời gian offline', value: `${elapsed} phút` },
+      { label: 'Đã xử lý/bù', value: `${processed} phút` },
       { label: 'Phúc lợi đã nhận', value: String(s.welfareClaimedCount ?? 0) },
       { label: 'Thuế đã tự nộp', value: String(s.taxesPaid ?? 0) },
       { label: 'Khoản vay đã trả', value: String(s.loansPaid ?? 0) },
@@ -103,8 +106,14 @@ export function OfflineRecapPage() {
       />
 
       {message ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">{message}</div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-sm text-slate-800">{message}</div>
       ) : null}
+
+      {(settingsQ.isError || recapQ.isError) && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+          Không thể tải đầy đủ dữ liệu offline. Vui lòng thử tải lại trang hoặc bấm "Xử lý offline ngay &amp; cập nhật recap".
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel title="Cài đặt offline của bạn" borderColor="emerald">
@@ -188,8 +197,8 @@ export function OfflineRecapPage() {
                 <StatCard label="Dòng tiền ròng" value={formatMoney(net)} tone={net >= 0 ? 'positive' : 'negative'} />
               </div>
               <div className="text-xs text-slate-600 space-y-1">
-                <div>Từ: <b>{fmtDate(recap.from)}</b></div>
-                <div>Đến: <b>{fmtDate(recap.to)}</b></div>
+                <div>Khoảng thời gian: <b>{fmtDate(recap.from)}</b> → <b>{fmtDate(recap.to)}</b></div>
+                <div className="text-slate-500">Chỉ ghi nhận tác vụ tự động và bù tiến trình trong giới hạn chính sách/cài đặt của bạn.</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 {summaryBadges.map((b) => (

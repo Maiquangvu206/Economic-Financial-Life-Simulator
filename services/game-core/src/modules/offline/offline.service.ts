@@ -352,6 +352,14 @@ export class OfflineService {
     }
 
     const net = incomeMinor - expensesMinor;
+    const meaningfulChange =
+      incomeMinor !== 0 ||
+      expensesMinor !== 0 ||
+      welfareClaimedCount > 0 ||
+      taxesPaid > 0 ||
+      loansPaid > 0 ||
+      (canCatchup && effectiveMin > 0);
+
     const summary = {
       elapsedMinutes: elapsedMin,
       cappedMinutes: cappedMin,
@@ -368,6 +376,20 @@ export class OfflineService {
       catchupEnabled: canCatchup,
       stockMovements: [],
     };
+
+    // Nếu không có thay đổi/tác vụ thực tế, chỉ cập nhật mốc thời gian để tránh tạo recap rác lặp lại.
+    if (!meaningfulChange) {
+      await this.touchProcessedAt(character.id);
+      return {
+        ok: true,
+        processed: false,
+        recap: await this.getLatestRecap(userId),
+        message:
+          elapsedMin > 0
+            ? `Không có thay đổi tự động trong ${elapsedMin} phút offline.`
+            : 'Không có thay đổi offline mới.',
+      };
+    }
 
     const recap: OfflineRecapDto = {
       characterId: character.id,
@@ -401,9 +423,12 @@ export class OfflineService {
 
     return {
       ok: true,
-      processed: incomeMinor !== 0 || expensesMinor !== 0 || effectiveMin > 0,
+      processed: true,
       recap,
-      message: `Đã xử lý offline (${effectiveMin} phút).`,
+      message:
+        incomeMinor !== 0 || expensesMinor !== 0
+          ? `Đã xử lý offline (${effectiveMin}/${elapsedMin} phút). Dòng tiền ròng: ${net.toLocaleString('vi-VN')} ₫.`
+          : `Đã xử lý offline (${effectiveMin}/${elapsedMin} phút).`,
     };
   }
 }
