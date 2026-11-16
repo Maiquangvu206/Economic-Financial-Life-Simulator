@@ -38,6 +38,27 @@ function statusBadge(status: PropertyDto['status']) {
   }
 }
 
+function MergedMembersInfo({ members }: { members?: PropertyDto['mergedMembers'] }) {
+  if (!members || members.length === 0) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/80 p-2">
+      <div className="text-[11px] font-semibold text-slate-700 mb-1">
+        Ô thành viên trong cụm ({members.length} ô) — bán/cho thuê/thao tác áp dụng cho cả cụm
+      </div>
+      <ul className="space-y-0.5 text-[11px] text-slate-600">
+        {members.map((m) => (
+          <li key={m.id} className="flex flex-wrap gap-x-2 gap-y-0.5">
+            <span className="font-medium text-slate-700">{m.name}</span>
+            <span>· Lô: {m.lotNumber || '—'}</span>
+            <span>· ({m.location?.x ?? '?'},{m.location?.y ?? '?'})</span>
+            <span>· {m.zoneType}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function propertyTypeLabel(t: PropertyDto['propertyType']): string {
   const map: Record<string, string> = {
     apartment: 'Căn hộ',
@@ -175,11 +196,12 @@ export function RealEstatePage() {
 
   const allProperties: UnifiedProperty[] = useMemo(() => {
     const merged = [...coreProperties, ...provinceLandAll];
-    // de-dupe by id (safety)
+    // de-dupe by id (safety) + ẩn các ô thành viên đã hợp thửa/công trình (chỉ hiển thị ô chính)
     const seen = new Set<string>();
     return merged.filter((p) => {
       if (seen.has(p.id)) return false;
       seen.add(p.id);
+      if (p.mergedIntoPropertyId) return false;
       return true;
     });
   }, [coreProperties, provinceLandAll]);
@@ -403,6 +425,7 @@ export function RealEstatePage() {
                   {(p.offers ?? []).some((o) => o.status === 'pending') && (
                     <div className="mt-1 text-[11px] text-amber-700">{(p.offers ?? []).filter((o) => o.status === 'pending').length} đề nghị mua đang chờ (xem mục "Đề nghị mua cần xử lý").</div>
                   )}
+                  <MergedMembersInfo members={p.mergedMembers} />
                 </div>
                 <div className="flex flex-col gap-2 shrink-0">
                   {p.__source === 'core' && (
@@ -503,6 +526,7 @@ export function RealEstatePage() {
                     {p.status === 'unowned' && <span className="text-xs text-slate-500">(chưa có chủ)</span>}
                   </div>
                   {p.saleNotes && <div className="mt-1 text-xs text-slate-500">Ghi chú: {p.saleNotes}</div>}
+                  <MergedMembersInfo members={p.mergedMembers} />
                   {(p.offers ?? []).some((o) => o.isMine && o.status === 'pending') && (
                     <div className="mt-1 flex flex-wrap gap-2 text-xs items-center">
                       <span className="text-amber-700">Bạn đã gửi đề nghị, chờ người bán phản hồi.</span>
@@ -549,6 +573,7 @@ export function RealEstatePage() {
                     </div>
                   )}
                   <div className="mt-1 text-[11px] text-amber-700">Hủy trước hạn: bên hủy sẽ <b>mất cọc</b> và phải <b>thanh toán 50% số tiền thuê còn lại</b> tính đến khi hết hợp đồng.</div>
+                  <MergedMembersInfo members={p.mergedMembers} />
                 </div>
                 <div className="flex flex-col gap-2 shrink-0">
                   {p.__source === 'core' && (
@@ -606,6 +631,7 @@ export function RealEstatePage() {
                       ))}
                     </div>
                   )}
+                  <MergedMembersInfo members={p.mergedMembers} />
                 </div>
                 <div className="flex flex-col gap-2 shrink-0">
                   {p.ownerCharacterId && p.status !== 'auction' && (
@@ -631,6 +657,7 @@ export function RealEstatePage() {
                 </div>
                 <div className="text-xs text-slate-600">Lô: {p.lotNumber || '—'} · {provinceLabel(p)}</div>
                 <div className="mt-1 text-sm"><span className="text-slate-600">Giá thuê:</span> <span className="font-mono font-semibold">{formatMoney(p.monthlyRent.amount)}/tháng</span>{p.rentDeposit.amount > 0 && <span className="text-xs text-slate-500"> · Cọc {formatMoney(p.rentDeposit.amount)}</span>}</div>
+                <MergedMembersInfo members={p.mergedMembers} />
                 {p.rentNotes && <div className="text-[11px] text-slate-500">Điều khoản: {p.rentNotes}</div>}
                 {p.activeLease && !p.leasedByMe && <div className="text-[11px] text-slate-500">Hiện đang được thuê bởi {p.activeLease.tenantName || 'người khác'}.</div>}
               </div>

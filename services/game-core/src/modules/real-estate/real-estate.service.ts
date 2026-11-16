@@ -44,6 +44,7 @@ function toPropertyDto(
   leasedByMe = false,
   offers: PropertySaleOfferDto[] = [],
   activeLease: PropertyDto['activeLease'] = null,
+  mergedMembers?: NonNullable<PropertyDto['mergedMembers']>,
 ): PropertyDto {
   const province = row.province ?? 'Thành phố Hà Nội';
   const lotNumber = row.lotNumber ?? `Lô ${row.nodeX}-${row.nodeY}`;
@@ -79,6 +80,27 @@ function toPropertyDto(
     constructionBuiltAt: row.constructionBuiltAt ? new Date(row.constructionBuiltAt).toISOString() : null,
     mergedIntoPropertyId: row.mergedIntoPropertyId ?? null,
     mergeGroupId: row.mergeGroupId ?? null,
+    ...(mergedMembers && mergedMembers.length > 0 ? { mergedMembers } : {}),
+  };
+}
+
+function toMergedMember(row: PropertyRow): NonNullable<PropertyDto['mergedMembers']>[number] {
+  const province = row.province ?? 'Thành phố Hà Nội';
+  const lotNumber = row.lotNumber ?? `Lô ${row.nodeX}-${row.nodeY}`;
+  return {
+    id: row.id,
+    nodeId: row.nodeId,
+    name: row.constructionLabel ? `${row.constructionLabel} - ${row.nodeName}` : row.nodeName,
+    lotNumber,
+    province,
+    location: { x: row.nodeX, y: row.nodeY },
+    zoneType: row.nodeZoneType as PropertyDto['zoneType'],
+    propertyType: row.propertyType as PropertyDto['propertyType'],
+    status: row.status as PropertyDto['status'],
+    purchasePrice: money(Number(row.purchasePriceMinor)),
+    currentValue: money(Number(row.currentValueMinor)),
+    mergedIntoPropertyId: row.mergedIntoPropertyId ?? null,
+    mergeGroupId: row.mergeGroupId ?? null,
   };
 }
 
@@ -103,7 +125,18 @@ export class RealEstateService {
     const leaseByProp = new Map<string, (typeof allActiveLeases)[number]>();
     for (const l of allActiveLeases) leaseByProp.set(l.propertyId, l);
 
-    const relevantIds = properties
+    // Ẩn các ô thành viên của cụm hợp thửa/công trình khỏi danh sách (chỉ hiển thị ô chính).
+    const membersByPrimary = new Map<string, PropertyRow[]>();
+    for (const p of properties) {
+      if (p.mergedIntoPropertyId) {
+        const list = membersByPrimary.get(p.mergedIntoPropertyId) ?? [];
+        list.push(p);
+        membersByPrimary.set(p.mergedIntoPropertyId, list);
+      }
+    }
+    const visibleProperties = properties.filter((p) => !p.mergedIntoPropertyId);
+
+    const relevantIds = visibleProperties
       .filter(
         (p) =>
           p.ownerCharacterId === character.id ||
@@ -121,12 +154,12 @@ export class RealEstateService {
       offersByProp.set(o.propertyId, list);
     }
 
-    const owned = properties.filter((p) => p.ownerCharacterId === character.id);
-    const portfolioValue = owned.reduce((sum, p) => sum + toMinor(p.currentValueMinor), 0);
-    const monthlyRentIncome = owned.reduce((sum, p) => sum + toMinor(p.monthlyRentMinor), 0);
+    const ownedVisible = visibleProperties.filter((p) => p.ownerCharacterId === character.id);
+    const portfolioValue = ownedVisible.reduce((sum, p) => sum + toMinor(p.currentValueMinor), 0);
+    const monthlyRentIncome = ownedVisible.reduce((sum, p) => sum + toMinor(p.monthlyRentMinor), 0);
 
     return {
-      properties: properties.map((p) => {
+      properties: visibleProperties.map((p) => {
         const lease = leaseByProp.get(p.id);
         const activeLease = lease
           ? {
@@ -143,15 +176,17 @@ export class RealEstateService {
               canTerminate: character.id === lease.tenantCharacterId || character.id === p.ownerCharacterId,
             }
           : null;
+        const mergedMembers = (membersByPrimary.get(p.id) ?? []).map(toMergedMember);
         return toPropertyDto(
           p,
           character.id,
           leasedByMeIds.has(p.id),
           offersByProp.get(p.id) ?? [],
           activeLease,
+          mergedMembers,
         );
       }),
-      ownedCount: owned.length,
+      ownedCount: ownedVisible.length,
       portfolioValue: money(portfolioValue),
       monthlyRentIncome: money(monthlyRentIncome),
     };
@@ -166,10 +201,25 @@ export class RealEstateService {
     }
   }
 
+  private async resolveGroup(db: any, propertyId: string): Promise<{ ids: string[]; primaryId: string }> {
+    const ids = await this.repository.findGroupPropertyIds(db, propertyId);
+    const effectiveIds = ids.length > 0 ? ids : [propertyId];
+    const rows = await this.repository.findByIds(db, effectiveIds);
+    const primary = rows.find((r) => !r.mergedIntoPropertyId) ?? rows[0];
+    return { ids: effectiveIds, primaryId: primary?.id ?? propertyId };
+  }
+
+  private async applyToGroup(db: any, ids: string[], sql: string, params: any[]): Promise<void> {
+    // helper: replace first $N placeholder usage pattern by caller is not trivial; use per-id updates
+    // (kept for potential reuse) - callers use explicit queries below.
+    void db; void ids; void sql; void params;
+  }
+
   async buyProperty(userId: string, propertyId: string): Promise<PropertyDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
-      const property = await this.repository.findById(propertyId);
+      const { ids: groupIds, primaryId } = await this.resolveGroup(client, propertyId);
+      const property = await this.repository.findById(primaryId, client);
       if (!property) throw AppError.notFound('Property');
       if (property.status !== 'unowned' && property.status !== 'listed') {
         throw AppError.badRequest('Bất động sản này hiện không được bán.');
@@ -190,13 +240,14 @@ export class RealEstateService {
         to: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
         amountMinor: price,
         kind: 'property_purchase',
-        description: `Mua bất động sản ${propertyId}`,
+        description: `Mua bất động sản ${primaryId}`,
         referenceType: 'property',
-        referenceId: propertyId,
+        referenceId: primaryId,
       });
 
-      await this.repository.buy(client, propertyId, character.id);
-      const updated = await this.repository.findById(propertyId, client);
+      // Chuyển quyền sở hữu toàn bộ cụm (áp dụng cho cả ô chính và ô thành viên).
+      await this.repository.transferOwnership(client, primaryId, character.id);
+      const updated = await this.repository.findById(primaryId, client);
       if (!updated) throw new Error('Bất động sản biến mất trong khi mua');
       return toPropertyDto(updated, character.id);
     });
@@ -257,7 +308,8 @@ export class RealEstateService {
   ): Promise<PropertyDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
-      const property = await this.repository.findById(propertyId);
+      const { ids: groupIds, primaryId } = await this.resolveGroup(client, propertyId);
+      const property = await this.repository.findById(primaryId, client);
       if (!property) throw AppError.notFound('Property');
       if (property.ownerCharacterId !== character.id) {
         throw AppError.forbidden('Chỉ chủ sở hữu mới được đặt bán.');
@@ -266,9 +318,11 @@ export class RealEstateService {
       if (property.status !== 'owned') {
         throw AppError.badRequest('Chỉ có thể đặt bán bất động sản đang sở hữu.');
       }
-
-      await this.repository.list(client, propertyId, askingPriceMinor, saleNotes?.trim() || null);
-      const updated = await this.repository.findById(propertyId, client);
+      // Áp dụng cho toàn bộ cụm (ô chính + ô thành viên).
+      for (const id of groupIds) {
+        await this.repository.list(client, id, askingPriceMinor, saleNotes?.trim() || null);
+      }
+      const updated = await this.repository.findById(primaryId, client);
       if (!updated) throw new Error('Bất động sản biến mất trong khi đặt bán');
       return toPropertyDto(updated, character.id);
     });
@@ -277,7 +331,8 @@ export class RealEstateService {
   async unlistProperty(userId: string, propertyId: string): Promise<PropertyDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
-      const property = await this.repository.findById(propertyId);
+      const { ids: groupIds, primaryId } = await this.resolveGroup(client, propertyId);
+      const property = await this.repository.findById(primaryId, client);
       if (!property) throw AppError.notFound('Property');
       if (property.ownerCharacterId !== character.id) {
         throw AppError.forbidden('Chỉ chủ sở hữu mới được ngưng bán.');
@@ -285,9 +340,10 @@ export class RealEstateService {
       if (property.status !== 'listed') {
         throw AppError.badRequest('Bất động sản này hiện không ở trạng thái đang bán.');
       }
-
-      await this.repository.unlist(client, propertyId);
-      const updated = await this.repository.findById(propertyId, client);
+      for (const id of groupIds) {
+        await this.repository.unlist(client, id);
+      }
+      const updated = await this.repository.findById(primaryId, client);
       if (!updated) throw new Error('Bất động sản biến mất trong khi ngưng bán');
       return toPropertyDto(updated, character.id);
     });
@@ -305,7 +361,8 @@ export class RealEstateService {
   ): Promise<PropertyDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
-      const property = await this.repository.findById(propertyId);
+      const { ids: groupIds, primaryId } = await this.resolveGroup(client, propertyId);
+      const property = await this.repository.findById(primaryId, client);
       if (!property) throw AppError.notFound('Property');
       if (property.ownerCharacterId !== character.id) {
         throw AppError.forbidden('Chỉ chủ sở hữu mới được cập nhật bảng giá cho thuê.');
@@ -313,13 +370,16 @@ export class RealEstateService {
       if (input.rentListingActive && input.monthlyRentMinor <= 0) {
         throw AppError.badRequest('Cần đặt giá thuê/tháng lớn hơn 0 để mở cho thuê.');
       }
-      await this.repository.updateRentTerms(client, propertyId, {
-        monthlyRentMinor: input.monthlyRentMinor,
-        rentDepositMinor: input.rentDepositMinor,
-        rentListingActive: input.rentListingActive,
-        rentNotes: input.rentNotes?.trim() || null,
-      });
-      const updated = await this.repository.findById(propertyId, client);
+      // Áp dụng bảng giá/cho thuê cho toàn bộ cụm.
+      for (const id of groupIds) {
+        await this.repository.updateRentTerms(client, id, {
+          monthlyRentMinor: input.monthlyRentMinor,
+          rentDepositMinor: input.rentDepositMinor,
+          rentListingActive: input.rentListingActive,
+          rentNotes: input.rentNotes?.trim() || null,
+        });
+      }
+      const updated = await this.repository.findById(primaryId, client);
       if (!updated) throw new Error('Bất động sản biến mất khi cập nhật cho thuê');
       return toPropertyDto(updated, character.id);
     });
@@ -328,7 +388,8 @@ export class RealEstateService {
   async rentProperty(userId: string, propertyId: string): Promise<PropertyDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
-      const property = await this.repository.findById(propertyId);
+      const { ids: groupIds, primaryId } = await this.resolveGroup(client, propertyId);
+      const property = await this.repository.findById(primaryId, client);
       if (!property) throw AppError.notFound('Property');
       if (property.ownerCharacterId === character.id) {
         throw AppError.badRequest('Không thể thuê bất động sản của chính mình.');
@@ -336,7 +397,7 @@ export class RealEstateService {
       if (!property.rentListingActive || Number(property.monthlyRentMinor) <= 0) {
         throw AppError.badRequest('Bất động sản này hiện không mở cho thuê hoặc chưa có bảng giá.');
       }
-      if (await this.repository.hasActiveLease(client, propertyId)) {
+      if (await this.repository.hasActiveLease(client, primaryId)) {
         throw AppError.conflict('property_leased', 'Bất động sản này đang được cho thuê.');
       }
 
@@ -352,16 +413,27 @@ export class RealEstateService {
           to: { ownerType: 'character', ownerId: property.ownerCharacterId },
           amountMinor: upfront,
           kind: 'property_rent',
-          description: `Thuê bất động sản ${propertyId}`,
+          description: `Thuê bất động sản ${primaryId}`,
           referenceType: 'property',
-          referenceId: propertyId,
+          referenceId: primaryId,
         });
       }
 
-      await this.repository.rent(client, propertyId, character.id, monthlyRent, deposit, 12);
-      const updated = await this.repository.findById(propertyId, client);
+      // Hợp đồng thuê gắn với ô chính; áp dụng cho toàn bộ cụm.
+      await this.repository.rent(client, primaryId, character.id, monthlyRent, deposit, 12);
+      // Đảm bảo các ô thành viên không bị mở cho thuê rời rạc (dữ liệu nhất quán).
+      for (const id of groupIds) {
+        if (id === primaryId) continue;
+        await this.repository.updateRentTerms(client, id, {
+          monthlyRentMinor: 0,
+          rentDepositMinor: 0,
+          rentListingActive: false,
+          rentNotes: null,
+        });
+      }
+      const updated = await this.repository.findById(primaryId, client);
       if (!updated) throw new Error('Bất động sản biến mất trong khi cho thuê');
-      const active = await this.repository.findActiveLeaseByPropertyId(client, propertyId);
+      const active = await this.repository.findActiveLeaseByPropertyId(client, primaryId);
       const activeLease = active
         ? {
             id: active.id,

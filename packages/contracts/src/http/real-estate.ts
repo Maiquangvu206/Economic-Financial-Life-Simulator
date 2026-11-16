@@ -106,6 +106,26 @@ export const PropertyDtoSchema = z.object({
   constructionBuiltAt: z.string().datetime().nullable().optional(),
   mergedIntoPropertyId: IdSchema.nullable().optional(),
   mergeGroupId: IdSchema.nullable().optional(),
+  /** Các ô thành viên thuộc cụm hợp thửa/công trình (chỉ có ở ô chính). */
+  mergedMembers: z
+    .array(
+      z.object({
+        id: IdSchema,
+        nodeId: z.string().min(1),
+        name: z.string(),
+        lotNumber: z.string().nullable().optional(),
+        province: z.string().nullable().optional(),
+        location: z.object({ x: z.number().int(), y: z.number().int() }).optional(),
+        zoneType: ZoneTypeSchema,
+        propertyType: PropertyTypeSchema,
+        status: PropertyStatusSchema,
+        purchasePrice: MoneySchema,
+        currentValue: MoneySchema,
+        mergedIntoPropertyId: IdSchema.nullable().optional(),
+        mergeGroupId: IdSchema.nullable().optional(),
+      }),
+    )
+    .optional(),
 });
 export type PropertyDto = z.infer<typeof PropertyDtoSchema>;
 

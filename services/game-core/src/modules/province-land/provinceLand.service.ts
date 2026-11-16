@@ -40,7 +40,30 @@ function offerDto(row: ProvinceLandPurchaseOfferRow, viewerCharacterId: string):
   };
 }
 
-function toDto(row: ProvinceLandPropertyRow, viewerCharacterId: string, offers: PropertySaleOfferDto[] = []): PropertyDto {
+function toMergedMember(row: ProvinceLandPropertyRow): NonNullable<PropertyDto['mergedMembers']>[number] {
+  return {
+    id: row.id,
+    nodeId: row.id,
+    name: row.constructionLabel ? `${row.constructionLabel} - ${row.nodeName}` : row.nodeName,
+    lotNumber: `Lô ${row.nodeX}-${row.nodeY}`,
+    province: row.provinceCode,
+    location: { x: row.nodeX, y: row.nodeY },
+    zoneType: row.zoneType as PropertyDto['zoneType'],
+    propertyType: row.propertyType as PropertyDto['propertyType'],
+    status: row.status as PropertyDto['status'],
+    purchasePrice: money(Number(row.purchasePriceMinor)),
+    currentValue: money(Number(row.currentValueMinor)),
+    mergedIntoPropertyId: row.mergedIntoPropertyId,
+    mergeGroupId: row.mergeGroupId,
+  };
+}
+
+function toDto(
+  row: ProvinceLandPropertyRow,
+  viewerCharacterId: string,
+  offers: PropertySaleOfferDto[] = [],
+  mergedMembers: NonNullable<PropertyDto['mergedMembers']> = [],
+): PropertyDto {
   return {
     id: row.id,
     nodeId: row.id, // synthetic for province tiles
@@ -73,6 +96,7 @@ function toDto(row: ProvinceLandPropertyRow, viewerCharacterId: string, offers: 
     constructionBuiltAt: row.constructionBuiltAt ? new Date(row.constructionBuiltAt).toISOString() : null,
     mergedIntoPropertyId: row.mergedIntoPropertyId,
     mergeGroupId: row.mergeGroupId,
+    ...(mergedMembers.length > 0 ? { mergedMembers } : {}),
   };
 }
 
@@ -82,7 +106,16 @@ export class ProvinceLandService {
   async listByProvince(userId: string, provinceCode: string): Promise<PropertyDto[]> {
     const character = await requireCharacterByUserId(pool, userId);
     const rows = await this.repo.listByProvince(provinceCode);
-    const ids = rows.map((r) => r.id);
+    const membersByPrimary = new Map<string, ProvinceLandPropertyRow[]>();
+    for (const r of rows) {
+      if (r.mergedIntoPropertyId) {
+        const list = membersByPrimary.get(r.mergedIntoPropertyId) ?? [];
+        list.push(r);
+        membersByPrimary.set(r.mergedIntoPropertyId, list);
+      }
+    }
+    const visible = rows.filter((r) => !r.mergedIntoPropertyId);
+    const ids = visible.map((r) => r.id);
     const offers = await this.repo.listOffersByPropertyIds(pool, ids);
     const offersByProp = new Map<string, PropertySaleOfferDto[]>();
     for (const o of offers) {
@@ -91,7 +124,14 @@ export class ProvinceLandService {
       list.push(offerDto(o, character.id));
       offersByProp.set(o.propertyId, list);
     }
-    return rows.map((r) => toDto(r, character.id, offersByProp.get(r.id) ?? []));
+    return visible.map((r) =>
+      toDto(
+        r,
+        character.id,
+        offersByProp.get(r.id) ?? [],
+        (membersByPrimary.get(r.id) ?? []).map(toMergedMember),
+      ),
+    );
   }
 
   private getConstructionOption(optionId: string, tier?: OwnedCluster['tier']) {
