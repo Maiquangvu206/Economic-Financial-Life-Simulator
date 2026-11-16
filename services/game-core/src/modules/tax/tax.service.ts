@@ -7,6 +7,7 @@ import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { notify } from '../notifications/notification.service.js';
 import { type TaxOverviewExtDto, MoneySchema } from '@efls/contracts';
 import { GAME_START_YEAR } from '@efls/domain';
+import { loadCurrentSeasonEffects } from '../../shared/season/seasonEffects.js';
 import { taxRepository } from './tax.repository.js';
 
 function money(amount: number) {
@@ -140,7 +141,9 @@ export class TaxService {
     if (existing) return existing.id;
 
     const { taxable, jobsCount, annualByJob } = await this.computePersonalTaxableIncomeMinor(characterId, client);
-    const taxDue = Math.round(taxable * TAX_RATE);
+    // Hiệu ứng mùa: thuế có thể tăng/giảm theo cấu hình mùa (seasonEffects.taxPct)
+    const season = await loadCurrentSeasonEffects(client);
+    const taxDue = Math.round(taxable * TAX_RATE * season.multipliers.tax);
     const assessmentId = await this.repository.createAssessment(client, characterId, taxYear, taxable, taxDue);
 
     if (!assessmentId) {

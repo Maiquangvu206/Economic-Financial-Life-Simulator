@@ -177,11 +177,28 @@ export type SeasonRangeConfig = z.infer<typeof SeasonRangeConfigSchema>;
 export const SeasonRangesConfigSchema = z.array(SeasonRangeConfigSchema).length(4);
 export type SeasonRangesConfig = z.infer<typeof SeasonRangesConfigSchema>;
 
+export const SeasonEffectConfigSchema = z.object({
+  productivityPct: z.number().int().min(0).max(300),
+  energyPct: z.number().int().min(0).max(300),
+  taxPct: z.number().int().min(0).max(300),
+  revenuePct: z.number().int().min(0).max(300),
+});
+export type SeasonEffectConfig = z.infer<typeof SeasonEffectConfigSchema>;
+
+export const SeasonEffectsConfigSchema = z.object({
+  spring: SeasonEffectConfigSchema,
+  summer: SeasonEffectConfigSchema,
+  autumn: SeasonEffectConfigSchema,
+  winter: SeasonEffectConfigSchema,
+});
+export type SeasonEffectsConfig = z.infer<typeof SeasonEffectsConfigSchema>;
+
 export const UpdateGameConfigRequestSchema = z.object({
   currentDay: z.number().int().min(0).optional(),
   currentYear: z.number().int().min(1).optional(),
   otRatePercent: z.number().int().min(100).max(500).optional(),
   seasonRanges: SeasonRangesConfigSchema.optional(),
+  seasonEffects: SeasonEffectsConfigSchema.optional(),
   restrictionContact: RestrictionContactConfigSchema.partial().optional(),
 });
 export type UpdateGameConfigRequest = z.infer<typeof UpdateGameConfigRequestSchema>;

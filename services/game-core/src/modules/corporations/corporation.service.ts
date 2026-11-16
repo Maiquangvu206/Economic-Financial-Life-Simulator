@@ -5,6 +5,7 @@ import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharac
 import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js';
 import { callAiService } from '../../shared/ai/aiClient.js';
 import { notify } from '../notifications/notification.service.js';
+import { loadCurrentSeasonEffects } from '../../shared/season/seasonEffects.js';
 import {
   type CompanyDto,
   type CompanyEmployeesDto,
@@ -657,12 +658,15 @@ export class CorporationService {
       if (amountMinor <= 0 || amountMinor > 5_000_000_000) {
         throw AppError.badRequest('Số tiền doanh thu không hợp lệ (1 - 5.000.000.000 ₫ mỗi lần).');
       }
-      await this.repository.adjustCash(client, companyId, amountMinor);
+      // Hiệu ứng mùa: doanh thu được điều chỉnh theo cấu hình mùa (seasonEffects.revenuePct)
+      const season = await loadCurrentSeasonEffects(client);
+      const effectiveAmount = Math.max(1, Math.min(5_000_000_000, Math.round(amountMinor * season.multipliers.revenue)));
+      await this.repository.adjustCash(client, companyId, effectiveAmount);
       await this.repository.addLedgerEntry(client, {
         companyId,
         entryType: 'revenue',
-        amountMinor,
-        declaredAmountMinor: amountMinor,
+        amountMinor: effectiveAmount,
+        declaredAmountMinor: effectiveAmount,
         description: note ?? 'Ghi nhận doanh thu',
         isEvasion: false,
       });
@@ -670,8 +674,8 @@ export class CorporationService {
         userId,
         kind: 'company',
         title: 'Ghi nhận doanh thu',
-        body: `Công ty "${company.name}" ghi nhận doanh thu ${formatMinor(amountMinor)}.${note ? ` Ghi chú: ${note}` : ''}`,
-        payload: { companyId, amountMinor, note },
+        body: `Công ty "${company.name}" ghi nhận doanh thu ${formatMinor(effectiveAmount)}.${season.multipliers.revenue !== 1 ? ` (hiệu ứng mùa ×${season.multipliers.revenue.toFixed(2)})` : ''}${note ? ` Ghi chú: ${note}` : ''}`,
+        payload: { companyId, amountMinor: effectiveAmount, inputAmountMinor: amountMinor, note, season: season.season },
       });
       const dto = await this.repository.getCompany(companyId, client);
       if (!dto) throw new Error('Company disappeared after revenue');

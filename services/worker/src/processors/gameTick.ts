@@ -4,7 +4,7 @@ import { enqueueDomainEvent } from '../outboxEvents.js';
 import { publishClient } from '../publisher.js';
 import { env } from '../config/env.js';
 import { Rooms } from '@efls/contracts';
-import { accrueSimpleInterest, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR, normalizeSeasonRanges } from '@efls/domain';
+import { accrueSimpleInterest, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR, normalizeSeasonRanges, resolveSeasonEffects } from '@efls/domain';
 
 export interface GameTickResult {
   tick: number;
@@ -53,6 +53,8 @@ export async function processGameTick(): Promise<GameTickResult> {
     const seasonRanges = normalizeSeasonRanges(macro?.seasonRanges) ?? DEFAULT_SEASON_RANGES;
     const nextTime = deriveCanonicalGameTime({ dayOfYear: nextDay, year: nextYear, seasonRanges });
     const nextSeason = nextTime.season;
+    // Hiệu ứng kinh tế/xã hội của mùa (năng suất, thể lực, thuế, doanh thu)
+    const seasonEffects = resolveSeasonEffects(nextSeason, (macro as any)?.seasonEffects);
     // Bỏ cấu hình ghi đè mùa kiểu cũ nếu còn sót trong macro
     if (macro?.seasonOverride) delete macro.seasonOverride;
 
@@ -71,7 +73,8 @@ export async function processGameTick(): Promise<GameTickResult> {
 
     for (const c of characters.rows) {
       const nextAge = c.age + (nextDay === 0 ? 1 : 0);
-      const nextHealth = Math.max(0, Math.min(100, c.health_energy + (nextDay === 0 ? -2 : 0)));
+      // Tiêu hao thể lực chịu hiệu ứng mùa (seasonEffects.energyPct)
+      const nextHealth = Math.max(0, Math.min(100, c.health_energy + (nextDay === 0 ? -2 * seasonEffects.energy : 0)));
 
       await client.query(
         `UPDATE characters SET age = $1, health_energy = $2, updated_at = now() WHERE id = $3`,
@@ -87,7 +90,8 @@ export async function processGameTick(): Promise<GameTickResult> {
     }>(`SELECT character_id, salary_minor FROM employments WHERE status = 'active'`);
 
     for (const emp of employments.rows) {
-      const salary = Number(emp.salary_minor);
+      // Thu nhập từ việc làm chịu hiệu ứng năng suất của mùa (seasonEffects.productivityPct)
+      const salary = Math.max(0, Math.round(Number(emp.salary_minor) * seasonEffects.productivity));
       if (salary <= 0) continue;
 
       await client.query(

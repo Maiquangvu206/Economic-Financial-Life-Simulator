@@ -51,6 +51,23 @@ function validateSeasonRanges(ranges: SeasonRangeDto[]): string | null {
   return null;
 }
 
+type SeasonEffectDto = { productivityPct: number; energyPct: number; taxPct: number; revenuePct: number };
+type SeasonEffectsMap = Record<SeasonId, SeasonEffectDto>;
+
+const DEFAULT_SEASON_EFFECTS: SeasonEffectsMap = {
+  spring: { productivityPct: 110, energyPct: 95, taxPct: 100, revenuePct: 100 },
+  summer: { productivityPct: 90, energyPct: 125, taxPct: 100, revenuePct: 105 },
+  autumn: { productivityPct: 105, energyPct: 100, taxPct: 100, revenuePct: 100 },
+  winter: { productivityPct: 95, energyPct: 115, taxPct: 100, revenuePct: 95 },
+};
+
+const EFFECT_FIELDS: Array<{ key: keyof SeasonEffectDto; label: string; hint: string }> = [
+  { key: 'productivityPct', label: 'Năng suất', hint: 'Thu nhập từ việc làm' },
+  { key: 'energyPct', label: 'Tiêu hao thể lực', hint: 'Càng cao càng hao thể lực' },
+  { key: 'taxPct', label: 'Thuế', hint: 'Thuế phải nộp' },
+  { key: 'revenuePct', label: 'Doanh thu', hint: 'Doanh thu công ty' },
+];
+
 type WelfareBenefitDto = {
   id: string;
   code: string;
@@ -91,6 +108,7 @@ function fmtMoney(amount: number) {
 
 export function SeasonCalendarPage() {
   const [seasonRanges, setSeasonRanges] = useState<SeasonRangeDto[]>(DEFAULT_SEASON_RANGES);
+  const [seasonEffects, setSeasonEffects] = useState<SeasonEffectsMap>(DEFAULT_SEASON_EFFECTS);
   const [otRatePercent, setOtRatePercent] = useState(300);
   const [statusMessage, setStatusMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -110,6 +128,7 @@ export function SeasonCalendarPage() {
     currentDayOfMonth?: number;
     otRatePercent?: number;
     seasonRanges?: SeasonRangeDto[];
+    seasonEffects?: SeasonEffectsMap;
   }>({
     queryKey: ['admin', 'game-config'],
     queryFn: () => adminRequest('/api/v1/admin/game-config'),
@@ -119,10 +138,13 @@ export function SeasonCalendarPage() {
     if (gameConfig?.seasonRanges && gameConfig.seasonRanges.length === 4) {
       setSeasonRanges(gameConfig.seasonRanges);
     }
+    if (gameConfig?.seasonEffects) {
+      setSeasonEffects({ ...DEFAULT_SEASON_EFFECTS, ...gameConfig.seasonEffects });
+    }
     if (gameConfig && typeof (gameConfig as any).otRatePercent === 'number') {
       setOtRatePercent(Number((gameConfig as any).otRatePercent));
     }
-  }, [gameConfig?.seasonRanges, (gameConfig as any)?.otRatePercent]);
+  }, [gameConfig?.seasonRanges, gameConfig?.seasonEffects, (gameConfig as any)?.otRatePercent]);
 
   const activeCount = useMemo(() => benefits.filter((b) => b.isActive).length, [benefits]);
 
@@ -220,13 +242,22 @@ export function SeasonCalendarPage() {
       notify('err', invalid);
       return;
     }
+    for (const season of Object.keys(seasonEffects) as SeasonId[]) {
+      for (const f of EFFECT_FIELDS) {
+        const v = seasonEffects[season][f.key];
+        if (!Number.isFinite(v) || v < 0 || v > 300) {
+          notify('err', `Giá trị "${f.label}" của ${SEASON_META[season].label} phải nằm trong khoảng 0 - 300%.`);
+          return;
+        }
+      }
+    }
     try {
       await adminRequest('/api/v1/admin/game-config', {
         method: 'PUT',
-        body: JSON.stringify({ seasonRanges, otRatePercent }),
+        body: JSON.stringify({ seasonRanges, seasonEffects, otRatePercent }),
       });
       await refetchConfig();
-      notify('ok', 'Đã lưu cấu hình khoảng thời gian mùa và OT. Mùa trên toàn hệ thống (admin, người chơi, hiệu ứng thời tiết) sẽ tự chuyển theo đúng các khoảng tháng đã cấu hình.');
+      notify('ok', 'Đã lưu khoảng thời gian mùa và hiệu ứng theo mùa. Mùa trên toàn hệ thống (admin, người chơi, hiệu ứng thời tiết) sẽ tự chuyển theo đúng các khoảng tháng đã cấu hình.');
     } catch (err: any) {
       notify('err', err?.problem?.detail || err?.message || 'Không thể lưu cấu hình.');
     }
@@ -242,7 +273,7 @@ export function SeasonCalendarPage() {
           </p>
         </div>
         <button type="button" onClick={handleApplyChanges} className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20">
-          Áp dụng & lưu khoảng mùa
+          Áp dụng & lưu mùa + hiệu ứng
         </button>
       </div>
 
@@ -317,7 +348,71 @@ export function SeasonCalendarPage() {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">2. Quy định Lao động & Phúc lợi (tham chiếu)</h2>
+          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">2. Hiệu ứng theo mùa</h2>
+          <p className="text-[11px] text-slate-600">
+            Hiệu chỉnh tác động kinh tế/xã hội của từng mùa. Đơn vị là <b>%</b> so với mức bình thường: <b>100 = không thay đổi</b>, &gt;100 = tăng, &lt;100 = giảm (cho phép 0 – 300).
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-xs">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500">
+                  <th className="py-2 pr-2 font-semibold">Mùa</th>
+                  {EFFECT_FIELDS.map((f) => (
+                    <th key={f.key} className="px-2 py-2 font-semibold">
+                      {f.label}
+                      <span className="block font-normal normal-case tracking-normal text-slate-400">{f.hint}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(Object.keys(SEASON_META) as SeasonId[]).map((season) => (
+                  <tr key={season} className="border-t border-slate-200">
+                    <td className="py-2 pr-2 font-semibold text-slate-800 whitespace-nowrap">{SEASON_META[season].label}</td>
+                    {EFFECT_FIELDS.map((f) => {
+                      const value = seasonEffects[season][f.key];
+                      const tone = value > 100 ? 'text-emerald-600' : value < 100 ? 'text-rose-600' : 'text-slate-700';
+                      return (
+                        <td key={f.key} className="px-2 py-2">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              max={300}
+                              step={5}
+                              value={value}
+                              onChange={(e) => {
+                                const v = Math.max(0, Math.min(300, Math.round(Number(e.target.value) || 0)));
+                                setSeasonEffects((prev) => ({ ...prev, [season]: { ...prev[season], [f.key]: v } }));
+                              }}
+                              className={`w-20 rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono ${tone}`}
+                            />
+                            <span className="text-slate-400">%</span>
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSeasonEffects(DEFAULT_SEASON_EFFECTS)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Khôi phục mặc định
+            </button>
+            <span className="text-[11px] text-slate-500">
+              Hiệu ứng áp dụng theo mùa hiện tại của lịch game: năng suất → thu nhập việc làm, tiêu hao thể lực → hao thể lực theo năm, thuế → thuế phải nộp, doanh thu → doanh thu công ty.
+            </span>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">3. Quy định Lao động & Phúc lợi (tham chiếu)</h2>
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
               <span className="text-slate-700">Hệ số lương làm thêm ngày lễ (OT):</span>

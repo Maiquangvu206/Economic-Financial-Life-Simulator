@@ -238,6 +238,62 @@ export function deriveCanonicalGameTime(params: {
   };
 }
 
+/** Hiệu ứng kinh tế/xã hội theo mùa (đơn vị %, 100 = không thay đổi). */
+export interface SeasonEffectConfig {
+  productivityPct: number; // Năng suất lao động -> thu nhập từ việc làm
+  energyPct: number; // Tiêu hao thể lực (càng cao càng hao)
+  taxPct: number; // Thuế phải nộp
+  revenuePct: number; // Doanh thu (công ty/cho thuê)
+}
+
+export type SeasonEffectsMap = Record<Season, SeasonEffectConfig>;
+
+export const DEFAULT_SEASON_EFFECTS: SeasonEffectsMap = {
+  spring: { productivityPct: 110, energyPct: 95, taxPct: 100, revenuePct: 100 },
+  summer: { productivityPct: 90, energyPct: 125, taxPct: 100, revenuePct: 105 },
+  autumn: { productivityPct: 105, energyPct: 100, taxPct: 100, revenuePct: 100 },
+  winter: { productivityPct: 95, energyPct: 115, taxPct: 100, revenuePct: 95 },
+};
+
+const EFFECT_KEYS = ['productivityPct', 'energyPct', 'taxPct', 'revenuePct'] as const;
+
+/** Chuẩn hóa cấu hình hiệu ứng mùa; trả về null nếu không hợp lệ. */
+export function normalizeSeasonEffects(raw: unknown): SeasonEffectsMap | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {} as SeasonEffectsMap;
+  for (const season of SEASON_IDS) {
+    const item = (raw as any)[season];
+    if (!item || typeof item !== 'object') return null;
+    const cfg = {} as SeasonEffectConfig;
+    for (const key of EFFECT_KEYS) {
+      const value = Math.round(Number(item[key]));
+      if (!Number.isFinite(value) || value < 0 || value > 300) return null;
+      cfg[key] = value;
+    }
+    out[season] = cfg;
+  }
+  return out;
+}
+
+/** Hiệu ứng hiệu lực của 1 mùa (multiplier, 1 = không đổi). */
+export function resolveSeasonEffects(season: Season, raw?: unknown): {
+  productivity: number;
+  energy: number;
+  tax: number;
+  revenue: number;
+  config: SeasonEffectConfig;
+} {
+  const map = normalizeSeasonEffects(raw) ?? DEFAULT_SEASON_EFFECTS;
+  const cfg = map[season];
+  return {
+    productivity: cfg.productivityPct / 100,
+    energy: cfg.energyPct / 100,
+    tax: cfg.taxPct / 100,
+    revenue: cfg.revenuePct / 100,
+    config: cfg,
+  };
+}
+
 export interface VietnamHoliday {
   id: string;
   nameVi: string;

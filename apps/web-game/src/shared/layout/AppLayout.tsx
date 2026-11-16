@@ -147,6 +147,7 @@ export function AppLayout() {
     minute?: number;
     period?: 'dawn' | 'day' | 'dusk' | 'night';
     restrictionContact?: RestrictionContact;
+    seasonEffects?: Record<string, { productivityPct: number; energyPct: number; taxPct: number; revenuePct: number }>;
   }>({
     queryKey: ['game-config'],
     queryFn: () => apiRequest('/api/v1/game-config'),
@@ -305,6 +306,11 @@ export function AppLayout() {
 
   const currentSeason = (SEASON_LABELS[season] ?? DEFAULT_SEASON) as { label: string; icon: string; badgeCls: string };
   const currentPeriod = (PERIOD_LABELS[period] ?? DEFAULT_PERIOD) as { label: string; icon: string };
+
+  const seasonEffect = gameConfig?.seasonEffects?.[String(season ?? 'spring')];
+  const seasonEffectTitle = seasonEffect
+    ? `Hiệu ứng mùa: năng suất ${seasonEffect.productivityPct}% · thể lực ${seasonEffect.energyPct}% · thuế ${seasonEffect.taxPct}% · doanh thu ${seasonEffect.revenuePct}%`
+    : undefined;
 
   async function markAllRead() {
     try {
@@ -489,7 +495,7 @@ export function AppLayout() {
               <span className="hidden border-l border-slate-200 pl-2 text-[11px] text-slate-500 sm:inline">{currentPeriod.icon} {currentPeriod.label}</span>
               <span className="border-l border-slate-200 pl-2 text-[11px] font-mono font-medium text-emerald-700 sm:text-xs">{formatVietnamDate(day, month, year)}</span>
             </div>
-            <div className={clsx('hidden items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-medium sm:flex', currentSeason.badgeCls)}>
+            <div title={seasonEffectTitle} className={clsx('hidden items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-medium sm:flex', currentSeason.badgeCls)}>
               <span>{currentSeason.icon}</span><span>{currentSeason.label}</span>
             </div>
             {activeHoliday && (

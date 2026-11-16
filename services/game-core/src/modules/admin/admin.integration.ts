@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, GAME_START_YEAR, getSeasonByMonthWithRanges, normalizeSeasonRanges } from '@efls/domain';
+import { DEFAULT_SEASON_EFFECTS, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, GAME_START_YEAR, getSeasonByMonthWithRanges, normalizeSeasonEffects, normalizeSeasonRanges } from '@efls/domain';
 import { pool } from '../../shared/db/pool.js';
 import { AppError } from '../../shared/http/errors.js';
 import { listActionLogs, writeActionLog } from '../../shared/audit/actionLog.js';
@@ -29,6 +29,7 @@ function gameTimePayload(row: { current_day: any; current_year: any; season: any
     minute: t.minute,
     season: t.season,
     seasonRanges,
+    seasonEffects: normalizeSeasonEffects(macro.seasonEffects) ?? DEFAULT_SEASON_EFFECTS,
     period: t.period,
     tickUpdatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
   };
@@ -416,6 +417,7 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
     currentYear?: number;
     otRatePercent?: number;
     seasonRanges?: Array<{ season: string; startMonth: number; endMonth: number }>;
+    seasonEffects?: Record<string, { productivityPct: number; energyPct: number; taxPct: number; revenuePct: number }>;
     macro?: Record<string, unknown>;
     restrictionContact?: Record<string, unknown>;
   };
@@ -446,6 +448,15 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
   // Xóa cấu hình ghi đè mùa kiểu cũ (nếu còn trong dữ liệu macro).
   delete nextMacro.seasonOverride;
 
+  // Hiệu ứng theo mùa (năng suất, thể lực, thuế, doanh thu) — cấu hình %.
+  if (body.seasonEffects != null) {
+    const normalizedEffects = normalizeSeasonEffects(body.seasonEffects);
+    if (!normalizedEffects) {
+      throw AppError.badRequest('Cấu hình hiệu ứng mùa không hợp lệ: giá trị phải là % từ 0 đến 300 cho cả 4 mùa.');
+    }
+    nextMacro.seasonEffects = normalizedEffects;
+  }
+
   const stateRow = await pool.query<{ current_day: number; current_year: number }>(`SELECT current_day, current_year FROM game_state WHERE id = 1`);
   const curDay = Number(stateRow.rows[0]?.current_day ?? 0);
   const curYear = Number(stateRow.rows[0]?.current_year ?? GAME_START_YEAR);
@@ -467,6 +478,7 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
   );
   await writeActionLog(pool as any, req.actorId, 'game.config.update', {
     seasonRanges: (nextMacro as any).seasonRanges ?? null,
+    seasonEffects: (nextMacro as any).seasonEffects ?? null,
     currentDay: body.currentDay ?? null,
     currentYear: body.currentYear ?? null,
     otRatePercent: (nextMacro as any).otRatePercent ?? null,
