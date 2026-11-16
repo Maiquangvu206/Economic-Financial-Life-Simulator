@@ -4,7 +4,7 @@ import { enqueueDomainEvent } from '../outboxEvents.js';
 import { publishClient } from '../publisher.js';
 import { env } from '../config/env.js';
 import { Rooms } from '@efls/contracts';
-import { accrueSimpleInterest, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR } from '@efls/domain';
+import { accrueSimpleInterest, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR, normalizeSeasonRanges } from '@efls/domain';
 
 export interface GameTickResult {
   tick: number;
@@ -49,28 +49,18 @@ export async function processGameTick(): Promise<GameTickResult> {
       nextDay = 0;
       nextYear += 1;
     }
-    const nextTime = deriveCanonicalGameTime({ dayOfYear: nextDay, year: nextYear });
-    let nextSeason = nextTime.season;
-    // Override mùa do admin đặt: chỉ có hiệu lực trong ngày game được đặt, sang ngày kế tiếp tự về theo lịch
-    const override = macro?.seasonOverride;
-    if (override && typeof override === 'object') {
-      const oy = Number(override.year);
-      const od = Number(override.dayOfYear);
-      const os = String(override.season ?? '');
-      const sameDay = oy === nextYear && od === nextDay;
-      const validSeason = ['spring', 'summer', 'autumn', 'winter'].includes(os);
-      if (sameDay && validSeason) {
-        nextSeason = os as any;
-      } else {
-        delete macro.seasonOverride;
-      }
-    }
+    // Mùa theo cấu hình khoảng thời gian mùa (tháng bắt đầu - kết thúc) do admin thiết lập
+    const seasonRanges = normalizeSeasonRanges(macro?.seasonRanges) ?? DEFAULT_SEASON_RANGES;
+    const nextTime = deriveCanonicalGameTime({ dayOfYear: nextDay, year: nextYear, seasonRanges });
+    const nextSeason = nextTime.season;
+    // Bỏ cấu hình ghi đè mùa kiểu cũ nếu còn sót trong macro
+    if (macro?.seasonOverride) delete macro.seasonOverride;
 
     await client.query(
       `UPDATE game_state SET current_day = $1, current_year = $2, season = $3, macro = $4::jsonb, updated_at = now() WHERE id = 1`,
       [nextDay, nextYear, nextSeason, JSON.stringify(macro)],
     );
-    applied.push(`game_state: day=${nextDay} month=${nextTime.month} dayOfMonth=${nextTime.day} year=${nextYear} season=${nextSeason}${macro?.seasonOverride ? ' (override)' : ''}`);
+    applied.push(`game_state: day=${nextDay} month=${nextTime.month} dayOfMonth=${nextTime.day} year=${nextYear} season=${nextSeason}`);
 
     // ---- 2. Character aging, health, energy ----
     const characters = await client.query<{

@@ -2,6 +2,55 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { adminRequest } from '../shared/api/httpClient';
 
+type SeasonId = 'spring' | 'summer' | 'autumn' | 'winter';
+
+type SeasonRangeDto = { season: SeasonId; startMonth: number; endMonth: number };
+
+const SEASON_META: Record<SeasonId, { label: string; desc: string; accent: string }> = {
+  spring: { label: '🌸 Mùa Xuân', desc: 'Mát mẻ, mưa phùn, năng suất +10%', accent: 'emerald' },
+  summer: { label: '☀️ Mùa Hạ', desc: 'Nắng nóng gay gắt, hao thể lực +25%', accent: 'amber' },
+  autumn: { label: '🍂 Mùa Thu', desc: 'Dễ chịu, sản xuất & kinh doanh đỉnh cao', accent: 'orange' },
+  winter: { label: '❄️ Mùa Đông', desc: 'Se lạnh rét buốt, chi phí sưởi ấm', accent: 'sky' },
+};
+
+const DEFAULT_SEASON_RANGES: SeasonRangeDto[] = [
+  { season: 'spring', startMonth: 2, endMonth: 4 },
+  { season: 'summer', startMonth: 5, endMonth: 7 },
+  { season: 'autumn', startMonth: 8, endMonth: 10 },
+  { season: 'winter', startMonth: 11, endMonth: 1 },
+];
+
+function monthsOfRange(startMonth: number, endMonth: number): number[] {
+  const months: number[] = [];
+  let m = Math.round(startMonth);
+  const end = Math.round(endMonth);
+  for (let i = 0; i < 12; i += 1) {
+    if (m < 1 || m > 12) break;
+    months.push(m);
+    if (m === end) break;
+    m = m === 12 ? 1 : m + 1;
+  }
+  return months;
+}
+
+function validateSeasonRanges(ranges: SeasonRangeDto[]): string | null {
+  const assigned = new Array<SeasonId | null>(13).fill(null);
+  for (const r of ranges) {
+    if (!(r.startMonth >= 1 && r.startMonth <= 12) || !(r.endMonth >= 1 && r.endMonth <= 12)) {
+      return 'Tháng phải nằm trong khoảng 1 - 12.';
+    }
+    const months = monthsOfRange(r.startMonth, r.endMonth);
+    if (months.length === 0) return 'Khoảng thời gian mùa không hợp lệ.';
+    for (const m of months) {
+      if (assigned[m]) return `Tháng ${m} đang bị gán cho cả ${SEASON_META[assigned[m]!].label} và ${SEASON_META[r.season].label}.`;
+      assigned[m] = r.season;
+    }
+  }
+  const missing = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].filter((m) => !assigned[m]);
+  if (missing.length > 0) return `Còn tháng chưa được gán mùa: ${missing.join(', ')}.`;
+  return null;
+}
+
 type WelfareBenefitDto = {
   id: string;
   code: string;
@@ -41,7 +90,7 @@ function fmtMoney(amount: number) {
 }
 
 export function SeasonCalendarPage() {
-  const [selectedSeason, setSelectedSeason] = useState<'spring' | 'summer' | 'autumn' | 'winter'>('spring');
+  const [seasonRanges, setSeasonRanges] = useState<SeasonRangeDto[]>(DEFAULT_SEASON_RANGES);
   const [otRatePercent, setOtRatePercent] = useState(300);
   const [statusMessage, setStatusMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -53,17 +102,27 @@ export function SeasonCalendarPage() {
     queryKey: ['admin', 'welfare', 'benefits'],
     queryFn: () => adminRequest<WelfareBenefitDto[]>('/api/v1/admin/welfare'),
   });
-  const { data: gameConfig, refetch: refetchConfig } = useQuery<{ season: 'spring'|'summer'|'autumn'|'winter'; currentDay: number; currentYear: number; otRatePercent?: number }>({
+  const { data: gameConfig, refetch: refetchConfig } = useQuery<{
+    season: SeasonId;
+    currentDay: number;
+    currentYear: number;
+    currentMonth?: number;
+    currentDayOfMonth?: number;
+    otRatePercent?: number;
+    seasonRanges?: SeasonRangeDto[];
+  }>({
     queryKey: ['admin', 'game-config'],
     queryFn: () => adminRequest('/api/v1/admin/game-config'),
   });
 
   useEffect(() => {
-    if (gameConfig?.season) setSelectedSeason(gameConfig.season);
+    if (gameConfig?.seasonRanges && gameConfig.seasonRanges.length === 4) {
+      setSeasonRanges(gameConfig.seasonRanges);
+    }
     if (gameConfig && typeof (gameConfig as any).otRatePercent === 'number') {
       setOtRatePercent(Number((gameConfig as any).otRatePercent));
     }
-  }, [gameConfig?.season, (gameConfig as any)?.otRatePercent]);
+  }, [gameConfig?.seasonRanges, (gameConfig as any)?.otRatePercent]);
 
   const activeCount = useMemo(() => benefits.filter((b) => b.isActive).length, [benefits]);
 
@@ -156,13 +215,18 @@ export function SeasonCalendarPage() {
   }
 
   const handleApplyChanges = async () => {
+    const invalid = validateSeasonRanges(seasonRanges);
+    if (invalid) {
+      notify('err', invalid);
+      return;
+    }
     try {
       await adminRequest('/api/v1/admin/game-config', {
         method: 'PUT',
-        body: JSON.stringify({ season: selectedSeason, otRatePercent }),
+        body: JSON.stringify({ seasonRanges, otRatePercent }),
       });
       await refetchConfig();
-      notify('ok', 'Đã lưu cấu hình mùa và OT vào hệ thống. Mùa do admin chọn chỉ áp dụng trong ngày game hiện tại, sang ngày game kế tiếp sẽ tự động trở về theo lịch. Thời gian game cố định: 1 ngày = 1 phút thực tế.');
+      notify('ok', 'Đã lưu cấu hình khoảng thời gian mùa và OT. Mùa trên toàn hệ thống (admin, người chơi, hiệu ứng thời tiết) sẽ tự chuyển theo đúng các khoảng tháng đã cấu hình.');
     } catch (err: any) {
       notify('err', err?.problem?.detail || err?.message || 'Không thể lưu cấu hình.');
     }
@@ -174,11 +238,11 @@ export function SeasonCalendarPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900">Quản trị Mùa & Phúc lợi công dân</h1>
           <p className="mt-1 text-xs text-slate-600">
-            Cấu hình mùa được lưu vào hệ thống dùng chung; phúc lợi/lì xì do hệ thống phát (server-side). Thời gian game cố định: <b>1 ngày = 1 phút thực tế</b>.
+            Cấu hình <b>khoảng thời gian mùa</b> (tháng bắt đầu - kết thúc) được lưu vào hệ thống dùng chung; phúc lợi/lì xì do hệ thống phát (server-side). Thời gian game cố định: <b>1 ngày = 1 phút thực tế</b>.
           </p>
         </div>
         <button type="button" onClick={handleApplyChanges} className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20">
-          Áp dụng & lưu mùa
+          Áp dụng & lưu khoảng mùa
         </button>
       </div>
 
@@ -191,32 +255,64 @@ export function SeasonCalendarPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">1. Cấu hình Mùa (hệ thống)</h2>
+          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">1. Khoảng thời gian mùa (hệ thống)</h2>
+          <p className="text-[11px] text-slate-600">
+            Thiết lập tháng bắt đầu - tháng kết thúc cho từng mùa. Mùa vắt qua năm mới: tháng bắt đầu lớn hơn tháng kết thúc (ví dụ Đông: 11 → 1). Toàn bộ 12 tháng phải được gán đủ 4 mùa, không trùng nhau.
+          </p>
           <div className="space-y-2">
-            <label className="text-xs text-slate-700">Chọn mùa khí hậu hiện tại:</label>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {[
-                { id: 'spring', label: '🌸 Mùa Xuân', desc: 'Mát mẻ, mưa phùn, năng suất +10%' },
-                { id: 'summer', label: '☀️ Mùa Hạ', desc: 'Nắng nóng gay gắt, hao thể lực +25%' },
-                { id: 'autumn', label: '🍂 Mùa Thu', desc: 'Dễ chịu, sản xuất & kinh doanh đỉnh cao' },
-                { id: 'winter', label: '❄️ Mùa Đông', desc: 'Se lạnh rét buốt, chi phí sưởi ấm' },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setSelectedSeason(m.id as 'spring' | 'summer' | 'autumn' | 'winter')}
-                  className={`rounded-xl border p-3 text-left transition ${selectedSeason === m.id ? 'border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500' : 'border-slate-200 bg-slate-100 text-slate-600 hover:border-slate-300'}`}
-                >
-                  <p className="font-semibold text-slate-800">{m.label}</p>
-                  <p className="text-[11px] text-slate-600 mt-1">{m.desc}</p>
-                </button>
-              ))}
-            </div>
+            {seasonRanges.map((r, idx) => {
+              const meta = SEASON_META[r.season];
+              const months = monthsOfRange(r.startMonth, r.endMonth);
+              return (
+                <div key={r.season} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-slate-800">{meta.label}</p>
+                    <span className="text-[11px] font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                      Tháng {months.length > 0 ? months.join(', ') : '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-700">
+                    <label className="flex items-center gap-1.5">
+                      Từ tháng
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={r.startMonth}
+                        onChange={(e) => {
+                          const v = Math.max(1, Math.min(12, Math.round(Number(e.target.value) || 1)));
+                          setSeasonRanges((prev) => prev.map((item, i) => (i === idx ? { ...item, startMonth: v } : item)));
+                        }}
+                        className="w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono"
+                      />
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      đến tháng
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={r.endMonth}
+                        onChange={(e) => {
+                          const v = Math.max(1, Math.min(12, Math.round(Number(e.target.value) || 1)));
+                          setSeasonRanges((prev) => prev.map((item, i) => (i === idx ? { ...item, endMonth: v } : item)));
+                        }}
+                        className="w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono"
+                      />
+                    </label>
+                    <span className="text-[11px] text-slate-500">{meta.desc}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1">
             <p><b>Thời gian game:</b> cố định <b>1 ngày = 1 phút thực tế</b> (không cấu hình tốc độ).</p>
-            <p>Mùa hiện tại trên hệ thống: <b>{gameConfig?.season ?? '—'}</b> (năm {gameConfig?.currentYear ?? 1}, ngày {gameConfig?.currentDay ?? 0}).</p>
-            <p className="text-amber-700"><b>Lưu ý:</b> khi admin thay đổi mùa, thay đổi chỉ có hiệu lực trong <b>1 ngày game</b>, sau đó hệ thống tự quay về mùa theo lịch tự động.</p>
+            <p>
+              Mùa hiện tại trên hệ thống: <b>{gameConfig?.season ? SEASON_META[gameConfig.season].label : '—'}</b>{' '}
+              (năm {gameConfig?.currentYear ?? 2000}, ngày {gameConfig?.currentDayOfMonth ?? '—'} tháng {gameConfig?.currentMonth ?? '—'}).
+            </p>
+            <p className="text-amber-700"><b>Lưu ý:</b> mùa tự chuyển theo các khoảng tháng ở trên; không còn cơ chế chọn mùa thủ công theo từng ngày.</p>
           </div>
         </div>
 

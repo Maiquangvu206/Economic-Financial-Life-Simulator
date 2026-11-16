@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { deriveCanonicalGameTime, GAME_START_YEAR } from '@efls/domain';
+import { DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, GAME_START_YEAR, getSeasonByMonthWithRanges, normalizeSeasonRanges } from '@efls/domain';
 import { pool } from '../../shared/db/pool.js';
 import { AppError } from '../../shared/http/errors.js';
 import { listActionLogs, writeActionLog } from '../../shared/audit/actionLog.js';
@@ -15,20 +15,10 @@ import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequ
 function gameTimePayload(row: { current_day: any; current_year: any; season: any; updated_at?: any; macro?: any }) {
   const dayOfYear = Number(row.current_day ?? 0);
   const year = Number(row.current_year ?? GAME_START_YEAR);
-  const t = deriveCanonicalGameTime({ dayOfYear, year, tickUpdatedAt: row.updated_at ?? null });
   const macro = row.macro && typeof row.macro === 'object' ? (row.macro as any) : {};
-  // Mùa hiệu lực = mùa theo lịch (tháng game); chỉ ghi đè khi override còn đúng ngày game hiện tại.
-  // Không dùng cột game_state.season (có thể lệch do dữ liệu cũ).
-  let effectiveSeason = t.season;
-  const override = macro.seasonOverride;
-  if (override && typeof override === 'object') {
-    const oy = Number(override.year);
-    const od = Number(override.dayOfYear);
-    const os = String(override.season ?? '');
-    if (oy === year && od === dayOfYear && ['spring', 'summer', 'autumn', 'winter'].includes(os)) {
-      effectiveSeason = os as any;
-    }
-  }
+  const seasonRanges = normalizeSeasonRanges(macro.seasonRanges) ?? DEFAULT_SEASON_RANGES;
+  const t = deriveCanonicalGameTime({ dayOfYear, year, tickUpdatedAt: row.updated_at ?? null, seasonRanges });
+  // Mùa hiệu lực = mùa theo cấu hình khoảng thời gian mùa (tháng game). Không dùng cột game_state.season.
   return {
     currentDay: dayOfYear,
     dayOfYear,
@@ -37,7 +27,8 @@ function gameTimePayload(row: { current_day: any; current_year: any; season: any
     currentDayOfMonth: t.day,
     hour: t.hour,
     minute: t.minute,
-    season: effectiveSeason,
+    season: t.season,
+    seasonRanges,
     period: t.period,
     tickUpdatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
   };
@@ -421,10 +412,10 @@ export async function getGameConfig(req: Request, res: Response): Promise<void> 
 export async function updateGameConfig(req: Request, res: Response): Promise<void> {
   ensureAdmin(req);
   const body = req.body as {
-    season?: string;
     currentDay?: number;
     currentYear?: number;
     otRatePercent?: number;
+    seasonRanges?: Array<{ season: string; startMonth: number; endMonth: number }>;
     macro?: Record<string, unknown>;
     restrictionContact?: Record<string, unknown>;
   };
@@ -444,34 +435,44 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
       updatedAt: new Date().toISOString(),
     };
   }
-  // Mùa do admin đặt: ghi đè tạm thời trong ngày game hiện tại, sang ngày game kế tiếp tự về theo lịch tự động
+  // Cấu hình khoảng thời gian mùa (tháng bắt đầu - tháng kết thúc cho từng mùa); thay thế hoàn toàn cơ chế "chọn mùa" cũ.
+  if (body.seasonRanges != null) {
+    const normalized = normalizeSeasonRanges(body.seasonRanges);
+    if (!normalized) {
+      throw AppError.badRequest('Cấu hình mùa không hợp lệ: mỗi tháng game phải thuộc đúng 1 mùa và đủ 4 mùa (Xuân/Hạ/Thu/Đông).');
+    }
+    nextMacro.seasonRanges = normalized;
+  }
+  // Xóa cấu hình ghi đè mùa kiểu cũ (nếu còn trong dữ liệu macro).
+  delete nextMacro.seasonOverride;
+
   const stateRow = await pool.query<{ current_day: number; current_year: number }>(`SELECT current_day, current_year FROM game_state WHERE id = 1`);
   const curDay = Number(stateRow.rows[0]?.current_day ?? 0);
   const curYear = Number(stateRow.rows[0]?.current_year ?? GAME_START_YEAR);
-  if (body.season && ['spring', 'summer', 'autumn', 'winter'].includes(String(body.season))) {
-    nextMacro.seasonOverride = { season: String(body.season), year: curYear, dayOfYear: curDay };
-  } else if (body.season === null) {
-    delete nextMacro.seasonOverride;
-  }
+  const nextDay = body.currentDay ?? curDay;
+  const effectiveRanges = normalizeSeasonRanges((nextMacro as any).seasonRanges) ?? DEFAULT_SEASON_RANGES;
+  const nextMonth = Math.floor((((Math.floor(nextDay) % 360) + 360) % 360) / 30) + 1;
+  const nextSeason = getSeasonByMonthWithRanges(nextMonth, effectiveRanges);
+
   await pool.query(
     `INSERT INTO game_state (id, current_day, current_year, season, macro)
-     VALUES (1, COALESCE($1,0), COALESCE($2,2000), COALESCE($3,'spring'), $4::jsonb)
+     VALUES (1, COALESCE($1,0), COALESCE($2,2000), $3, $4::jsonb)
      ON CONFLICT (id) DO UPDATE SET
        current_day = COALESCE($1, game_state.current_day),
        current_year = COALESCE($2, game_state.current_year),
-       season = COALESCE($3, game_state.season),
+       season = $3,
        macro = $4::jsonb,
        updated_at = now()`,
-    [body.currentDay ?? null, body.currentYear ?? null, body.season ?? null, JSON.stringify(nextMacro)],
+    [body.currentDay ?? null, body.currentYear ?? null, nextSeason, JSON.stringify(nextMacro)],
   );
   await writeActionLog(pool as any, req.actorId, 'game.config.update', {
-    season: body.season ?? null,
+    seasonRanges: (nextMacro as any).seasonRanges ?? null,
     currentDay: body.currentDay ?? null,
     currentYear: body.currentYear ?? null,
     otRatePercent: (nextMacro as any).otRatePercent ?? null,
     restrictionContact: body.restrictionContact ? true : null,
   });
-  await publishToAllUsers('notification', { kind: 'info', title: 'Cấu hình hệ thống đã cập nhật', body: 'Cấu hình hệ thống/liên hệ hỗ trợ đã được cập nhật bởi quản trị.', at: Date.now() });
+  await publishToAllUsers('notification', { kind: 'info', title: 'Cấu hình hệ thống đã cập nhật', body: 'Cấu hình khoảng thời gian mùa/liên hệ hỗ trợ đã được cập nhật bởi quản trị.', at: Date.now() });
   await getGameConfig(req, res);
 }
 

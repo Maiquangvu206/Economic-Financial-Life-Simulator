@@ -131,16 +131,86 @@ export function getSeasonByMonth(month: number): Season {
   return 'winter';
 }
 
+export interface SeasonRange {
+  season: Season;
+  startMonth: number; // 1-12
+  endMonth: number; // 1-12 (có thể nhỏ hơn startMonth khi mùa vắt qua năm mới, vd 11 -> 1)
+}
+
+/** Khoảng thời gian mùa mặc định (theo lịch Việt Nam). */
+export const DEFAULT_SEASON_RANGES: SeasonRange[] = [
+  { season: 'spring', startMonth: 2, endMonth: 4 },
+  { season: 'summer', startMonth: 5, endMonth: 7 },
+  { season: 'autumn', startMonth: 8, endMonth: 10 },
+  { season: 'winter', startMonth: 11, endMonth: 1 },
+];
+
+const SEASON_IDS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+
+function monthsInRange(startMonth: number, endMonth: number): number[] {
+  const months: number[] = [];
+  let m = startMonth;
+  for (let i = 0; i < 12; i += 1) {
+    months.push(m);
+    if (m === endMonth) break;
+    m = m === 12 ? 1 : m + 1;
+  }
+  return months;
+}
+
+/**
+ * Chuẩn hóa & kiểm tra cấu hình khoảng thời gian mùa.
+ * Trả về null nếu không hợp lệ (thiếu mùa, trùng tháng, tháng không được gán...).
+ */
+export function normalizeSeasonRanges(raw: unknown): SeasonRange[] | null {
+  if (!Array.isArray(raw) || raw.length !== 4) return null;
+  const bySeason = new Map<Season, SeasonRange>();
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') return null;
+    const season = String((item as any).season ?? '') as Season;
+    if (!SEASON_IDS.includes(season)) return null;
+    if (bySeason.has(season)) return null;
+    const startMonth = Math.round(Number((item as any).startMonth));
+    const endMonth = Math.round(Number((item as any).endMonth));
+    if (!(startMonth >= 1 && startMonth <= 12) || !(endMonth >= 1 && endMonth <= 12)) return null;
+    bySeason.set(season, { season, startMonth, endMonth });
+  }
+  if (bySeason.size !== 4) return null;
+
+  const assigned = new Array<Season | null>(13).fill(null);
+  for (const range of bySeason.values()) {
+    for (const m of monthsInRange(range.startMonth, range.endMonth)) {
+      if (assigned[m]) return null; // trùng tháng giữa 2 mùa
+      assigned[m] = range.season;
+    }
+  }
+  for (let m = 1; m <= 12; m += 1) {
+    if (!assigned[m]) return null; // còn tháng chưa được gán mùa
+  }
+  return SEASON_IDS.map((s) => bySeason.get(s)!);
+}
+
+/** Lấy mùa theo tháng, hỗ trợ cấu hình khoảng thời gian mùa tùy chỉnh. */
+export function getSeasonByMonthWithRanges(month: number, ranges?: SeasonRange[] | null): Season {
+  const list = normalizeSeasonRanges(ranges) ?? DEFAULT_SEASON_RANGES;
+  const m = ((Math.floor(month) - 1) % 12 + 12) % 12 + 1;
+  for (const range of list) {
+    if (monthsInRange(range.startMonth, range.endMonth).includes(m)) return range.season;
+  }
+  return getSeasonByMonth(m);
+}
+
 export function deriveCanonicalGameTime(params: {
   dayOfYear: number;
   year: number;
   tickUpdatedAt?: Date | string | number | null;
   now?: Date | number;
+  seasonRanges?: SeasonRange[] | null;
 }): CanonicalGameTime {
   const normalizedDay = ((Math.floor(params.dayOfYear) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
   const month = Math.floor(normalizedDay / GAME_DAYS_PER_MONTH) + 1;
   const day = (normalizedDay % GAME_DAYS_PER_MONTH) + 1;
-  const season = getSeasonByMonth(month);
+  const season = getSeasonByMonthWithRanges(month, params.seasonRanges);
 
   let hour = 0;
   let minute = 0;
