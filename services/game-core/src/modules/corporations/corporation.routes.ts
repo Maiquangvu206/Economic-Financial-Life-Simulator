@@ -60,10 +60,9 @@ corporationRouter.post(
   asyncHandler(controller.ipoCompany),
 );
 
-/** Phát hành cổ tức cho cổ đông. */
+/** (Đã tắt) Cổ tức thủ công: hệ thống tự động chia cổ tức theo kỳ 30 ngày sau khi khai/nộp thuế. */
 corporationRouter.post(
   '/:companyId/dividend',
-  validateBody(DividendRequestSchema),
   asyncHandler(controller.payDividend),
 );
 
@@ -86,10 +85,9 @@ corporationRouter.post(
 /** Giải thể/phá sản công ty (chủ sở hữu). */
 corporationRouter.post('/:companyId/dissolve', asyncHandler(controller.dissolveCompany));
 
-/** Ghi nhận doanh thu vào quỹ công ty. */
+/** (Đã tắt) Ghi nhận doanh thu thủ công: doanh thu được hệ thống tự động tính/chốt theo chu kỳ 30 ngày game. */
 corporationRouter.post(
   '/:companyId/revenue',
-  validateBody(CompanyOperationRequestSchema),
   asyncHandler(controller.collectRevenue),
 );
 

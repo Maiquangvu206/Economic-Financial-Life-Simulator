@@ -16,6 +16,8 @@ import { GiftCodesPage } from '../pages/GiftCodesPage';
 import { SsoPage } from '../pages/SsoPage';
 import { SystemBroadcastPage } from '../pages/SystemBroadcastPage';
 import { InterestRatesConfigPage } from '../pages/InterestRatesConfigPage';
+import { IndustryRevenueConfigPage } from '../pages/IndustryRevenueConfigPage';
+import { StockMarketControlPage } from '../pages/StockMarketControlPage';
 
 const router = createBrowserRouter([
   {
@@ -41,6 +43,8 @@ const router = createBrowserRouter([
           { path: 'education-config', element: <EducationConfigPage /> },
           { path: 'politics', element: <PoliticsConfigPage /> },
           { path: 'interest-rates', element: <InterestRatesConfigPage /> },
+          { path: 'industry-revenue', element: <IndustryRevenueConfigPage /> },
+          { path: 'stock-market-control', element: <StockMarketControlPage /> },
           { path: 'offline', element: <OfflinePolicyPage /> },
           { path: 'restriction', element: <RestrictionSettingsPage /> },
           { path: 'audit-logs', element: <AuditLogsPage /> },

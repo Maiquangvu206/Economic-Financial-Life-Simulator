@@ -86,6 +86,10 @@ export const CompanyInvestRequestSchema = z.object({
 });
 export type CompanyInvestRequest = z.infer<typeof CompanyInvestRequestSchema>;
 
+/** Nạp vốn/Bơm quỹ công ty: chuyển từ ví cá nhân sang quỹ công ty (companies.cash_minor). */
+export const CapitalInjectionRequestSchema = CompanyInvestRequestSchema;
+export type CapitalInjectionRequest = CompanyInvestRequest;
+
 export const CompanyOverviewDtoSchema = z.object({
   companies: z.array(CompanyDtoSchema),
 });
@@ -99,6 +103,7 @@ export const IpoCompanyRequestSchema = z.object({
 });
 export type IpoCompanyRequest = z.infer<typeof IpoCompanyRequestSchema>;
 
+// Legacy (manual dividend). Dividend is now auto-distributed after 30-day tax filing settlement.
 export const DividendRequestSchema = z.object({
   companyId: IdSchema.optional(),
   amountPerShare: MoneySchema,
@@ -188,6 +193,8 @@ export const CompanyLedgerEntryDtoSchema = z.object({
   declaredAmount: MoneySchema,
   description: z.string(),
   isEvasion: z.boolean(),
+  ledgerKind: z.enum(['MANUAL', 'ACTUAL']).optional(),
+  periodKey: z.string().nullable().optional(),
   occurredAt: z.string().datetime(),
 });
 export type CompanyLedgerEntryDto = z.infer<typeof CompanyLedgerEntryDtoSchema>;
@@ -220,25 +227,32 @@ export const CompanyTaxFilingDtoSchema = z.object({
   id: IdSchema,
   companyId: IdSchema,
   period: z.string(),
+  periodKey: z.string().nullable().optional(),
   declaredRevenue: MoneySchema,
   actualRevenue: MoneySchema,
   declaredExpense: MoneySchema,
   actualExpense: MoneySchema,
   taxDue: MoneySchema,
   taxPaid: MoneySchema,
+  dividendPool: MoneySchema.optional(),
+  dividendDistributed: MoneySchema.optional(),
+  opexTotal: MoneySchema.optional(),
+  evasionGap: MoneySchema.optional(),
   riskScore: z.number().int(),
   status: z.enum(['draft', 'filed', 'audited', 'penalized']),
   notes: z.string(),
   createdAt: z.string().datetime(),
   filedAt: z.string().datetime().nullable(),
+  dividendDistributedAt: z.string().datetime().nullable().optional(),
+  auditCheckedAt: z.string().datetime().nullable().optional(),
 });
 export type CompanyTaxFilingDto = z.infer<typeof CompanyTaxFilingDtoSchema>;
 
 export const CreateCompanyTaxFilingRequestSchema = z.object({
-  period: z.string().min(3).max(20),
-  declareFull: z.boolean().optional().default(true),
-  adjustmentDeclaredRevenue: MoneySchema.optional(),
-  adjustmentDeclaredExpense: MoneySchema.optional(),
+  /** Kỳ 30 ngày game vừa kết thúc (periodKey, ví dụ 2000-01). Nếu bỏ trống, hệ thống dùng kỳ gần nhất có doanh thu thực tế. */
+  period: z.string().min(3).max(20).optional(),
+  /** Doanh thu do chủ sở hữu khai báo cho kỳ (có thể khác doanh thu thực tế). */
+  declaredRevenue: MoneySchema,
   notes: z.string().max(500).optional(),
 });
 export type CreateCompanyTaxFilingRequest = z.infer<typeof CreateCompanyTaxFilingRequestSchema>;

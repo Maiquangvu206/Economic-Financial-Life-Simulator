@@ -1027,3 +1027,207 @@ export async function adminSupportCompaniesFromStateFund(req: Request, res: Resp
     client.release();
   }
 }
+
+export async function getIndustryRevenueConfigs(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const r = await pool.query(
+    `SELECT industry_type AS "industryType", monthly_rate_pct AS "monthlyRatePct",
+            min_revenue_minor AS "minRevenueMinor", max_revenue_minor AS "maxRevenueMinor",
+            updated_by AS "updatedBy", updated_at AS "updatedAt"
+     FROM industry_revenue_configs
+     ORDER BY industry_type ASC`,
+  );
+  res.json(r.rows.map((row: any) => ({
+    industryType: row.industryType,
+    monthlyRatePct: Number(row.monthlyRatePct ?? 0),
+    minRevenueMinor: Number(row.minRevenueMinor ?? 0),
+    maxRevenueMinor: Number(row.maxRevenueMinor ?? 0),
+    updatedBy: row.updatedBy ?? null,
+    updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
+  })));
+}
+
+export async function upsertIndustryRevenueConfigs(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const body = req.body as { configs: Array<{ industryType: string; monthlyRatePct: number; minRevenueMinor: number; maxRevenueMinor: number }> };
+  const configs = Array.isArray(body?.configs) ? body.configs : [];
+  if (configs.length === 0) throw AppError.badRequest('Danh sách cấu hình trống.');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const c of configs) {
+      const industryType = String(c.industryType || '').trim();
+      if (!industryType) continue;
+      const monthlyRatePct = Number(c.monthlyRatePct ?? 0);
+      const minRevenueMinor = Math.max(0, Math.trunc(Number(c.minRevenueMinor ?? 0)));
+      const maxRevenueMinor = Math.max(0, Math.trunc(Number(c.maxRevenueMinor ?? 0)));
+      if (!Number.isFinite(monthlyRatePct) || monthlyRatePct < 0) throw AppError.badRequest(`Tỉ lệ doanh thu không hợp lệ cho ${industryType}.`);
+      if (maxRevenueMinor > 0 && maxRevenueMinor < minRevenueMinor) {
+        throw AppError.badRequest(`max_revenue phải >= min_revenue cho ${industryType}.`);
+      }
+      await client.query(
+        `INSERT INTO industry_revenue_configs (industry_type, monthly_rate_pct, min_revenue_minor, max_revenue_minor, updated_by, updated_at)
+         VALUES ($1,$2,$3,$4,$5,now())
+         ON CONFLICT (industry_type) DO UPDATE SET
+           monthly_rate_pct = EXCLUDED.monthly_rate_pct,
+           min_revenue_minor = EXCLUDED.min_revenue_minor,
+           max_revenue_minor = EXCLUDED.max_revenue_minor,
+           updated_by = EXCLUDED.updated_by,
+           updated_at = now()`,
+        [industryType, monthlyRatePct, minRevenueMinor, maxRevenueMinor, req.actorId ?? null],
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+
+  await writeActionLog(pool as any, req.actorId, 'company.industry_revenue_config.update', { count: configs.length });
+  await getIndustryRevenueConfigs(req, res);
+}
+
+export async function getAdminMarketLogs(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const limit = Math.max(1, Math.min(200, Number(req.query.limit ?? 50)));
+  const r = await pool.query(
+    `SELECT id, admin_id AS "adminId", scope, target_ids AS "targetIds", mode, delta_pct AS "deltaPct",
+            duration_hours AS "durationHours", reason, created_at AS "createdAt"
+     FROM admin_market_logs
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+  res.json(r.rows.map((row: any) => ({
+    id: row.id,
+    adminId: row.adminId ?? null,
+    scope: row.scope,
+    targetIds: Array.isArray(row.targetIds) ? row.targetIds : (row.targetIds ?? []),
+    mode: row.mode,
+    deltaPct: Number(row.deltaPct ?? 0),
+    durationHours: row.durationHours == null ? null : Number(row.durationHours),
+    reason: row.reason ?? '',
+    createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
+  })));
+}
+
+export async function adminAdjustStockPrice(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const body = req.body as {
+    mode: 'INSTANT_SHOCK' | 'TREND_BIAS';
+    deltaPct: number;
+    scope: 'ALL_MARKET' | 'SPECIFIC_COMPANIES';
+    companyIds?: string[];
+    durationHours?: number;
+    reason: string;
+  };
+
+  const mode = body.mode;
+  const scope = body.scope;
+  const deltaPct = Number(body.deltaPct ?? 0);
+  const reason = String(body.reason ?? '').trim();
+  const companyIds = Array.from(new Set((body.companyIds ?? []).map((x) => String(x)).filter(Boolean)));
+  const durationHours = body.durationHours == null ? null : Math.max(1, Math.trunc(Number(body.durationHours)));
+
+  if (!['INSTANT_SHOCK', 'TREND_BIAS'].includes(mode)) throw AppError.badRequest('Chế độ không hợp lệ.');
+  if (!['ALL_MARKET', 'SPECIFIC_COMPANIES'].includes(scope)) throw AppError.badRequest('Phạm vi không hợp lệ.');
+  if (!Number.isFinite(deltaPct) || deltaPct < -50 || deltaPct > 50) throw AppError.badRequest('delta_pct phải trong khoảng -50% đến +50%.');
+  if (!reason) throw AppError.badRequest('Vui lòng nhập lý do.');
+  if (scope === 'SPECIFIC_COMPANIES' && companyIds.length === 0) throw AppError.badRequest('Cần chọn ít nhất một công ty.');
+  if (mode === 'TREND_BIAS' && !durationHours) throw AppError.badRequest('TREND_BIAS yêu cầu duration_hours.');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const targetIds: string[] = [];
+    let affectedTickers = 0;
+    if (mode === 'INSTANT_SHOCK') {
+      const factor = 1 + deltaPct / 100;
+      if (scope === 'ALL_MARKET') {
+        const r = await client.query<{ id: string; company_id: string }>(
+          `UPDATE stock_tickers st
+              SET previous_close_minor = st.current_price_minor,
+                  current_price_minor = GREATEST(100, ROUND(st.current_price_minor * $1)::bigint)
+            FROM companies c
+            WHERE c.id = st.company_id AND c.status = 'ipo'
+          RETURNING st.id, st.company_id`,
+          [factor],
+        );
+        affectedTickers = r.rowCount ?? 0;
+        r.rows.forEach((x) => targetIds.push(x.company_id));
+      } else {
+        const r = await client.query<{ id: string; company_id: string }>(
+          `UPDATE stock_tickers st
+              SET previous_close_minor = st.current_price_minor,
+                  current_price_minor = GREATEST(100, ROUND(st.current_price_minor * $2)::bigint)
+            FROM companies c
+            WHERE c.id = st.company_id AND c.status = 'ipo' AND c.id = ANY($1::uuid[])
+          RETURNING st.id, st.company_id`,
+          [companyIds, factor],
+        );
+        affectedTickers = r.rowCount ?? 0;
+        r.rows.forEach((x) => targetIds.push(x.company_id));
+      }
+    }
+
+    const logRes = await client.query<{ id: string; created_at: Date }>(
+      `INSERT INTO admin_market_logs (id, admin_id, scope, target_ids, mode, delta_pct, duration_hours, reason)
+       VALUES (gen_random_uuid(), $1, $2, $3::jsonb, $4, $5, $6, $7)
+       RETURNING id, created_at`,
+      [req.actorId ?? null, scope, JSON.stringify(scope === 'ALL_MARKET' ? [] : companyIds), mode, deltaPct, durationHours, reason],
+    );
+    const logId = logRes.rows[0]!.id;
+
+    if (mode === 'TREND_BIAS') {
+      const hours = durationHours ?? 1;
+      if (scope === 'ALL_MARKET') {
+        await client.query(
+          `INSERT INTO stock_market_biases (id, scope, ticker_id, bias_pct, ends_at, created_by, log_id)
+           VALUES (gen_random_uuid(), 'ALL_MARKET', NULL, $1, now() + ($2::int * interval '1 hour'), $3, $4)`,
+          [deltaPct, hours, req.actorId ?? null, logId],
+        );
+        affectedTickers = (await client.query(`SELECT COUNT(*)::int AS c FROM stock_tickers st JOIN companies c2 ON c2.id = st.company_id WHERE c2.status='ipo'`)).rows[0]?.c ?? 0;
+      } else {
+        const tickers = await client.query<{ id: string; company_id: string }>(
+          `SELECT st.id, st.company_id FROM stock_tickers st JOIN companies c ON c.id = st.company_id WHERE c.status='ipo' AND c.id = ANY($1::uuid[])`,
+          [companyIds],
+        );
+        for (const t of tickers.rows) {
+          await client.query(
+            `INSERT INTO stock_market_biases (id, scope, ticker_id, bias_pct, ends_at, created_by, log_id)
+             VALUES (gen_random_uuid(), 'SPECIFIC_COMPANIES', $1, $2, now() + ($3::int * interval '1 hour'), $4, $5)`,
+            [t.id, deltaPct, hours, req.actorId ?? null, logId],
+          );
+          targetIds.push(t.company_id);
+        }
+        affectedTickers = tickers.rows.length;
+      }
+    }
+
+    await client.query('COMMIT');
+
+    await writeActionLog(pool as any, req.actorId, 'admin.stock_market.adjust_price', {
+      mode, scope, deltaPct, durationHours, reason, affectedTickers, targetCount: targetIds.length,
+    });
+
+    res.json({
+      ok: true,
+      mode,
+      scope,
+      deltaPct,
+      durationHours,
+      affectedTickers,
+      logId,
+      createdAt: logRes.rows[0]!.created_at ? new Date(logRes.rows[0]!.created_at).toISOString() : new Date().toISOString(),
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}

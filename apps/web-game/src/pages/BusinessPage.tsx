@@ -49,7 +49,6 @@ function money(amount: number) {
 }
 
 const ENTRY_TYPES = [
-  { value: 'revenue', label: 'Doanh thu' },
   { value: 'opex', label: 'OPEX' },
   { value: 'payroll', label: 'Lương' },
   { value: 'tax', label: 'Thuế' },
@@ -76,10 +75,7 @@ export function BusinessPage() {
   const [ipoSymbol, setIpoSymbol] = useState('');
   const [ipoPrice, setIpoPrice] = useState('10000');
   const [ipoShares, setIpoShares] = useState('1000000');
-  const [divPerShare, setDivPerShare] = useState('100');
   const [takeoverBuyerCccd, setTakeoverBuyerCccd] = useState('');
-  const [revenueAmount, setRevenueAmount] = useState('5000000');
-  const [revenueNote, setRevenueNote] = useState('');
   const [opexAmount, setOpexAmount] = useState('2000000');
   const [opexNote, setOpexNote] = useState('');
 
@@ -88,18 +84,13 @@ export function BusinessPage() {
   const [headcount, setHeadcount] = useState('3');
 
   // Ledger / tax
-  const [entryType, setEntryType] = useState<(typeof ENTRY_TYPES)[number]['value']>('revenue');
+  const [entryType, setEntryType] = useState<(typeof ENTRY_TYPES)[number]['value']>('opex');
   const [entryAmount, setEntryAmount] = useState('1000000');
   const [declaredAmount, setDeclaredAmount] = useState('');
   const [entryDesc, setEntryDesc] = useState('');
   const [entryEvasion, setEntryEvasion] = useState(false);
-  const [filingPeriod, setFilingPeriod] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
-  });
-  const [declareFull, setDeclareFull] = useState(true);
-  const [declaredRevenueAdj, setDeclaredRevenueAdj] = useState('');
-  const [declaredExpenseAdj, setDeclaredExpenseAdj] = useState('');
+  const [filingPeriod, setFilingPeriod] = useState('');
+  const [declaredRevenueInput, setDeclaredRevenueInput] = useState('0');
   const [filingNotes, setFilingNotes] = useState('');
 
   const { data: me } = useQuery<{ id: string; fullName: string }>({
@@ -232,11 +223,11 @@ export function BusinessPage() {
         body: JSON.stringify({ amount: money(Number(investAmount) || 0) }),
       }),
     onSuccess: async (c) => {
-      toast({ title: 'Đầu tư thành công', description: `Đã đầu tư vào "${c.name}".` });
+      toast({ title: 'Nạp vốn thành công', description: `Đã bơm quỹ cho "${c.name}".` });
       await invalidate();
     },
     onError: (e: Error) =>
-      toast({ title: 'Đầu tư thất bại', description: e.message, variant: 'error' }),
+      toast({ title: 'Nạp vốn thất bại', description: e.message, variant: 'error' }),
   });
 
   const ipoCompany = useMutation({
@@ -261,20 +252,6 @@ export function BusinessPage() {
       toast({ title: 'IPO thất bại', description: e.message, variant: 'error' }),
   });
 
-  const payDividend = useMutation({
-    mutationFn: (companyId: string) =>
-      apiRequest(`/api/v1/corporations/${companyId}/dividend`, {
-        method: 'POST',
-        body: JSON.stringify({ amountPerShare: money(Number(divPerShare) || 0) }),
-      }),
-    onSuccess: async () => {
-      toast({ title: 'Đã phát cổ tức', description: 'Cổ tức đã được xử lý.' });
-      await invalidate();
-    },
-    onError: (e: Error) =>
-      toast({ title: 'Phát cổ tức thất bại', description: e.message, variant: 'error' }),
-  });
-
   const takeoverCompany = useMutation({
     mutationFn: (companyId: string) =>
       apiRequest<CompanyDto>(`/api/v1/corporations/${companyId}/takeover`, {
@@ -287,24 +264,6 @@ export function BusinessPage() {
     },
     onError: (e: Error) =>
       toast({ title: 'Thâu tóm thất bại', description: e.message, variant: 'error' }),
-  });
-
-  const collectRevenue = useMutation({
-    mutationFn: (companyId: string) =>
-      apiRequest<CompanyDto>(`/api/v1/corporations/${companyId}/revenue`, {
-        method: 'POST',
-        body: JSON.stringify({
-          amount: money(Number(revenueAmount) || 0),
-          note: revenueNote.trim() || undefined,
-        }),
-      }),
-    onSuccess: async (c) => {
-      toast({ title: 'Đã ghi nhận doanh thu', description: `Quỹ "${c.name}" đã tăng.` });
-      setRevenueNote('');
-      await invalidate();
-    },
-    onError: (e: Error) =>
-      toast({ title: 'Ghi nhận thất bại', description: e.message, variant: 'error' }),
   });
 
   const payOpex = useMutation({
@@ -458,23 +417,18 @@ export function BusinessPage() {
       apiRequest(`/api/v1/corporations/${companyId}/tax-filings`, {
         method: 'POST',
         body: JSON.stringify({
-          period: filingPeriod.trim(),
-          declareFull,
-          adjustmentDeclaredRevenue: declaredRevenueAdj.trim()
-            ? money(Number(declaredRevenueAdj))
-            : undefined,
-          adjustmentDeclaredExpense: declaredExpenseAdj.trim()
-            ? money(Number(declaredExpenseAdj))
-            : undefined,
+          period: filingPeriod.trim() || undefined,
+          declaredRevenue: money(Number(declaredRevenueInput) || 0),
           notes: filingNotes.trim() || undefined,
         }),
       }),
     onSuccess: async () => {
       toast({
-        title: 'Đã nộp khai thuế',
-        description: 'Hồ sơ khai thuế doanh nghiệp đã được ghi nhận.',
+        title: 'Đã nộp khai thuế kỳ 30 ngày',
+        description: 'Đã nộp thuế và hệ thống tự động xử lý chia cổ tức (nếu có).',
       });
       setFilingNotes('');
+      await invalidate();
       await queryClient.invalidateQueries({
         queryKey: ['corporations', 'hr-accounting', selectedId],
       });
@@ -821,56 +775,39 @@ export function BusinessPage() {
               </div></div>
             </div>
 
-            <div className="space-y-2 rounded-xl border border-slate-200 p-3">
-              <p className="text-xs font-semibold text-slate-700">Đầu tư vốn</p>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                <div className="flex-1">
-                  <GameInput
-                    label="Số tiền (VND)"
-                    type="number"
-                    min={1}
-                    value={investAmount}
-                    onChange={(e) => setInvestAmount(e.target.value)}
-                  />
+            {selectedCompany.status !== 'ipo' && (
+              <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+                <p className="text-xs font-semibold text-slate-700">Nạp vốn / Bơm quỹ công ty</p>
+                <p className="text-[11px] text-slate-500">Chuyển tiền từ ví cá nhân vào quỹ công ty (dùng cho OPEX, thuế, chi trả trong kỳ). Công ty đã IPO không sử dụng nạp vốn trực tiếp.</p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="flex-1">
+                    <GameInput
+                      label="Số tiền nạp (VND)"
+                      type="number"
+                      min={1}
+                      value={investAmount}
+                      onChange={(e) => setInvestAmount(e.target.value)}
+                    />
+                  </div>
+                  <GameButton
+                    variant="primary"
+                    onClick={() => investCompany.mutate(selectedCompany.id)}
+                    disabled={investCompany.isPending || selectedCompany.status === 'bankrupt'}
+                  >
+                    {investCompany.isPending ? '...' : 'Nạp vốn'}
+                  </GameButton>
                 </div>
-                <GameButton
-                  variant="primary"
-                  onClick={() => investCompany.mutate(selectedCompany.id)}
-                  disabled={investCompany.isPending || selectedCompany.status !== 'active'}
-                >
-                  {investCompany.isPending ? '...' : 'Đầu tư'}
-                </GameButton>
               </div>
-            </div>
+            )}
 
             {canManage && selectedCompany.status !== 'bankrupt' && (
               <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/30 p-3">
                 <p className="text-xs font-semibold text-emerald-800">Vận hành (chủ sở hữu)</p>
+                <p className="text-[11px] text-slate-600">Doanh thu được hệ thống tự động tính/chốt mỗi 30 ngày game theo ngành và chuyển trực tiếp về ví chủ sở hữu. Chủ sở hữu chỉ chi OPEX và nạp vốn/bơm quỹ công ty.</p>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <div className="space-y-1">
+                  <div className="space-y-1 sm:col-span-2 sm:max-w-md">
                     <GameInput
-                      label="Doanh thu (VND)"
-                      type="number"
-                      min={1}
-                      value={revenueAmount}
-                      onChange={(e) => setRevenueAmount(e.target.value)}
-                    />
-                    <GameInput
-                      label="Ghi chú"
-                      value={revenueNote}
-                      onChange={(e) => setRevenueNote(e.target.value)}
-                    />
-                    <GameButton
-                      variant="primary"
-                      onClick={() => collectRevenue.mutate(selectedCompany.id)}
-                      disabled={collectRevenue.isPending}
-                    >
-                      {collectRevenue.isPending ? '...' : 'Ghi nhận doanh thu'}
-                    </GameButton>
-                  </div>
-                  <div className="space-y-1">
-                    <GameInput
-                      label="OPEX (VND)"
+                      label="OPEX (VND) - trừ từ quỹ công ty"
                       type="number"
                       min={1}
                       value={opexAmount}
@@ -1163,54 +1100,42 @@ export function BusinessPage() {
 
                 <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-2">
                   <p className="text-[11px] font-semibold text-slate-700">
-                    Lập hồ sơ khai thuế doanh nghiệp
+                    Khai thuế doanh nghiệp (chu kỳ 30 ngày game)
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Hệ thống đã tự chốt doanh thu thực tế mỗi 30 ngày và chuyển 100% về ví chủ sở hữu. Khi khai thuế, bạn nhập <b>doanh thu khai báo</b> cho kỳ: thuế 10% tính trên doanh thu khai báo và trừ từ <b>quỹ công ty</b>. Sau khi trừ thuế và OPEX trong kỳ, phần còn lại (nếu dương) sẽ tự động chia cổ tức theo tỉ lệ cổ phần.
                   </p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <GameInput
-                      label="Kỳ kê khai"
+                      label="Kỳ (periodKey, tùy chọn)"
                       value={filingPeriod}
                       onChange={(e) => setFilingPeriod(e.target.value)}
-                      placeholder="2026-Q1"
-                    />
-                    <label className="flex items-center gap-2 text-[11px] text-slate-700 mt-5">
-                      <input
-                        type="checkbox"
-                        checked={declareFull}
-                        onChange={(e) => setDeclareFull(e.target.checked)}
-                      />
-                      Khai đúng toàn bộ theo sổ (bỏ chọn để tự khai lệch)
-                    </label>
-                    <GameInput
-                      label="Doanh thu khai (tùy chọn)"
-                      type="number"
-                      value={declaredRevenueAdj}
-                      onChange={(e) => setDeclaredRevenueAdj(e.target.value)}
-                      placeholder="Để trống = theo sổ/khai full"
+                      placeholder="VD: 2000-01 (để trống = kỳ gần nhất)"
                     />
                     <GameInput
-                      label="Chi phí khai (tùy chọn)"
+                      label="Doanh thu khai báo (VND)"
                       type="number"
-                      value={declaredExpenseAdj}
-                      onChange={(e) => setDeclaredExpenseAdj(e.target.value)}
-                      placeholder="Để trống = theo sổ/khai full"
+                      min={0}
+                      value={declaredRevenueInput}
+                      onChange={(e) => setDeclaredRevenueInput(e.target.value)}
+                      placeholder="Nhập doanh thu bạn khai báo"
                     />
                   </div>
                   <GameInput
                     label="Ghi chú/lý do"
                     value={filingNotes}
                     onChange={(e) => setFilingNotes(e.target.value)}
-                    placeholder="Giải trình, chi phí hợp lệ..."
+                    placeholder="Giải trình (nếu có)..."
                   />
-                  <p className="text-[11px] text-slate-500">
-                    Thuế tạm tính 10% trên (DT khai - CP khai). Khai lệch làm tăng điểm rủi ro kiểm
-                    toán.
+                  <p className="text-[11px] text-amber-700">
+                    Lưu ý: khai thấp hơn doanh thu thực tế sẽ tạo chênh lệch trốn thuế, tăng điểm rủi ro và heat; cơ quan thuế có thể truy thu phần thiếu + phạt 1.5x nếu phát hiện.
                   </p>
                   <GameButton
                     variant="primary"
                     onClick={() => createFiling.mutate(selectedCompany.id)}
                     disabled={createFiling.isPending || selectedCompany.status === 'bankrupt'}
                   >
-                    {createFiling.isPending ? '...' : 'Nộp hồ sơ khai thuế'}
+                    {createFiling.isPending ? '...' : 'Nộp thuế & chốt kỳ'}
                   </GameButton>
                 </div>
 
@@ -1239,12 +1164,14 @@ export function BusinessPage() {
                           </Badge>
                         </div>
                         <div className="text-slate-600">
-                          Thuế: {formatMoney(f.taxDue.amount)} · DT khai/thực:{' '}
-                          {formatMoney(f.declaredRevenue.amount)}/
-                          {formatMoney(f.actualRevenue.amount)} · CP khai/thực:{' '}
-                          {formatMoney(f.declaredExpense.amount)}/
-                          {formatMoney(f.actualExpense.amount)}
+                          Thuế: {formatMoney(f.taxDue.amount)} · DT khai/thực: {formatMoney(f.declaredRevenue.amount)}/{formatMoney(f.actualRevenue.amount)}
                         </div>
+                        <div className="text-slate-600">
+                          OPEX kỳ: {formatMoney((f.opexTotal ?? f.declaredExpense).amount)} · Cổ tức đã chia: {formatMoney((f.dividendDistributed ?? { amount: 0, currency: 'VND' } as any).amount)} {Number((f.dividendPool ?? { amount: 0 } as any).amount) > 0 && Number((f.dividendDistributed ?? { amount: 0 } as any).amount) <= 0 ? '(không đủ quỹ/không chia)' : ''}
+                        </div>
+                        {Number((f.evasionGap ?? { amount: 0 } as any).amount) > 0 && (
+                          <div className="text-rose-700">Chênh lệch trốn thuế: {formatMoney((f.evasionGap as any).amount)}</div>
+                        )}
                         {f.notes && <div className="text-slate-500">{f.notes}</div>}
                       </div>
                     ))}
@@ -1261,7 +1188,10 @@ export function BusinessPage() {
                           className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1 text-[11px] border border-slate-100"
                         >
                           <div>
-                            <span className="font-medium">{e.entryType}</span> ·{' '}
+                            <span className="font-medium">{e.entryType}</span>
+                            {e.ledgerKind === 'ACTUAL' && <span className="ml-1 rounded bg-sky-50 px-1 text-sky-700">ACTUAL</span>}
+                            {e.periodKey && <span className="ml-1 text-slate-500">[{e.periodKey}]</span>}
+                            {' · '}
                             {e.description || '—'}
                             {e.isEvasion && <span className="ml-1 text-rose-700">(lệch khai)</span>}
                           </div>
@@ -1348,32 +1278,6 @@ export function BusinessPage() {
                 </GameButton>
               </div>
             )}
-
-            {canManage &&
-              (selectedCompany.status === 'active' || selectedCompany.status === 'ipo') && (
-                <div className="space-y-2 rounded-xl border border-slate-200 p-3">
-                  <p className="text-xs font-semibold text-slate-700">Cổ tức (chủ sở hữu)</p>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                    <div className="flex-1">
-                      <GameInput
-                        label="Số tiền / cổ phiếu"
-                        type="number"
-                        min={1}
-                        value={divPerShare}
-                        onChange={(e) => setDivPerShare(e.target.value)}
-                      />
-                    </div>
-                    <GameButton
-                      variant="outline"
-                      onClick={() => payDividend.mutate(selectedCompany.id)}
-                      disabled={payDividend.isPending}
-                      className="w-full sm:w-auto"
-                    >
-                      {payDividend.isPending ? '...' : 'Phát cổ tức'}
-                    </GameButton>
-                  </div>
-                </div>
-              )}
 
             {selectedCompany.status === 'ipo' && (
               <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3">

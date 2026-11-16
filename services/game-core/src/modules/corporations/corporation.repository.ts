@@ -1,5 +1,6 @@
 ﻿import type { Db } from '../../shared/db/tx.js';
 import { pool } from '../../shared/db/pool.js';
+import { ledger } from '../../shared/ledger/ledger.service.js';
 
 export interface CompanyRow {
   id: string;
@@ -347,7 +348,7 @@ export class CorporationRepository {
     );
   }
 
-  /** Đầu tư vốn vào công ty (tăng cash và valuation). */
+  /** Đầu tư/Nạp vốn vào công ty (legacy helper): tăng cash và valuation. */
   async investCompany(db: Db, input: InvestCompanyInput): Promise<void> {
     await db.query(
       `UPDATE companies
@@ -672,12 +673,14 @@ export class CorporationRepository {
       description: string;
       isEvasion: boolean;
       meta?: Record<string, unknown>;
+      ledgerKind?: string;
+      periodKey?: string | null;
     },
   ): Promise<string> {
     const r = await db.query<{ id: string }>(
       `INSERT INTO company_ledger_entries
-         (company_id, entry_type, amount_minor, declared_amount_minor, description, is_evasion, meta)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb) RETURNING id`,
+         (company_id, entry_type, amount_minor, declared_amount_minor, description, is_evasion, meta, ledger_kind, period_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9) RETURNING id`,
       [
         input.companyId,
         input.entryType,
@@ -686,6 +689,8 @@ export class CorporationRepository {
         input.description,
         input.isEvasion,
         JSON.stringify(input.meta ?? {}),
+        input.ledgerKind ?? 'MANUAL',
+        input.periodKey ?? null,
       ],
     );
     return r.rows[0]!.id;
@@ -695,7 +700,8 @@ export class CorporationRepository {
     const r = await db.query(
       `SELECT id, company_id AS "companyId", entry_type AS "entryType",
               amount_minor AS "amountMinor", declared_amount_minor AS "declaredAmountMinor",
-              description, is_evasion AS "isEvasion", occurred_at AS "occurredAt"
+              description, is_evasion AS "isEvasion", occurred_at AS "occurredAt",
+              ledger_kind AS "ledgerKind", period_key AS "periodKey"
        FROM company_ledger_entries WHERE company_id = $1
        ORDER BY occurred_at DESC LIMIT $2`,
       [companyId, limit],
@@ -733,30 +739,47 @@ export class CorporationRepository {
     input: {
       companyId: string;
       period: string;
+      periodKey?: string | null;
       declaredRevenueMinor: number;
       actualRevenueMinor: number;
       declaredExpenseMinor: number;
       actualExpenseMinor: number;
       taxDueMinor: number;
+      taxPaidMinor?: number;
       riskScore: number;
       notes: string;
+      status?: string;
+      dividendPoolMinor?: number;
+      dividendDistributedMinor?: number;
+      dividendDistributedAt?: Date | null;
+      evasionGapMinor?: number;
+      opexTotalMinor?: number;
     },
   ): Promise<string> {
     const r = await db.query<{ id: string }>(
       `INSERT INTO company_tax_filings
-         (company_id, period, declared_revenue_minor, actual_revenue_minor,
-          declared_expense_minor, actual_expense_minor, tax_due_minor, risk_score, status, notes, filed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'filed',$9,now()) RETURNING id`,
+         (company_id, period, period_key, declared_revenue_minor, actual_revenue_minor,
+          declared_expense_minor, actual_expense_minor, tax_due_minor, tax_paid_minor, risk_score, status, notes, filed_at,
+          dividend_pool_minor, dividend_distributed_minor, dividend_distributed_at, evasion_gap_minor, opex_total_minor)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),$13,$14,$15,$16,$17) RETURNING id`,
       [
         input.companyId,
         input.period,
+        input.periodKey ?? null,
         input.declaredRevenueMinor,
         input.actualRevenueMinor,
         input.declaredExpenseMinor,
         input.actualExpenseMinor,
         input.taxDueMinor,
+        input.taxPaidMinor ?? input.taxDueMinor,
         input.riskScore,
+        input.status ?? 'filed',
         input.notes,
+        input.dividendPoolMinor ?? 0,
+        input.dividendDistributedMinor ?? 0,
+        input.dividendDistributedAt ?? null,
+        input.evasionGapMinor ?? 0,
+        input.opexTotalMinor ?? 0,
       ],
     );
     return r.rows[0]!.id;
@@ -764,21 +787,120 @@ export class CorporationRepository {
 
   async listTaxFilings(companyId: string, db: Db = this.db): Promise<any[]> {
     const r = await db.query(
-      `SELECT id, company_id AS "companyId", period,
+      `SELECT id, company_id AS "companyId", period, period_key AS "periodKey",
               declared_revenue_minor AS "declaredRevenueMinor",
               actual_revenue_minor AS "actualRevenueMinor",
               declared_expense_minor AS "declaredExpenseMinor",
               actual_expense_minor AS "actualExpenseMinor",
               tax_due_minor AS "taxDueMinor", tax_paid_minor AS "taxPaidMinor",
               risk_score AS "riskScore", status, notes,
-              created_at AS "createdAt", filed_at AS "filedAt"
+              created_at AS "createdAt", filed_at AS "filedAt",
+              dividend_pool_minor AS "dividendPoolMinor",
+              dividend_distributed_minor AS "dividendDistributedMinor",
+              dividend_distributed_at AS "dividendDistributedAt",
+              evasion_gap_minor AS "evasionGapMinor",
+              audit_checked_at AS "auditCheckedAt",
+              audit_penalty_minor AS "auditPenaltyMinor",
+              opex_total_minor AS "opexTotalMinor"
        FROM company_tax_filings WHERE company_id = $1 ORDER BY created_at DESC LIMIT 30`,
       [companyId],
     );
     return r.rows;
   }
 
-  /** Giải phóng claim HQ trên các property (khi phá dỡ/hủy hợp thửa) và trả về danh sách công ty bị ảnh hưởng. */
+  async getSettlementForFiling(
+    db: Db,
+    companyId: string,
+    periodKey?: string | null,
+  ): Promise<{ period_key: string; actual_revenue_minor: string; game_year: number; game_month: number } | null> {
+    if (periodKey) {
+      const r = await db.query(
+        `SELECT period_key, actual_revenue_minor, game_year, game_month
+         FROM company_revenue_settlements
+         WHERE company_id = $1 AND period_key = $2
+         LIMIT 1`,
+        [companyId, periodKey],
+      );
+      return r.rows[0] ?? null;
+    }
+    const r = await db.query(
+      `SELECT period_key, actual_revenue_minor, game_year, game_month
+       FROM company_revenue_settlements
+       WHERE company_id = $1
+       ORDER BY game_year DESC, game_month DESC, settled_at DESC
+       LIMIT 1`,
+      [companyId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async sumOpexInPeriod(db: Db, companyId: string, periodKey: string): Promise<number> {
+    const r = await db.query<{ total: string }>(
+      `SELECT COALESCE(SUM(amount_minor),0)::bigint AS total
+       FROM company_ledger_entries
+       WHERE company_id = $1 AND period_key = $2 AND entry_type = 'opex'`,
+      [companyId, periodKey],
+    );
+    return Number(r.rows[0]?.total ?? 0);
+  }
+
+  async distributeDividendPool(
+    db: Db,
+    input: { companyId: string; poolMinor: number; periodKey: string },
+  ): Promise<{ totalDistributedMinor: number; recipientCount: number }> {
+    if (input.poolMinor <= 0) return { totalDistributedMinor: 0, recipientCount: 0 };
+    const shareholders = await db.query<{ holder_character_id: string; shares: string; user_id: string | null }>(
+      `SELECT s.holder_character_id, s.shares::text AS shares, c.user_id
+       FROM company_shareholders s
+       JOIN characters c ON c.id = s.holder_character_id
+       WHERE s.company_id = $1 AND s.shares > 0`,
+      [input.companyId],
+    );
+    const totalShares = shareholders.rows.reduce((sum, s) => sum + Number(s.shares), 0);
+    if (shareholders.rows.length === 0 || totalShares <= 0) {
+      // Không có cổ đông: giữ lại trong quỹ công ty (không chia)
+      return { totalDistributedMinor: 0, recipientCount: 0 };
+    }
+
+    let distributed = 0;
+    let recipients = 0;
+    const entries = shareholders.rows.map((s) => ({
+      holderId: s.holder_character_id,
+      shares: Number(s.shares),
+      userId: s.user_id,
+    }));
+    // Phân bổ theo tỉ lệ, phần dư dồn vào cổ đông lớn nhất để đảm bảo tổng khớp
+    const provisional = entries.map((e) => ({
+      ...e,
+      amount: Math.floor((e.shares / totalShares) * input.poolMinor),
+    }));
+    let remainder = input.poolMinor - provisional.reduce((s, e) => s + e.amount, 0);
+    provisional.sort((a, b) => b.shares - a.shares || a.holderId.localeCompare(b.holderId));
+    for (let i = 0; i < provisional.length && remainder > 0; i++) {
+      const item = provisional[i];
+      if (!item) break;
+      item.amount += 1;
+      remainder -= 1;
+    }
+
+    // Trừ quỹ công ty và chi trả cổ đông qua ledger (ghi nhận lịch sử giao dịch)
+    for (const p of provisional) {
+      if (p.amount <= 0) continue;
+      await ledger.transfer(db as any, {
+        from: { ownerType: 'company', ownerId: input.companyId, kind: 'cash' },
+        to: { ownerType: 'character', ownerId: p.holderId, kind: 'cash' },
+        amountMinor: p.amount,
+        kind: 'company_dividend_auto',
+        description: `Cổ tức tự động kỳ ${input.periodKey}`,
+        referenceType: 'company',
+        referenceId: input.companyId,
+      });
+      distributed += p.amount;
+      recipients += 1;
+    }
+
+    return { totalDistributedMinor: distributed, recipientCount: recipients };
+  }
 
   /** Giải phóng claim HQ trên các property (khi phá dỡ/hủy hợp thửa) và trả về danh sách công ty bị ảnh hưởng. */
   async invalidateCompaniesForDemolishedCoreProperties(

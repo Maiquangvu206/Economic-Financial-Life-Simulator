@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema, RevokeMayorRequestSchema, UpdateMayorConfigRequestSchema, UpdateInterestRateConfigRequestSchema, AdjustStateFundRequestSchema, SupportCompaniesFromStateFundRequestSchema } from '@efls/contracts';
+import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema, RevokeMayorRequestSchema, UpdateMayorConfigRequestSchema, UpdateInterestRateConfigRequestSchema, AdjustStateFundRequestSchema, SupportCompaniesFromStateFundRequestSchema, UpsertIndustryRevenueConfigsRequestSchema, AdminStockAdjustRequestSchema } from '@efls/contracts';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import {
@@ -36,6 +36,10 @@ import {
   getStateFundSnapshot,
   adminAdjustStateFund,
   adminSupportCompaniesFromStateFund,
+  getIndustryRevenueConfigs,
+  upsertIndustryRevenueConfigs,
+  adminAdjustStockPrice,
+  getAdminMarketLogs,
 } from './admin.integration.js';
 
 export const adminRouter: Router = Router();
@@ -73,3 +77,11 @@ adminRouter.post('/politics/elections/:id/end', asyncHandler(endPoliticsElection
 adminRouter.put('/politics/mayor/config', validateBody(UpdateMayorConfigRequestSchema), asyncHandler(updateMayorConfig));
 adminRouter.post('/politics/mayor/revoke', validateBody(RevokeMayorRequestSchema), asyncHandler(revokeMayor));
 adminRouter.post('/politics/mayor/expire', asyncHandler(expireMayorTerms));
+
+// Industry revenue configs (30-day auto company revenue)
+adminRouter.get('/industry-revenue-configs', asyncHandler(getIndustryRevenueConfigs));
+adminRouter.put('/industry-revenue-configs', validateBody(UpsertIndustryRevenueConfigsRequestSchema), asyncHandler(upsertIndustryRevenueConfigs));
+
+// Stock market admin controls
+adminRouter.post('/stock-market/adjust-price', validateBody(AdminStockAdjustRequestSchema), asyncHandler(adminAdjustStockPrice));
+adminRouter.get('/stock-market/logs', asyncHandler(getAdminMarketLogs));

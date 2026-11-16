@@ -268,51 +268,55 @@ export class CorporationService {
     });
   }
 
-  /** Đầu tư vốn vào một công ty (chỉ chủ sở hữu hoặc bất kỳ ai cũng có thể đầu tư). */
+  /** Nạp vốn/Bơm quỹ công ty: chuyển từ ví cá nhân sang quỹ công ty (companies.cash_minor). */
   async investCompany(userId: string, companyId: string, amountMinor: number): Promise<CompanyDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
-      const company = await this.repository.getCompany(companyId);
+      const company = await this.repository.getCompany(companyId, client);
       if (!company) throw AppError.notFound('Company');
-      if (company.status !== 'active') {
-        throw AppError.badRequest('Chỉ có thể đầu tư vào công ty đang hoạt động.');
+      if (company.status === 'bankrupt') {
+        throw AppError.badRequest('Công ty đã giải thể/phá sản, không thể nạp vốn.');
+      }
+      if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+        throw AppError.badRequest('Số tiền nạp vốn phải lớn hơn 0.');
       }
 
       const cash = toMinor(character.cash_minor);
       if (cash < amountMinor) {
-        throw AppError.conflict('insufficient_funds', 'Không đủ tiền mặt để đầu tư.');
+        throw AppError.conflict('insufficient_funds', 'Không đủ tiền mặt để nạp vốn vào công ty.');
       }
 
       await ledger.transfer(client, {
-        from: { ownerType: 'character', ownerId: character.id },
-        to: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
+        from: { ownerType: 'character', ownerId: character.id, kind: 'cash' },
+        to: { ownerType: 'company', ownerId: companyId, kind: 'cash' },
         amountMinor,
-        kind: 'company_investment',
-        description: `Đầu tư vào công ty ${company.name}`,
+        kind: 'company_capital_injection',
+        description: `Nạp vốn vào công ty ${company.name}`,
         referenceType: 'company',
-        referenceId: undefined,
+        referenceId: companyId,
       });
 
-      await this.repository.investCompany(client, {
-        companyId,
-        investorCharacterId: character.id,
-        amountMinor,
-      });
+      // Đồng bộ/đảm bảo quỹ công ty phản ánh đúng (ledger.sync cũng cập nhật, nhưng tăng tường minh an toàn)
+      await this.repository.adjustCash(client, companyId, amountMinor);
+      // Tăng nhẹ định giá theo vốn bơm thêm (phản ánh tăng năng lực tài chính)
+      await client.query(
+        `UPDATE companies SET valuation_minor = valuation_minor + $2::bigint, updated_at = now() WHERE id = $1`,
+        [companyId, amountMinor],
+      );
 
       await notify(client, {
         userId,
         kind: 'company',
-        title: 'Đầu tư vào công ty',
-        body: `Bạn đã đầu tư ${formatMinor(amountMinor)} VND vào "${company.name}".`,
+        title: 'Nạp vốn vào công ty',
+        body: `Bạn đã nạp ${formatMinor(amountMinor)} VND vào quỹ công ty "${company.name}".`,
         payload: { companyId, amountMinor },
       });
 
       const dto = await this.repository.getCompany(companyId, client);
-      if (!dto) throw new Error('Company disappeared after investment');
+      if (!dto) throw new Error('Company disappeared after capital injection');
       return {
         ...toCompanyDto(dto),
         isOwner: dto.ownerCharacterId === character.id,
-        shareholders: [],
       };
     });
   }
@@ -360,45 +364,15 @@ export class CorporationService {
     });
   }
 
-  /** Phát hành cổ tức: công ty trả tiền cho mỗi cổ đông theo tỉ lệ sở hữu. */
+  /** (Đã tắt) Cổ tức thủ công: hệ thống tự động chia cổ tức theo kỳ 30 ngày sau khi khai/nộp thuế. */
   async payDividend(
     userId: string,
     companyId: string,
-    amountPerShareMinor: number,
-  ): Promise<{ totalDistributedMinor: number; recipientCount: number }> {
-    return withTransaction(async (client) => {
-      const character = await requireLivingCharacterByUserId(client, userId);
-      const company = await this.repository.getCompany(companyId, client);
-      if (!company) throw AppError.notFound('Company');
-      if (company.ownerCharacterId !== character.id) {
-        throw AppError.forbidden('Chỉ chủ sở hữu công ty mới được phát hành cổ tức.');
-      }
-      if (company.status !== 'active' && company.status !== 'ipo') {
-        throw AppError.badRequest('Chỉ công ty đang hoạt động hoặc đã IPO mới được phát cổ tức.');
-      }
-      if (amountPerShareMinor <= 0) {
-        throw AppError.badRequest('Số tiền cổ tức trên mỗi cổ phiếu phải lớn hơn 0.');
-      }
-
-      const result = await this.repository.payDividend(client, {
-        companyId,
-        amountPerShareMinor,
-      });
-
-      await notify(client, {
-        userId,
-        kind: 'company',
-        title: 'Phát hành cổ tức',
-        body: `Công ty "${company.name}" đã phát cổ tức ${formatMinor(amountPerShareMinor)} / cổ phiếu, tổng cộng ${formatMinor(result.totalDistributedMinor)} VND đến ${result.recipientCount} cổ đông.`,
-        payload: {
-          companyId,
-          amountPerShareMinor,
-          totalDistributedMinor: result.totalDistributedMinor,
-        },
-      });
-
-      return result;
-    });
+  ): Promise<{ disabled: true; message: string }> {
+    await requireLivingCharacterByUserId(this.repository.db, userId);
+    const company = await this.repository.getCompany(companyId);
+    if (!company) throw AppError.notFound('Company');
+    throw AppError.badRequest('Cổ tức thủ công đã được tắt. Hệ thống sẽ tự động chia cổ tức theo kỳ 30 ngày sau khi bạn khai và nộp thuế doanh nghiệp.');
   }
 
   private isRawBuildableLand(constructionOption: string | null | undefined, propertyType: string | null | undefined): boolean {
@@ -778,49 +752,12 @@ export class CorporationService {
     });
   }
 
-  async collectRevenue(
-    userId: string,
-    companyId: string,
-    amountMinor: number,
-    note?: string,
-  ): Promise<CompanyDto> {
-    return withTransaction(async (client) => {
-      const character = await requireLivingCharacterByUserId(client, userId);
-      const company = await this.repository.getCompany(companyId, client);
-      if (!company) throw AppError.notFound('Company');
-      if (company.ownerCharacterId !== character.id) {
-        throw AppError.forbidden('Chỉ chủ sở hữu mới ghi nhận doanh thu.');
-      }
-      await this.requireActiveLicense(client, companyId);
-      if (company.status === 'bankrupt') {
-        throw AppError.badRequest('Công ty đã giải thể, không thể ghi nhận doanh thu.');
-      }
-      if (amountMinor <= 0 || amountMinor > 5_000_000_000) {
-        throw AppError.badRequest('Số tiền doanh thu không hợp lệ (1 - 5.000.000.000 ₫ mỗi lần).');
-      }
-      // Hiệu ứng mùa: doanh thu được điều chỉnh theo cấu hình mùa (seasonEffects.revenuePct)
-      const season = await loadCurrentSeasonEffects(client);
-      const effectiveAmount = Math.max(1, Math.min(5_000_000_000, Math.round(amountMinor * season.multipliers.revenue)));
-      await this.repository.adjustCash(client, companyId, effectiveAmount);
-      await this.repository.addLedgerEntry(client, {
-        companyId,
-        entryType: 'revenue',
-        amountMinor: effectiveAmount,
-        declaredAmountMinor: effectiveAmount,
-        description: note ?? 'Ghi nhận doanh thu',
-        isEvasion: false,
-      });
-      await notify(client, {
-        userId,
-        kind: 'company',
-        title: 'Ghi nhận doanh thu',
-        body: `Công ty "${company.name}" ghi nhận doanh thu ${formatMinor(effectiveAmount)}.${season.multipliers.revenue !== 1 ? ` (hiệu ứng mùa ×${season.multipliers.revenue.toFixed(2)})` : ''}${note ? ` Ghi chú: ${note}` : ''}`,
-        payload: { companyId, amountMinor: effectiveAmount, inputAmountMinor: amountMinor, note, season: season.season },
-      });
-      const dto = await this.repository.getCompany(companyId, client);
-      if (!dto) throw new Error('Company disappeared after revenue');
-      return { ...toCompanyDto(dto), isOwner: true, shareholders: [] };
-    });
+  /** (Đã tắt) Ghi nhận doanh thu thủ công: doanh thu được hệ thống tự động tính/chốt theo chu kỳ 30 ngày game. */
+  async collectRevenue(userId: string, companyId: string): Promise<CompanyDto> {
+    await requireLivingCharacterByUserId(this.repository.db, userId);
+    const company = await this.repository.getCompany(companyId);
+    if (!company) throw AppError.notFound('Company');
+    throw AppError.badRequest('Ghi nhận doanh thu thủ công đã được tắt. Doanh thu được hệ thống tự động tính và chuyển cho chủ sở hữu theo chu kỳ 30 ngày game.');
   }
 
   async payOpex(
@@ -956,6 +893,8 @@ export class CorporationService {
           declaredAmount: money(Number(e.declaredAmountMinor ?? e.declared_amount_minor ?? 0)),
           description: e.description ?? '',
           isEvasion: Boolean(e.isEvasion ?? e.is_evasion),
+          ledgerKind: (e.ledgerKind ?? e.ledger_kind ?? 'MANUAL') as 'MANUAL' | 'ACTUAL',
+          periodKey: e.periodKey ?? e.period_key ?? null,
           occurredAt: new Date(e.occurredAt ?? e.occurred_at).toISOString(),
         })),
         totals: {
@@ -971,17 +910,24 @@ export class CorporationService {
         id: f.id,
         companyId: f.companyId ?? companyId,
         period: f.period,
+        periodKey: f.periodKey ?? f.period_key ?? null,
         declaredRevenue: money(Number(f.declaredRevenueMinor ?? 0)),
         actualRevenue: money(Number(f.actualRevenueMinor ?? 0)),
         declaredExpense: money(Number(f.declaredExpenseMinor ?? 0)),
         actualExpense: money(Number(f.actualExpenseMinor ?? 0)),
         taxDue: money(Number(f.taxDueMinor ?? 0)),
         taxPaid: money(Number(f.taxPaidMinor ?? 0)),
+        dividendPool: money(Number(f.dividendPoolMinor ?? f.dividend_pool_minor ?? 0)),
+        dividendDistributed: money(Number(f.dividendDistributedMinor ?? f.dividend_distributed_minor ?? 0)),
+        opexTotal: money(Number(f.opexTotalMinor ?? f.opex_total_minor ?? 0)),
+        evasionGap: money(Number(f.evasionGapMinor ?? f.evasion_gap_minor ?? 0)),
         riskScore: Number(f.riskScore ?? 0),
         status: f.status,
         notes: f.notes ?? '',
         createdAt: new Date(f.createdAt).toISOString(),
         filedAt: f.filedAt ? new Date(f.filedAt).toISOString() : null,
+        dividendDistributedAt: (f.dividendDistributedAt ?? f.dividend_distributed_at) ? new Date(f.dividendDistributedAt ?? f.dividend_distributed_at).toISOString() : null,
+        auditCheckedAt: (f.auditCheckedAt ?? f.audit_checked_at) ? new Date(f.auditCheckedAt ?? f.audit_checked_at).toISOString() : null,
       })),
     };
   }
@@ -1111,20 +1057,27 @@ export class CorporationService {
     return withTransaction(async (client) => {
       const { company } = await this.assertOwner(client, userId, companyId);
       await this.requireActiveLicense(client, companyId);
-      const amountMinor = input.amountMinor;
-      const declared = input.declaredAmountMinor ?? amountMinor;
+
+      // Doanh thu thủ công bị tắt (chu kỳ 30 ngày tự động). Không cho ghi bút toán revenue thủ công.
+      if (input.entryType === 'revenue') {
+        throw AppError.badRequest('Ghi nhận doanh thu thủ công đã được tắt. Doanh thu được hệ thống tự động tính theo chu kỳ 30 ngày game.');
+      }
+
+      const amountMinor = Math.max(0, Math.trunc(input.amountMinor));
+      const declared = Math.max(0, Math.trunc(input.declaredAmountMinor ?? amountMinor));
       const isEvasion = Boolean(input.isEvasion || declared !== amountMinor);
       if (amountMinor < 0 || declared < 0) throw AppError.badRequest('Số tiền không hợp lệ.');
+
       if (input.applyToCash !== false) {
-        if (input.entryType === 'revenue') {
-          await this.repository.adjustCash(client, companyId, amountMinor);
-        } else if (['opex', 'payroll', 'tax', 'fine', 'bribe', 'other'].includes(input.entryType)) {
-          if (Number(company.cashMinor) < amountMinor) {
+        if (['opex', 'payroll', 'tax', 'fine', 'bribe', 'other', 'adjustment'].includes(input.entryType)) {
+          const cashNow = Number((await this.repository.getCompany(companyId, client))?.cashMinor ?? company.cashMinor ?? 0);
+          if (cashNow < amountMinor) {
             throw AppError.conflict('insufficient_funds', 'Quỹ công ty không đủ.');
           }
           await this.repository.adjustCash(client, companyId, -amountMinor);
         }
       }
+
       await this.repository.addLedgerEntry(client, {
         companyId,
         entryType: input.entryType,
@@ -1132,7 +1085,8 @@ export class CorporationService {
         declaredAmountMinor: declared,
         description: input.description ?? '',
         isEvasion,
-      });
+        ledgerKind: 'MANUAL',
+      } as any);
       return this.getHrAccounting(userId, companyId);
     });
   }
@@ -1141,52 +1095,125 @@ export class CorporationService {
     userId: string,
     companyId: string,
     input: {
-      period: string;
-      declareFull?: boolean;
-      adjustmentDeclaredRevenue?: number;
-      adjustmentDeclaredExpense?: number;
+      period?: string;
+      declaredRevenueMinor: number;
       notes?: string;
     },
   ): Promise<CompanyHrAccountingDto> {
     return withTransaction(async (client) => {
-      await this.assertOwner(client, userId, companyId);
+      const { company } = await this.assertOwner(client, userId, companyId);
       await this.requireActiveLicense(client, companyId);
-      const totals = await this.repository.ledgerTotals(companyId, client);
-      let declaredRevenue = input.declareFull === false ? 0 : Number(totals.revenue);
-      let declaredExpense = input.declareFull === false ? 0 : Number(totals.expense);
-      if (typeof input.adjustmentDeclaredRevenue === 'number')
-        declaredRevenue = Math.max(0, input.adjustmentDeclaredRevenue);
-      if (typeof input.adjustmentDeclaredExpense === 'number')
-        declaredExpense = Math.max(0, input.adjustmentDeclaredExpense);
-      const actualRevenue = Number(totals.revenue);
-      const actualExpense = Number(totals.expense);
-      const taxable = Math.max(0, declaredRevenue - declaredExpense);
-      const taxDueMinor = Math.round(taxable * 0.1);
-      const hiddenRevenue = Math.max(0, actualRevenue - declaredRevenue);
-      const inflatedExpense = Math.max(0, declaredExpense - actualExpense);
-      const riskScore = Math.min(
-        100,
-        Math.round(
-          (hiddenRevenue / Math.max(1, actualRevenue)) * 60 +
-            (inflatedExpense / Math.max(1, actualExpense || 1)) * 30 +
-            (input.declareFull === false ? 20 : 0),
-        ),
+
+      const declaredRevenue = Math.max(0, Math.trunc(input.declaredRevenueMinor));
+      if (!Number.isFinite(declaredRevenue) || declaredRevenue < 0) {
+        throw AppError.badRequest('Doanh thu khai báo không hợp lệ.');
+      }
+
+      // Xác định kỳ 30 ngày: ưu tiên period/periodKey truyền vào, nếu không lấy kỳ gần nhất đã chốt doanh thu thực tế
+      const requestedKey = (input.period ?? '').trim() || null;
+      const settlement = await this.repository.getSettlementForFiling(client, companyId, requestedKey);
+      if (!settlement) {
+        throw AppError.badRequest('Chưa có kỳ 30 ngày nào được hệ thống chốt doanh thu thực tế để khai thuế.');
+      }
+      const periodKey = String(settlement.period_key);
+      const actualRevenue = Math.max(0, Number(settlement.actual_revenue_minor ?? 0));
+
+      // 1 kỳ chỉ khai 1 lần (nộp thuế + chia cổ tức tự động)
+      const existing = await client.query<{ id: string }>(
+        `SELECT id FROM company_tax_filings WHERE company_id = $1 AND period_key = $2 LIMIT 1`,
+        [companyId, periodKey],
       );
+      if (existing.rows[0]) {
+        throw AppError.conflict('tax_filing_exists', `Kỳ ${periodKey} đã được khai/nộp thuế.`);
+      }
+
+      const opexTotal = await this.repository.sumOpexInPeriod(client, companyId, periodKey);
+      const taxDueMinor = Math.round(declaredRevenue * 0.1);
+      const dividendPool = declaredRevenue - taxDueMinor - opexTotal;
+
+      const companyCash = Number((await this.repository.getCompany(companyId, client))?.cashMinor ?? company.cashMinor ?? 0);
+      if (companyCash < taxDueMinor) {
+        throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế kỳ ${periodKey}. Cần ${formatMinor(taxDueMinor)}.`);
+      }
+      if (dividendPool > 0 && companyCash < taxDueMinor + dividendPool) {
+        throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế và chia cổ tức kỳ ${periodKey}.`);
+      }
+
+      // Trừ thuế từ quỹ công ty
+      if (taxDueMinor > 0) {
+        await this.repository.adjustCash(client, companyId, -taxDueMinor);
+      }
+      await this.repository.addLedgerEntry(client, {
+        companyId,
+        entryType: 'tax',
+        amountMinor: taxDueMinor,
+        declaredAmountMinor: taxDueMinor,
+        description: `Nộp thuế doanh nghiệp kỳ ${periodKey} (10% trên doanh thu khai báo)`,
+        isEvasion: false,
+        ledgerKind: 'ACTUAL',
+        periodKey,
+      } as any);
+
+      // Tính rủi ro khai khống và cập nhật heat chủ sở hữu
+      const evasionGap = Math.max(0, actualRevenue - declaredRevenue);
+      const hiddenRatio = actualRevenue > 0 ? evasionGap / actualRevenue : 0;
+      const riskScore = Math.min(100, Math.round(hiddenRatio * 100));
+      if (evasionGap > 0) {
+        const heatDelta = Math.max(1, Math.min(60, Math.round(riskScore / 2) + (hiddenRatio >= 0.5 ? 10 : 0)));
+        await client.query(
+          `UPDATE characters SET heat_level = LEAST(100, COALESCE(heat_level,0) + $2), updated_at = now() WHERE id = $1`,
+          [company.ownerCharacterId, heatDelta],
+        );
+      }
+
+      // Chia cổ tức tự động theo tỉ lệ cổ phần nếu có lợi nhuận sau thuế và OPEX kỳ
+      let dividendDistributed = 0;
+      let dividendRecipients = 0;
+      if (dividendPool > 0) {
+        const dist = await this.repository.distributeDividendPool(client, {
+          companyId,
+          poolMinor: dividendPool,
+          periodKey,
+        });
+        dividendDistributed = dist.totalDistributedMinor;
+        dividendRecipients = dist.recipientCount;
+      }
+
+      const status = dividendPool > 0 ? 'filed' : 'filed';
+      const notesParts = [
+        input.notes?.trim() || '',
+        `Kỳ ${periodKey}: DT thực tế ${formatMinor(actualRevenue)}, DT khai ${formatMinor(declaredRevenue)}, thuế ${formatMinor(taxDueMinor)}, OPEX kỳ ${formatMinor(opexTotal)}, quỹ cổ tức ${formatMinor(Math.max(0, dividendPool))}.`,
+        dividendPool > 0 ? `Đã tự động chia cổ tức ${formatMinor(dividendDistributed)} cho ${dividendRecipients} cổ đông.` : 'Kỳ báo lỗ/không đủ quỹ chia cổ tức, không chia cổ tức.',
+      ].filter(Boolean);
+
       await this.repository.createTaxFiling(client, {
         companyId,
-        period: input.period,
+        period: periodKey,
+        periodKey,
         declaredRevenueMinor: declaredRevenue,
         actualRevenueMinor: actualRevenue,
-        declaredExpenseMinor: declaredExpense,
-        actualExpenseMinor: actualExpense,
+        declaredExpenseMinor: opexTotal,
+        actualExpenseMinor: opexTotal,
         taxDueMinor,
+        taxPaidMinor: taxDueMinor,
         riskScore,
-        notes:
-          input.notes ??
-          (riskScore >= 60
-            ? 'Khai báo có dấu hiệu lệch soát thực tế (rủi ro kiểm toán cao).'
-            : 'Khai báo đã ghi nhận.'),
+        status,
+        notes: notesParts.join(' '),
+        dividendPoolMinor: Math.max(0, dividendPool),
+        dividendDistributedMinor: dividendDistributed,
+        dividendDistributedAt: dividendPool > 0 ? new Date() : null,
+        evasionGapMinor: evasionGap,
+        opexTotalMinor: opexTotal,
+      } as any);
+
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Khai thuế & chốt kỳ 30 ngày',
+        body: `Công ty "${company.name}" đã khai/nộp thuế kỳ ${periodKey}. Thuế: ${formatMinor(taxDueMinor)}.${dividendPool > 0 ? ` Cổ tức tự động: ${formatMinor(dividendDistributed)}.` : ' Không chia cổ tức (báo lỗ/không đủ quỹ).'}`,
+        payload: { companyId, periodKey, declaredRevenue, actualRevenue, taxDueMinor, dividendPool: Math.max(0, dividendPool), dividendDistributed },
       });
+
       return this.getHrAccounting(userId, companyId);
     });
   }

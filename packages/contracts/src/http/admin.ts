@@ -256,3 +256,55 @@ export const UpdateInterestRateConfigRequestSchema = z.object({
   accountTierThresholds: AccountTierThresholdsSchema.optional(),
 });
 export type UpdateInterestRateConfigRequest = z.infer<typeof UpdateInterestRateConfigRequestSchema>;
+
+// --- Company industry revenue config (30 game days auto revenue) ---
+export const IndustryRevenueConfigDtoSchema = z.object({
+  industryType: z.string(),
+  monthlyRatePct: z.number().nonnegative(),
+  minRevenueMinor: z.number().int().nonnegative(),
+  maxRevenueMinor: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime().nullable().optional(),
+  updatedBy: IdSchema.nullable().optional(),
+});
+export type IndustryRevenueConfigDto = z.infer<typeof IndustryRevenueConfigDtoSchema>;
+
+export const UpsertIndustryRevenueConfigsRequestSchema = z.object({
+  configs: z.array(z.object({
+    industryType: z.string().min(1),
+    monthlyRatePct: z.number().nonnegative().max(1000),
+    minRevenueMinor: z.number().int().nonnegative(),
+    maxRevenueMinor: z.number().int().nonnegative(),
+  })).min(1),
+});
+export type UpsertIndustryRevenueConfigsRequest = z.infer<typeof UpsertIndustryRevenueConfigsRequestSchema>;
+
+// --- Admin stock market price control ---
+export const AdminStockAdjustRequestSchema = z.object({
+  mode: z.enum(['INSTANT_SHOCK', 'TREND_BIAS']),
+  deltaPct: z.number().min(-50).max(50),
+  scope: z.enum(['ALL_MARKET', 'SPECIFIC_COMPANIES']),
+  companyIds: z.array(IdSchema).optional().default([]),
+  durationHours: z.number().int().min(1).max(24 * 365).optional(),
+  reason: z.string().min(1).max(500),
+}).superRefine((v, ctx) => {
+  if (v.scope === 'SPECIFIC_COMPANIES' && (!v.companyIds || v.companyIds.length === 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Cần chọn ít nhất một công ty khi phạm vi là SPECIFIC_COMPANIES.' });
+  }
+  if (v.mode === 'TREND_BIAS' && (!v.durationHours || v.durationHours <= 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'TREND_BIAS yêu cầu duration_hours > 0.' });
+  }
+});
+export type AdminStockAdjustRequest = z.infer<typeof AdminStockAdjustRequestSchema>;
+
+export const AdminMarketLogDtoSchema = z.object({
+  id: IdSchema,
+  adminId: IdSchema.nullable(),
+  scope: z.enum(['ALL_MARKET', 'SPECIFIC_COMPANIES']),
+  targetIds: z.array(z.string()),
+  mode: z.enum(['INSTANT_SHOCK', 'TREND_BIAS']),
+  deltaPct: z.number(),
+  durationHours: z.number().int().nullable(),
+  reason: z.string(),
+  createdAt: z.string().datetime(),
+});
+export type AdminMarketLogDto = z.infer<typeof AdminMarketLogDtoSchema>;

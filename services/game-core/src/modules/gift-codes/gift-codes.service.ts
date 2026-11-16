@@ -2,7 +2,7 @@ import { pool } from '../../shared/db/pool.js';
 import { AppError } from '../../shared/http/errors.js';
 import { withTransaction, type Db } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
-import { ledger } from '../../shared/ledger/ledger.service.js';
+import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
 import { writeActionLog } from '../../shared/audit/actionLog.js';
 import type {
   GiftCodeDto,
@@ -192,23 +192,16 @@ export class GiftCodesService {
 
       const amountMinor = Number(g.reward_cash_minor ?? 0);
       if (amountMinor > 0) {
-        // Đảm bảo tài khoản sổ cái tiền mặt tồn tại với số dư hiện tại, rồi cộng thưởng nhất quán
-        await (client as any).query(
-          `INSERT INTO ledger_accounts (id, owner_type, owner_id, kind, balance_minor, is_system)
-           SELECT gen_random_uuid(), 'character', c.id, 'cash', c.cash_minor, false
-           FROM characters c WHERE c.id = $1
-           ON CONFLICT (owner_type, owner_id, kind, currency) DO NOTHING`,
-          [character.id],
-        );
-        await (client as any).query(
-          `UPDATE ledger_accounts SET balance_minor = balance_minor + $2, updated_at = now()
-           WHERE owner_type='character' AND owner_id=$1 AND kind='cash' AND currency='VND'`,
-          [character.id, amountMinor],
-        );
-        await (client as any).query(
-          `UPDATE characters SET cash_minor = cash_minor + $2, updated_at = now() WHERE id = $1`,
-          [character.id, amountMinor],
-        );
+        await ledger.post(client as any, {
+          kind: 'gift_code_reward',
+          description: `Nhận thưởng mã quà tặng ${g.code}`,
+          referenceType: 'gift_code',
+          referenceId: g.id,
+          legs: [
+            { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID, kind: 'cash', deltaMinor: -amountMinor },
+            { ownerType: 'character', ownerId: character.id, kind: 'cash', deltaMinor: amountMinor },
+          ],
+        });
       }
 
       await (client as any).query(

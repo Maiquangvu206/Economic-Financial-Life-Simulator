@@ -69,8 +69,7 @@ export class CorporationController {
   payDividend = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
     const { companyId } = req.params as { companyId: string };
-    const { amountPerShare } = req.body as DividendRequest;
-    const result = await this.service.payDividend(userId, companyId, amountPerShare.amount);
+    const result = await this.service.payDividend(userId, companyId);
     res.status(200).json(result);
   };
 
@@ -106,8 +105,7 @@ export class CorporationController {
   collectRevenue = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
     const { companyId } = req.params as { companyId: string };
-    const { amount, note } = req.body as CompanyOperationRequest;
-    const company = await this.service.collectRevenue(userId, companyId, amount.amount, note);
+    const company = await this.service.collectRevenue(userId, companyId);
     res.status(200).json(company);
   };
 
@@ -192,9 +190,7 @@ export class CorporationController {
     const body = req.body as CreateCompanyTaxFilingRequest;
     const data = await this.service.createTaxFiling(userId, companyId, {
       period: body.period,
-      declareFull: body.declareFull,
-      adjustmentDeclaredRevenue: body.adjustmentDeclaredRevenue?.amount,
-      adjustmentDeclaredExpense: body.adjustmentDeclaredExpense?.amount,
+      declaredRevenueMinor: body.declaredRevenue.amount,
       notes: body.notes,
     });
     res.status(201).json(data);

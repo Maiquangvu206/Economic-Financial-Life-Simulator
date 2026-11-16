@@ -217,10 +217,34 @@ export class StockMarketService {
     return { tickers, totalMarketCap: money(totalMarketCap), totalVolume24h, updatedAt: new Date().toISOString() };
   }
 
-  /** Biến động giá theo giờ trong game (mô phỏng thị trường thật/AI-driven): random walk + xu hướng + biến động đột biến nhẹ. */
+  /** Biến động giá theo giờ trong game (mô phỏng thị trường thật/AI-driven): random walk + xu hướng + biến động đột biến nhẹ + trend bias (admin). */
   async tickHourlyPrices(input?: { gameYear?: number; gameMonth?: number; gameDay?: number; gameHour?: number }) {
     return withTransaction(async (client) => {
-      const tickers = await this.repository.listTickers();
+      const tickersRes = await client.query(
+        `SELECT t.id, t.company_id AS "companyId", t.symbol, c.name AS "companyName",
+                t.current_price_minor AS "currentPriceMinor",
+                t.previous_close_minor AS "previousCloseMinor",
+                t.total_volume AS "totalVolume", t.is_ipo AS "isIpo"
+         FROM stock_tickers t
+         JOIN companies c ON c.id = t.company_id
+         WHERE c.status = 'ipo'
+         ORDER BY t.symbol`
+      );
+      const tickers = tickersRes.rows as Array<{ id: string; companyId: string; symbol: string; companyName: string; currentPriceMinor: string; previousCloseMinor: string; totalVolume: number; isIpo: boolean }>;
+
+      // Dọn bias hết hạn (best-effort)
+      await client.query(`DELETE FROM stock_market_biases WHERE ends_at <= now()`).catch(() => {});
+      const biasRes = await client.query<{ ticker_id: string | null; scope: string; bias_pct: string }>(
+        `SELECT ticker_id, scope, bias_pct FROM stock_market_biases WHERE ends_at > now()`
+      );
+      let globalBias = 0;
+      const perTickerBias = new Map<string, number>();
+      for (const b of biasRes.rows) {
+        const bp = Number(b.bias_pct ?? 0);
+        if (b.scope === 'ALL_MARKET' || !b.ticker_id) globalBias += bp;
+        else perTickerBias.set(b.ticker_id, (perTickerBias.get(b.ticker_id) ?? 0) + bp);
+      }
+
       const seedBase = Number(input?.gameYear ?? 0) * 100000 + Number(input?.gameMonth ?? 0) * 1000 + Number(input?.gameDay ?? 0) * 100 + Number(input?.gameHour ?? 0);
       let i = 0;
       for (const t of tickers) {
@@ -239,10 +263,22 @@ export class StockMarketService {
         const prev = Number(t.previousCloseMinor || current);
         const drift = ((prev - current) / Math.max(prev, 1)) * 0.15;
         pct += drift * 100;
-        pct = Math.max(-3.5, Math.min(3.5, pct));
+
+        // Trend bias do admin cấu hình (cộng thêm bias_pct trong thời gian hiệu lực)
+        const biasPct = globalBias + (perTickerBias.get(t.id) ?? 0);
+        pct += biasPct;
+
+        pct = Math.max(-15, Math.min(15, pct));
         const newPrice = Math.max(100, Math.round(current * (1 + pct / 100)));
         const vol = Math.max(0, Math.round(50 + noise2 * 500 + Math.abs(pct) * 120)); // khối lượng giao dịch mô phỏng (cổ phiếu)
-        await this.repository.updateTickerPrice(client, t.id, newPrice, vol);
+        await client.query(
+          `UPDATE stock_tickers
+              SET previous_close_minor = current_price_minor,
+                  current_price_minor = $2::bigint,
+                  total_volume = GREATEST(total_volume + $3::bigint, 0)
+            WHERE id = $1::uuid`,
+          [t.id, Math.max(100, newPrice), Math.max(0, Math.round(vol))],
+        );
         i++;
       }
       return { ok: true, count: tickers.length, at: input ?? null };
