@@ -35,10 +35,12 @@ export async function processGameTick(): Promise<GameTickResult> {
       current_day: string;
       current_year: string;
       season: string;
-    }>(`SELECT current_day, current_year, season FROM game_state WHERE id = 1`);
+      macro: any;
+    }>(`SELECT current_day, current_year, season, macro FROM game_state WHERE id = 1`);
 
     const currentDayRaw = Number(gameState.rows[0]?.current_day ?? 0);
     const currentYear = Number(gameState.rows[0]?.current_year ?? 1);
+    const macro = (gameState.rows[0]?.macro && typeof gameState.rows[0].macro === 'object') ? { ...(gameState.rows[0].macro as any) } : {};
     const normalizedCurrentDay = ((Math.floor(currentDayRaw) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
 
     let nextDay = normalizedCurrentDay + 1;
@@ -48,13 +50,27 @@ export async function processGameTick(): Promise<GameTickResult> {
       nextYear += 1;
     }
     const nextTime = deriveCanonicalGameTime({ dayOfYear: nextDay, year: nextYear });
-    const nextSeason = nextTime.season;
+    let nextSeason = nextTime.season;
+    // Override mùa do admin đặt: chỉ có hiệu lực trong ngày game được đặt, sang ngày kế tiếp tự về theo lịch
+    const override = macro?.seasonOverride;
+    if (override && typeof override === 'object') {
+      const oy = Number(override.year);
+      const od = Number(override.dayOfYear);
+      const os = String(override.season ?? '');
+      const sameDay = oy === nextYear && od === nextDay;
+      const validSeason = ['spring', 'summer', 'autumn', 'winter'].includes(os);
+      if (sameDay && validSeason) {
+        nextSeason = os as any;
+      } else {
+        delete macro.seasonOverride;
+      }
+    }
 
     await client.query(
-      `UPDATE game_state SET current_day = $1, current_year = $2, season = $3, updated_at = now() WHERE id = 1`,
-      [nextDay, nextYear, nextSeason],
+      `UPDATE game_state SET current_day = $1, current_year = $2, season = $3, macro = $4::jsonb, updated_at = now() WHERE id = 1`,
+      [nextDay, nextYear, nextSeason, JSON.stringify(macro)],
     );
-    applied.push(`game_state: day=${nextDay} month=${nextTime.month} dayOfMonth=${nextTime.day} year=${nextYear} season=${nextSeason}`);
+    applied.push(`game_state: day=${nextDay} month=${nextTime.month} dayOfMonth=${nextTime.day} year=${nextYear} season=${nextSeason}${macro?.seasonOverride ? ' (override)' : ''}`);
 
     // ---- 2. Character aging, health, energy ----
     const characters = await client.query<{

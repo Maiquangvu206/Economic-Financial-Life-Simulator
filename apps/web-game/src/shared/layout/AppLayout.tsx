@@ -12,6 +12,7 @@ import { formatCompact, formatMoney, formatVietnamDate, formatVietnamTime } from
 import { Badge } from '../ui/Badge';
 import { ToastContainer, toast } from '../ui/Toast';
 import { DeathSuccessionModal } from '../identity/DeathSuccessionModal';
+import { SeasonalEffects } from '../ui/SeasonalEffects';
 
 type BroadcastItem = {
   id: string;
@@ -257,9 +258,8 @@ export function AppLayout() {
       syncServerTime({
         currentYear: payload.currentYear,
         currentMonth: payload.currentMonth,
-        currentDay: payload.currentDay ?? payload.dayOfYear,
         currentDayOfMonth: payload.currentDayOfMonth,
-        dayOfYear: payload.dayOfYear,
+        dayOfYear: payload.dayOfYear ?? payload.currentDay,
         hour: payload.hour ?? 0,
         minute: payload.minute ?? 0,
         season: payload.season,
@@ -406,6 +406,7 @@ export function AppLayout() {
       />
       {/* Overlay ánh sáng theo giờ/mùa */}
       <div className={clsx('pointer-events-none fixed inset-0 z-40 transition-colors duration-1000', ambientOverlayStyle)} />
+      <SeasonalEffects season={(season as any) || 'spring'} />
 
       {/* Sidebar */}
       <aside

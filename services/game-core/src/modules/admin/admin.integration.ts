@@ -16,6 +16,20 @@ function gameTimePayload(row: { current_day: any; current_year: any; season: any
   const dayOfYear = Number(row.current_day ?? 0);
   const year = Number(row.current_year ?? 1);
   const t = deriveCanonicalGameTime({ dayOfYear, year, tickUpdatedAt: row.updated_at ?? null });
+  const macro = row.macro && typeof row.macro === 'object' ? (row.macro as any) : {};
+  const override = macro.seasonOverride;
+  let effectiveSeason = t.season;
+  if (override && typeof override === 'object') {
+    const oy = Number(override.year);
+    const od = Number(override.dayOfYear);
+    const os = String(override.season ?? '');
+    if (oy === year && od === dayOfYear && ['spring', 'summer', 'autumn', 'winter'].includes(os)) {
+      effectiveSeason = os as any;
+    }
+  } else if (row.season && ['spring', 'summer', 'autumn', 'winter'].includes(String(row.season))) {
+    // fallback to stored season if present
+    effectiveSeason = String(row.season) as any;
+  }
   return {
     currentDay: dayOfYear,
     dayOfYear,
@@ -24,7 +38,7 @@ function gameTimePayload(row: { current_day: any; current_year: any; season: any
     currentDayOfMonth: t.day,
     hour: t.hour,
     minute: t.minute,
-    season: t.season,
+    season: effectiveSeason,
     period: t.period,
     tickUpdatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
   };
@@ -430,6 +444,15 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
       ...body.restrictionContact,
       updatedAt: new Date().toISOString(),
     };
+  }
+  // Mùa do admin đặt: ghi đè tạm thời trong ngày game hiện tại, sang ngày game kế tiếp tự về theo lịch tự động
+  const stateRow = await pool.query<{ current_day: number; current_year: number }>(`SELECT current_day, current_year FROM game_state WHERE id = 1`);
+  const curDay = Number(stateRow.rows[0]?.current_day ?? 0);
+  const curYear = Number(stateRow.rows[0]?.current_year ?? 1);
+  if (body.season && ['spring', 'summer', 'autumn', 'winter'].includes(String(body.season))) {
+    nextMacro.seasonOverride = { season: String(body.season), year: curYear, dayOfYear: curDay };
+  } else if (body.season === null) {
+    delete nextMacro.seasonOverride;
   }
   await pool.query(
     `INSERT INTO game_state (id, current_day, current_year, season, macro)

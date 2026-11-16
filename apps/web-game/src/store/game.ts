@@ -274,11 +274,17 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   syncServerTime: (time) => {
-    const dayOfMonth = time.currentDayOfMonth ?? time.currentDay ?? get().day;
+    // currentDay từ server là dayOfYear (0-359); ngày trong tháng là currentDayOfMonth (1-30)
     const nextMonth = time.currentMonth ?? get().month;
     const nextYear = time.currentYear ?? get().year;
-    const nextHour = typeof time.hour === 'number' ? time.hour : 0;
-    const nextMinute = typeof time.minute === 'number' ? time.minute : 0;
+    const fallbackDayOfMonth = (() => {
+      if (typeof time.dayOfYear === 'number') return (Math.floor(time.dayOfYear) % 30) + 1;
+      if (typeof time.currentDay === 'number' && time.currentDay >= 0 && time.currentDay <= 359) return (Math.floor(time.currentDay) % 30) + 1;
+      return get().day;
+    })();
+    const dayOfMonth = time.currentDayOfMonth ?? fallbackDayOfMonth;
+    const nextHour = typeof time.hour === 'number' ? time.hour : get().hour;
+    const nextMinute = typeof time.minute === 'number' ? time.minute : get().minute;
     const nextSeason = time.season ?? calculateSeason(nextMonth);
     const nextPeriod = time.period ?? calculateDayPeriod(nextHour);
     const holiday = DEFAULT_HOLIDAYS.find((h) => h.day === dayOfMonth && h.month === nextMonth) ?? null;

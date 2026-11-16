@@ -162,7 +162,7 @@ export function SeasonCalendarPage() {
         body: JSON.stringify({ season: selectedSeason, otRatePercent }),
       });
       await refetchConfig();
-      notify('ok', 'Đã lưu cấu hình mùa và OT vào hệ thống (game_state). Người dùng sẽ đồng bộ khi tải/làm mới. Thời gian game cố định: 1 ngày = 1 phút thực tế.');
+      notify('ok', 'Đã lưu cấu hình mùa và OT vào hệ thống. Mùa do admin chọn chỉ áp dụng trong ngày game hiện tại, sang ngày game kế tiếp sẽ tự động trở về theo lịch. Thời gian game cố định: 1 ngày = 1 phút thực tế.');
     } catch (err: any) {
       notify('err', err?.problem?.detail || err?.message || 'Không thể lưu cấu hình.');
     }
@@ -216,6 +216,7 @@ export function SeasonCalendarPage() {
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1">
             <p><b>Thời gian game:</b> cố định <b>1 ngày = 1 phút thực tế</b> (không cấu hình tốc độ).</p>
             <p>Mùa hiện tại trên hệ thống: <b>{gameConfig?.season ?? '—'}</b> (năm {gameConfig?.currentYear ?? 1}, ngày {gameConfig?.currentDay ?? 0}).</p>
+            <p className="text-amber-700"><b>Lưu ý:</b> khi admin thay đổi mùa, thay đổi chỉ có hiệu lực trong <b>1 ngày game</b>, sau đó hệ thống tự quay về mùa theo lịch tự động.</p>
           </div>
         </div>
 
