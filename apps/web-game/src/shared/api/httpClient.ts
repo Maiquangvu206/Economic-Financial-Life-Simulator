@@ -22,33 +22,45 @@ async function readProblem(response: Response): Promise<ProblemDetails | null> {
   }
 }
 
+let refreshPromise: Promise<string | null> | null = null;
+
 async function refreshAccessToken(): Promise<string | null> {
-  const { refreshToken, setSession, clearSession } = useSessionStore.getState();
-  if (!refreshToken) return null;
+  if (refreshPromise) return refreshPromise;
 
-  try {
-    const response = await fetch(`${env.apiBaseUrl}/api/v1/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
+  refreshPromise = (async () => {
+    const { refreshToken, setSession, clearSession } = useSessionStore.getState();
+    if (!refreshToken) return null;
 
-    if (!response.ok) {
-      clearSession();
+    try {
+      const response = await fetch(`${env.apiBaseUrl}/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!response.ok) {
+        // Chỉ đăng xuất nếu phiên hiện tại vẫn dùng refresh token này (tránh đăng xuất oan khi có luồng làm mới khác thành công).
+        const current = useSessionStore.getState().refreshToken;
+        if (current === refreshToken) clearSession();
+        return null;
+      }
+
+      const data = (await response.json()) as {
+        accessToken: string;
+        refreshToken: string;
+        expiresInSeconds: number;
+        user: NonNullable<ReturnType<typeof useSessionStore.getState>['user']>;
+      };
+      setSession(data);
+      return data.accessToken;
+    } catch {
       return null;
+    } finally {
+      refreshPromise = null;
     }
+  })();
 
-    const data = (await response.json()) as {
-      accessToken: string;
-      refreshToken: string;
-      expiresInSeconds: number;
-      user: NonNullable<ReturnType<typeof useSessionStore.getState>['user']>;
-    };
-    setSession(data);
-    return data.accessToken;
-  } catch {
-    return null;
-  }
+  return refreshPromise;
 }
 
 async function send(path: string, init: RequestInit, token: string | null): Promise<Response> {
@@ -76,7 +88,11 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   }
 
   if (response.status === 401) {
-    useSessionStore.getState().clearSession();
+    // Chỉ đăng xuất khi thực sự không còn phiên hợp lệ (tránh đăng xuất oan do nhiều request đồng thời).
+    const latest = useSessionStore.getState().accessToken;
+    if (!latest || latest === token) {
+      useSessionStore.getState().clearSession();
+    }
   }
 
   if (!response.ok) {
@@ -84,7 +100,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     // Tài khoản bị khóa: buộc đăng xuất (hỗ trợ trường hợp mất realtime/đang thao tác)
     if (response.status === 403) {
       const text = `${problem?.title ?? ''} ${problem?.detail ?? ''}`.toLowerCase();
-      if (text.includes('bị khóa') || text.includes('da bi khoa') || text.includes('banned')) {
+      if (text.includes('bị khóa') || text.includes('banned')) {
         useSessionStore.getState().clearSession();
       }
     }
