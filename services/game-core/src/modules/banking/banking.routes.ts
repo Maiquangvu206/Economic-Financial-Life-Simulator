@@ -46,3 +46,6 @@ bankingRouter.post(
   validateBody(CreateTransferRequestSchema),
   asyncHandler(controller.createTransfer),
 );
+
+// Lịch sử biến động tài khoản (30 bản ghi gần nhất)
+bankingRouter.get('/history', asyncHandler(controller.history));

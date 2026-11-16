@@ -81,6 +81,18 @@ type TransferItem = {
   createdAt: string;
 };
 
+type AccountHistoryItem = {
+  id: string;
+  transactionId: string;
+  accountKind: 'cash' | 'savings';
+  delta: { amount: number; currency: string };
+  kind: string;
+  description: string;
+  referenceType: string | null;
+  referenceId: string | null;
+  createdAt: string;
+};
+
 export function FinancePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -104,6 +116,11 @@ export function FinancePage() {
     queryFn: () => apiRequest<{ transfers: TransferItem[] }>('/api/v1/banking/transfers'),
   });
 
+  const { data: historyData, isLoading: historyLoading } = useQuery<{ items: AccountHistoryItem[] }>({
+    queryKey: ['banking', 'history'],
+    queryFn: () => apiRequest<{ items: AccountHistoryItem[] }>('/api/v1/banking/history?limit=30'),
+  });
+
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [selectedTerm, setSelectedTerm] = useState(0);
@@ -123,6 +140,7 @@ export function FinancePage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['banking', 'overview'] });
+      queryClient.invalidateQueries({ queryKey: ['banking', 'history'] });
       toast({
         title: 'Vay thành công',
         description: 'Khoản vay đã được giải ngân vào tài khoản.',
@@ -145,6 +163,7 @@ export function FinancePage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['banking', 'overview'] });
+      queryClient.invalidateQueries({ queryKey: ['banking', 'history'] });
       toast({
         title: 'Trả nợ thành công',
         description: 'Khoản vay đã được cập nhật.',
@@ -167,6 +186,7 @@ export function FinancePage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['banking', 'overview'] });
+      queryClient.invalidateQueries({ queryKey: ['banking', 'history'] });
       setDepositAmount('');
       toast({
         title: 'Gửi tiết kiệm thành công',
@@ -190,6 +210,7 @@ export function FinancePage() {
       }),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['banking', 'overview'] });
+      queryClient.invalidateQueries({ queryKey: ['banking', 'history'] });
       setWithdrawAmount('');
       const interest = data?.interest?.amount ?? 0;
       toast({
@@ -229,6 +250,7 @@ export function FinancePage() {
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['banking', 'overview'] });
       queryClient.invalidateQueries({ queryKey: ['banking', 'transfers'] });
+      queryClient.invalidateQueries({ queryKey: ['banking', 'history'] });
       queryClient.invalidateQueries({ queryKey: ['characters', 'me'] });
       setTransferAmount('');
       setTransferMessage('');
@@ -448,6 +470,7 @@ export function FinancePage() {
   };
 
   const transfers = transfersData?.transfers ?? [];
+  const accountHistory = historyData?.items ?? [];
 
   return (
     <div className="space-y-5">
@@ -763,6 +786,45 @@ export function FinancePage() {
           )}
         </Panel>
       </div>
+
+      <Panel title="Lịch sử biến động tài khoản (30 bản ghi gần nhất)" borderColor="emerald">
+        {historyLoading ? (
+          <p className="text-sm text-slate-500">Đang tải lịch sử biến động...</p>
+        ) : accountHistory.length === 0 ? (
+          <p className="text-sm text-slate-500">Chưa có biến động tài khoản.</p>
+        ) : (
+          <div className="space-y-2 max-h-[480px] overflow-auto pr-1">
+            {accountHistory.map((h) => {
+              const delta = Number(h.delta?.amount ?? 0);
+              const incoming = delta >= 0;
+              return (
+                <div key={h.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-slate-800 truncate">{h.description || h.kind}</p>
+                        <Badge variant={h.accountKind === 'savings' ? 'warning' : 'default'}>
+                          {h.accountKind === 'savings' ? 'Tiết kiệm' : 'Tiền mặt'}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Loại: <span className="font-mono">{h.kind}</span>
+                        {h.referenceType ? <> · Ref: <span className="font-mono">{h.referenceType}</span></> : null}
+                      </p>
+                      <p className="text-[11px] text-slate-500">{fmtDateTime(h.createdAt)}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`font-mono font-semibold ${incoming ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {incoming ? '+' : ''}{formatMoney(delta)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
 
       <Panel title="Sổ khoản vay của bạn" borderColor="rose">
         {overview.loans.length === 0 ? (

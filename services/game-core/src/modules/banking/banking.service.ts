@@ -962,5 +962,23 @@ export class BankingService {
       createdAt: r.created_at.toISOString(),
     }));
   }
+
+  async getAccountHistory(userId: string, limit = 30) {
+    return withTransaction(async (client) => {
+      const character = await requireCharacterByUserId(client, userId);
+      const rows = await this.repository.listAccountHistory(client, character.id, limit);
+      return rows.map((r) => ({
+        id: r.id,
+        transactionId: r.transaction_id,
+        accountKind: r.account_kind as 'cash' | 'savings',
+        delta: money(toMinor(r.delta_minor)),
+        kind: r.kind,
+        description: r.description,
+        referenceType: r.reference_type ?? null,
+        referenceId: r.reference_id ?? null,
+        createdAt: r.created_at.toISOString(),
+      }));
+    });
+  }
 }
 

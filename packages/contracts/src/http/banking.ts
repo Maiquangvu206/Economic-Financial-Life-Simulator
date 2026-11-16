@@ -215,3 +215,21 @@ export const TransferResultDtoSchema = z.object({
   balanceAfter: MoneySchema,
 });
 export type TransferResultDto = z.infer<typeof TransferResultDtoSchema>;
+
+export const AccountHistoryItemDtoSchema = z.object({
+  id: IdSchema,
+  transactionId: IdSchema,
+  accountKind: z.enum(['cash', 'savings']),
+  delta: MoneySchema,
+  kind: z.string(),
+  description: z.string(),
+  referenceType: z.string().nullable(),
+  referenceId: IdSchema.nullable(),
+  createdAt: z.string().datetime(),
+});
+export type AccountHistoryItemDto = z.infer<typeof AccountHistoryItemDtoSchema>;
+
+export const AccountHistoryResponseDtoSchema = z.object({
+  items: z.array(AccountHistoryItemDtoSchema),
+});
+export type AccountHistoryResponseDto = z.infer<typeof AccountHistoryResponseDtoSchema>;

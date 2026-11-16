@@ -316,6 +316,46 @@ export class BankingRepository {
     return r.rows;
   }
 
+  async listAccountHistory(
+    db: Db,
+    characterId: string,
+    limit = 30,
+  ): Promise<Array<{
+    id: string;
+    transaction_id: string;
+    account_kind: 'cash' | 'savings';
+    delta_minor: string;
+    kind: string;
+    description: string;
+    reference_type: string | null;
+    reference_id: string | null;
+    created_at: Date;
+  }>> {
+    const safeLimit = Math.max(1, Math.min(30, Math.trunc(limit || 30)));
+    const r = await db.query<{
+      id: string;
+      transaction_id: string;
+      account_kind: 'cash' | 'savings';
+      delta_minor: string;
+      kind: string;
+      description: string;
+      reference_type: string | null;
+      reference_id: string | null;
+      created_at: Date;
+    }>(
+      `SELECT e.id, e.transaction_id, a.kind AS account_kind, e.delta_minor::text AS delta_minor,
+              t.kind, t.description, t.reference_type, t.reference_id, e.created_at
+       FROM ledger_entries e
+       JOIN ledger_transactions t ON t.id = e.transaction_id
+       JOIN ledger_accounts a ON a.id = e.account_id
+       WHERE a.owner_type = 'character' AND a.owner_id = $1 AND a.kind IN ('cash','savings')
+       ORDER BY e.created_at DESC, e.id DESC
+       LIMIT $2`,
+      [characterId, safeLimit],
+    );
+    return r.rows;
+  }
+
   async findSavingsDeposit(
     db: Db,
     characterId: string,

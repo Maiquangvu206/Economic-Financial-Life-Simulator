@@ -92,4 +92,11 @@ export class BankingController {
     const transfers = await this.service.listTransfers(userId);
     res.json({ transfers });
   };
+
+  history = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 30;
+    const items = await this.service.getAccountHistory(userId, Number.isFinite(limitRaw) ? limitRaw : 30);
+    res.json({ items });
+  };
 }
