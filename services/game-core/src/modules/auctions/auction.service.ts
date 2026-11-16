@@ -297,7 +297,7 @@ export class AuctionService {
     userId: string,
     propertyId: string,
     startingPriceMinor: number,
-    endsAt: Date,
+    _endsAt: Date,
   ): Promise<void> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
@@ -310,9 +310,8 @@ export class AuctionService {
         throw AppError.badRequest('Chỉ có thể đấu giá bất động sản đang sở hữu hoặc đang bán.');
       }
       const now = new Date();
-      if (endsAt <= now) {
-        throw AppError.badRequest('Thời gian kết thúc phải ở trong tương lai.');
-      }
+      // Chuẩn thời gian: 1 phiên đấu giá = 3 ngày game = 3 phút thực
+      const endsAt = new Date(now.getTime() + 3 * 60 * 1000);
 
       await this.repository.createAuction(client, {
         propertyId,
@@ -325,7 +324,7 @@ export class AuctionService {
         userId,
         kind: 'auction',
         title: 'Tạo phiên đấu giá',
-        body: `Bạn đã đưa "${property.name}" lên đấu giá với giá khởi điểm ${formatMinor(startingPriceMinor)} VND.`,
+        body: `Bạn đã đưa "${property.name}" lên đấu giá với giá khởi điểm ${formatMinor(startingPriceMinor)} VND. Phiên kéo dài 3 ngày game.`,
         payload: { propertyId, startingPriceMinor, endsAt: endsAt.toISOString() },
       });
     });

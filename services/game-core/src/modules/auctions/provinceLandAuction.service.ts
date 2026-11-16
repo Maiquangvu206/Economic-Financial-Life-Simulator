@@ -153,8 +153,10 @@ export class ProvinceLandAuctionService {
     });
     if (candidates.length === 0) return;
 
+    // Chuẩn thời gian: 1 phiên đấu giá = 3 ngày game = 3 phút thực
+    const AUCTION_DURATION_MS = 3 * 60 * 1000;
     // Deterministic-ish rotation by time bucket + province to vary per province over time
-    const bucket = Math.floor(now.getTime() / (2 * 60 * 1000)); // per 2-minute auction window
+    const bucket = Math.floor(now.getTime() / AUCTION_DURATION_MS);
     let hash = 0;
     const seedStr = `${code}:${bucket}`;
     for (let i = 0; i < seedStr.length; i += 1) hash = (hash * 31 + seedStr.charCodeAt(i)) >>> 0;
@@ -162,7 +164,7 @@ export class ProvinceLandAuctionService {
     const startingPriceMinor = savedPrices.get(`${pick.x}-${pick.y}`) ?? 0;
     if (startingPriceMinor <= 0) return;
 
-    const endsAt = new Date(now.getTime() + 2 * 60 * 1000);
+    const endsAt = new Date(now.getTime() + AUCTION_DURATION_MS);
 
     await withTransaction(async (client) => {
       await this.repo.create(client, {
