@@ -116,7 +116,8 @@ export const MayorPolicyActionRequestSchema = z.object({
   // treasury_welfare_bonus
   amountPerCitizen: z.number().int().nonnegative().optional(),
   maxCitizens: z.number().int().positive().optional(),
-  // support_companies (from state fund): support selected companies or all active/ipo
+  // support_companies (from state fund): support selected companies (by stock ticker) or all active/ipo
+  tickers: z.array(z.string().trim().min(1).max(16)).max(200).optional(),
   companyIds: z.array(IdSchema).max(200).optional(),
   supportAllCompanies: z.boolean().optional(),
   amountPerCompanyMinor: z.number().int().positive().optional(),

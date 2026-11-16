@@ -29,8 +29,11 @@ export const StateFundSnapshotDtoSchema = z.object({
 export type StateFundSnapshotDto = z.infer<typeof StateFundSnapshotDtoSchema>;
 
 export const SupportCompaniesFromStateFundRequestSchema = z.object({
-  /** 'all' = all active/ipo companies, 'selected' = companyIds */
+  /** 'all' = all active/ipo companies, 'selected' = chỉ định theo mã chứng khoán (tickers) */
   scope: z.enum(['all', 'selected']).default('selected'),
+  /** Mã chứng khoán của công ty được chỉ định (vd: VCB, FPT). */
+  tickers: z.array(z.string().trim().min(1).max(16)).max(200).optional(),
+  /** Giữ tương thích: chỉ định theo ID công ty (UUID). */
   companyIds: z.array(IdSchema).max(200).optional(),
   /** Amount (VND) per company to transfer from state fund */
   amountPerCompanyMinor: z.number().int().positive().max(10_000_000_000),
@@ -45,6 +48,7 @@ export const SupportCompaniesFromStateFundResponseSchema = z.object({
   totalSpentMinor: z.number().int().nonnegative(),
   boostedTickers: z.number().int().nonnegative(),
   balanceAfter: MoneySchema,
+  tickers: z.array(z.string()).optional(),
 });
 export type SupportCompaniesFromStateFundResponse = z.infer<typeof SupportCompaniesFromStateFundResponseSchema>;
 

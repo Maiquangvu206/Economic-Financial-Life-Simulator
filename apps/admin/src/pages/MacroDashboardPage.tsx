@@ -19,7 +19,7 @@ export function MacroDashboardPage() {
   const [msg, setMsg] = useState<string | null>(null);
 
   const [supportScope, setSupportScope] = useState<'all' | 'selected'>('all');
-  const [supportCompanyIds, setSupportCompanyIds] = useState('');
+  const [supportTickers, setSupportTickers] = useState('');
   const [supportAmount, setSupportAmount] = useState('');
   const [supportReason, setSupportReason] = useState('');
   const [supportMsg, setSupportMsg] = useState<string | null>(null);
@@ -42,13 +42,13 @@ export function MacroDashboardPage() {
   });
 
   const supportCompanies = useMutation({
-    mutationFn: (body: { scope: 'all' | 'selected'; companyIds?: string[]; amountPerCompanyMinor: number; reason: string }) =>
+    mutationFn: (body: { scope: 'all' | 'selected'; tickers?: string[]; amountPerCompanyMinor: number; reason: string }) =>
       adminRequest<SupportCompaniesFromStateFundResponse>('/api/v1/admin/state-fund/support-companies', {
         method: 'POST',
         body: JSON.stringify(body),
       }),
     onSuccess: async (res) => {
-      setSupportMsg(`Đã hỗ trợ ${res.supportedCompanies} công ty (${formatMoney(res.amountPerCompanyMinor)} ₫/CT), tổng ${formatMoney(res.totalSpentMinor)} ₫. Ticker được tác động: ${res.boostedTickers}. Số dư quỹ: ${formatMoney(res.balanceAfter.amount)} ₫`);
+      setSupportMsg(`Đã hỗ trợ ${res.supportedCompanies} công ty (${formatMoney(res.amountPerCompanyMinor)} ₫/CT), tổng ${formatMoney(res.totalSpentMinor)} ₫. Mã CK: ${res.tickers?.length ? res.tickers.join(', ') : '—'} (tác động ${res.boostedTickers} ticker). Số dư quỹ: ${formatMoney(res.balanceAfter.amount)} ₫`);
       setSupportAmount('');
       setSupportReason('');
       await qc.invalidateQueries({ queryKey: ['admin', 'macro', 'snapshot'] });
@@ -167,21 +167,24 @@ export function MacroDashboardPage() {
                 setSupportMsg('Nhập số tiền hỗ trợ mỗi công ty (> 0) và lý do (≥ 3 ký tự).');
                 return;
               }
-              const ids = supportCompanyIds.split(',').map((s) => s.trim()).filter(Boolean);
-              if (supportScope === 'selected' && ids.length === 0) {
-                setSupportMsg('Nhập ít nhất một ID công ty (phân tách bằng dấu phẩy) hoặc chọn "Toàn bộ".');
+              const tickers = supportTickers
+                .split(/[,\s;]+/)
+                .map((s) => s.trim().toUpperCase())
+                .filter(Boolean);
+              if (supportScope === 'selected' && tickers.length === 0) {
+                setSupportMsg('Nhập ít nhất một Mã chứng khoán (phân tách bằng dấu phẩy) hoặc chọn "Toàn bộ".');
                 return;
               }
               supportCompanies.mutate({
                 scope: supportScope,
-                companyIds: supportScope === 'selected' ? ids : undefined,
+                tickers: supportScope === 'selected' ? tickers : undefined,
                 amountPerCompanyMinor: amount,
                 reason: supportReason.trim(),
               });
             }}
           >
             <div className="text-xs font-semibold text-slate-700">Hỗ trợ công ty từ quỹ (tăng biến động/thanh khoản sàn)</div>
-            <p className="text-[11px] text-slate-600">Chi từ quỹ đất nước vào quỹ công ty (active/IPO) và tác động biến động/khối lượng ticker niêm yết (nếu có). Có thể chỉ định công ty hoặc toàn bộ.</p>
+            <p className="text-[11px] text-slate-600">Chi từ quỹ đất nước vào quỹ công ty (active/IPO) và tác động biến động/khối lượng ticker niêm yết (nếu có). Có thể chỉ định công ty theo Mã chứng khoán hoặc hỗ trợ toàn bộ.</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <label className="text-xs text-slate-700">
                 Phạm vi
@@ -206,14 +209,17 @@ export function MacroDashboardPage() {
               </label>
               {supportScope === 'selected' && (
                 <label className="text-xs text-slate-700 sm:col-span-2">
-                  ID công ty (UUID, phân tách bằng dấu phẩy)
+                  Mã chứng khoán công ty (phân tách bằng dấu phẩy)
                   <textarea
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-mono uppercase"
                     rows={2}
-                    value={supportCompanyIds}
-                    onChange={(e) => setSupportCompanyIds(e.target.value)}
-                    placeholder="uuid-1, uuid-2, ..."
+                    value={supportTickers}
+                    onChange={(e) => setSupportTickers(e.target.value)}
+                    placeholder="VCB, FPT, ..."
                   />
+                  <span className="mt-1 block text-[11px] font-normal text-slate-500">
+                    Chỉ áp dụng cho công ty đã niêm yết (có mã CK). Hỗ trợ sẽ cộng tiền vào quỹ công ty và tác động giá/khối lượng ticker tương ứng.
+                  </span>
                 </label>
               )}
               <label className="text-xs text-slate-700 sm:col-span-2">

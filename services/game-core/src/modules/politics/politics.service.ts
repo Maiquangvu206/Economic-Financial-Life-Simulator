@@ -4,7 +4,7 @@ import { withTransaction, type Db } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
 import { creditStateFund, debitStateFund, getStateFundBalance } from '../../shared/state-fund/stateFund.js';
-import { supportCompaniesFromStateFund } from '../../shared/state-fund/supportCompanies.js';
+import { resolveSupportTargets, supportCompaniesFromStateFund } from '../../shared/state-fund/supportCompanies.js';
 import { enqueueDomainEvent } from '../../shared/events/eventBus.js';
 import { notify } from '../notifications/notification.service.js';
 import { publishToUser, publishToAllUsers } from '../../shared/realtime/publish.js';
@@ -424,12 +424,7 @@ export class PoliticsService {
   async performPolicyAction(userId: string, req: MayorPolicyActionRequest): Promise<{ ok: true; action: string; detail: Record<string, unknown> }> {
     return withTransaction(async (client) => {
       const mayor = await this.requireActiveMayor(client, userId);
-      const cooldownMs = mayor.config.policyCooldownMinutes * 60_000;
-      const last = await this.repository.getLastPolicyActionAt(client as any, `policy_${req.type}`);
-      if (last && Date.now() - last.getTime() < cooldownMs) {
-        const waitMin = Math.ceil((cooldownMs - (Date.now() - last.getTime())) / 60000);
-        throw AppError.conflict('mayor_cooldown', `Hành động chính sách đang hồi. Vui lòng thử lại sau ~${waitMin} phút.`);
-      }
+      // Mọi hành động của Thị trưởng không bị giới hạn thời gian/cooldown — có thể gửi yêu cầu liên tục.
       if (mayor.config.policyCostMinor > 0) {
         const govBal = await ledger.getBalance(client as any, 'government', SYSTEM_GOVERNMENT_ID);
         if (govBal < mayor.config.policyCostMinor) {
@@ -517,20 +512,27 @@ export class PoliticsService {
 
       if (req.type === 'support_companies') {
         const amountPerCompanyMinor = clampInt(Number(req.amountPerCompanyMinor ?? 0), 1_000_000, mayor.config.treasurySpendLimitMinor);
-        const supportAll = req.supportAllCompanies === true || !Array.isArray(req.companyIds) || req.companyIds.length === 0;
+        const tickers = Array.from(new Set((Array.isArray(req.tickers) ? req.tickers : []).map((t) => String(t ?? '').trim().toUpperCase()).filter(Boolean)));
         const companyIds = Array.isArray(req.companyIds) ? req.companyIds.filter(Boolean) : [];
-        if (!supportAll && companyIds.length === 0) {
-          throw AppError.badRequest('Vui lòng chỉ định công ty cần hỗ trợ hoặc chọn hỗ trợ toàn bộ.');
+        const supportAll = req.supportAllCompanies === true || (tickers.length === 0 && companyIds.length === 0);
+        if (!supportAll && tickers.length === 0 && companyIds.length === 0) {
+          throw AppError.badRequest('Vui lòng nhập Mã chứng khoán của công ty cần hỗ trợ hoặc chọn hỗ trợ toàn bộ.');
         }
-        // estimate count for limit check
-        let targetCount = 0;
-        if (supportAll) {
-          const c = await client.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM companies WHERE status IN ('active','ipo')`);
-          targetCount = Number(c.rows[0]?.count ?? 0);
-        } else {
-          const c = await client.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM companies WHERE id = ANY($1::uuid[]) AND status IN ('active','ipo')`, [companyIds]);
-          targetCount = Number(c.rows[0]?.count ?? 0);
+        // Xác định công ty mục tiêu (ưu tiên mã chứng khoán) để kiểm tra hạn mức trước khi chi.
+        let targets;
+        try {
+          targets = await resolveSupportTargets(client as any, {
+            scope: supportAll ? 'all' : 'selected',
+            tickers: supportAll ? undefined : tickers,
+            companyIds: supportAll ? undefined : companyIds,
+          });
+        } catch (e: any) {
+          const msg = String(e?.message ?? '');
+          if (msg.includes('TICKERS_NOT_FOUND')) throw AppError.badRequest('Không tìm thấy công ty đang niêm yết với Mã chứng khoán đã nhập.');
+          if (msg.includes('NO_COMPANIES')) throw AppError.badRequest('Vui lòng nhập Mã chứng khoán của công ty cần hỗ trợ hoặc chọn hỗ trợ toàn bộ.');
+          throw e;
         }
+        const targetCount = targets.length;
         if (targetCount <= 0) throw AppError.badRequest('Không tìm thấy công ty hợp lệ để hỗ trợ (đang hoạt động/IPO).');
         const total = amountPerCompanyMinor * targetCount;
         if (total > mayor.config.treasurySpendLimitMinor) {
@@ -542,6 +544,7 @@ export class PoliticsService {
         try {
           result = await supportCompaniesFromStateFund(client as any, {
             scope: supportAll ? 'all' : 'selected',
+            tickers: supportAll ? undefined : tickers,
             companyIds: supportAll ? undefined : companyIds,
             amountPerCompanyMinor,
             reason: req.reason ?? 'Hỗ trợ doanh nghiệp và ổn định/thúc đẩy biến động thị trường',
@@ -554,17 +557,18 @@ export class PoliticsService {
           const msg = String(e?.message ?? '');
           if (msg.includes('STATE_FUND_INSUFFICIENT')) throw AppError.conflict('insufficient_treasury', 'Quỹ đất nước không đủ để hỗ trợ doanh nghiệp.');
           if (msg.includes('NO_ELIGIBLE_COMPANIES') || msg.includes('NO_COMPANIES')) throw AppError.badRequest('Không tìm thấy công ty hợp lệ để hỗ trợ (đang hoạt động/IPO).');
+          if (msg.includes('TICKERS_NOT_FOUND')) throw AppError.badRequest('Không tìm thấy công ty đang niêm yết với Mã chứng khoán đã nhập.');
           throw e;
         }
         await this.repository.insertMayorAction(client as any, {
           electionId: mayor.electionId, actorCharacterId: mayor.characterId, actorUserId: mayor.userId,
           actionType: 'policy_support_companies', amountMinor: result.totalSpentMinor,
           reason: req.reason ?? null,
-          payload: { scope: supportAll ? 'all' : 'selected', companyIds: supportAll ? null : companyIds, amountPerCompanyMinor, supportedCompanies: result.supportedCompanies, boostedTickers: result.boostedTickers },
+          payload: { scope: supportAll ? 'all' : 'selected', tickers: supportAll ? null : tickers, companyIds: supportAll ? null : companyIds, amountPerCompanyMinor, supportedCompanies: result.supportedCompanies, boostedTickers: result.boostedTickers, supportedTickers: result.tickers },
         });
-        await writeActionLog(pool as any, mayor.userId, 'mayor.policy.support_companies', { scope: supportAll ? 'all' : 'selected', amountPerCompanyMinor, supportedCompanies: result.supportedCompanies, totalSpentMinor: result.totalSpentMinor, boostedTickers: result.boostedTickers, reason: req.reason ?? null });
-        try { await publishToAllUsers('notification', { kind: 'politics', title: 'Thị trưởng hỗ trợ doanh nghiệp từ quỹ đất nước', body: `Đã hỗ trợ ${result.supportedCompanies} công ty (${amountPerCompanyMinor.toLocaleString('vi-VN')} ₫/công ty), tổng ${result.totalSpentMinor.toLocaleString('vi-VN')} ₫. Biến động/thanh khoản sàn có thể tăng.`, at: Date.now() }); } catch {}
-        return { ok: true, action: 'support_companies', detail: { supportedCompanies: result.supportedCompanies, amountPerCompanyMinor, totalSpentMinor: result.totalSpentMinor, boostedTickers: result.boostedTickers, scope: supportAll ? 'all' : 'selected' } };
+        await writeActionLog(pool as any, mayor.userId, 'mayor.policy.support_companies', { scope: supportAll ? 'all' : 'selected', tickers: supportAll ? null : tickers, amountPerCompanyMinor, supportedCompanies: result.supportedCompanies, totalSpentMinor: result.totalSpentMinor, boostedTickers: result.boostedTickers, reason: req.reason ?? null });
+        try { await publishToAllUsers('notification', { kind: 'politics', title: 'Thị trưởng hỗ trợ doanh nghiệp từ quỹ đất nước', body: `Đã hỗ trợ ${result.supportedCompanies} công ty${result.tickers.length ? ` (${result.tickers.join(', ')})` : ''} với ${amountPerCompanyMinor.toLocaleString('vi-VN')} ₫/công ty, tổng ${result.totalSpentMinor.toLocaleString('vi-VN')} ₫. Biến động/thanh khoản sàn có thể tăng.`, at: Date.now() }); } catch {}
+        return { ok: true, action: 'support_companies', detail: { supportedCompanies: result.supportedCompanies, tickers: result.tickers, amountPerCompanyMinor, totalSpentMinor: result.totalSpentMinor, boostedTickers: result.boostedTickers, scope: supportAll ? 'all' : 'selected' } };
       }
 
       throw AppError.badRequest('Loại hành động chính sách không được hỗ trợ.');

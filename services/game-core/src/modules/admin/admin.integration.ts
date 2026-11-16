@@ -901,12 +901,15 @@ export async function adminSupportCompaniesFromStateFund(req: Request, res: Resp
   const amountPerCompanyMinor = Math.trunc(Number(body.amountPerCompanyMinor));
   const reason = String(body.reason ?? '').trim();
   const companyIds = Array.isArray(body.companyIds) ? body.companyIds : [];
+  const tickers = Array.from(
+    new Set((Array.isArray(body.tickers) ? body.tickers : []).map((t) => String(t ?? '').trim().toUpperCase()).filter(Boolean)),
+  );
   if (!Number.isFinite(amountPerCompanyMinor) || amountPerCompanyMinor <= 0) {
     throw AppError.badRequest('Số tiền hỗ trợ mỗi công ty không hợp lệ.');
   }
   if (reason.length < 3) throw AppError.badRequest('Vui lòng nhập lý do hỗ trợ (tối thiểu 3 ký tự).');
-  if (scope === 'selected' && companyIds.length === 0) {
-    throw AppError.badRequest('Vui lòng chọn ít nhất một công ty hoặc dùng phạm vi toàn bộ.');
+  if (scope === 'selected' && companyIds.length === 0 && tickers.length === 0) {
+    throw AppError.badRequest('Vui lòng nhập Mã chứng khoán của công ty cần hỗ trợ hoặc dùng phạm vi toàn bộ.');
   }
 
   const client = await pool.connect();
@@ -916,6 +919,7 @@ export async function adminSupportCompaniesFromStateFund(req: Request, res: Resp
     try {
       result = await supportCompaniesFromStateFund(client as any, {
         scope,
+        tickers,
         companyIds,
         amountPerCompanyMinor,
         reason,
@@ -927,6 +931,7 @@ export async function adminSupportCompaniesFromStateFund(req: Request, res: Resp
     } catch (e: any) {
       const msg = String(e?.message ?? '');
       if (msg.includes('STATE_FUND_INSUFFICIENT')) throw AppError.conflict('state_fund_insufficient', 'Quỹ đất nước không đủ để hỗ trợ các công ty theo mức đã chọn.');
+      if (msg.includes('TICKERS_NOT_FOUND')) throw AppError.badRequest('Không tìm thấy công ty đang niêm yết với Mã chứng khoán đã nhập.');
       if (msg.includes('NO_ELIGIBLE_COMPANIES') || msg.includes('NO_COMPANIES')) throw AppError.badRequest('Không tìm thấy công ty hợp lệ để hỗ trợ (đang hoạt động/IPO).');
       if (msg.includes('INVALID_AMOUNT')) throw AppError.badRequest('Số tiền hỗ trợ không hợp lệ.');
       throw e;
@@ -935,7 +940,8 @@ export async function adminSupportCompaniesFromStateFund(req: Request, res: Resp
 
     await writeActionLog(pool as any, req.actorId, 'state_fund.support_companies', {
       scope,
-      companyIds: scope === 'selected' ? companyIds : undefined,
+      tickers: scope === 'selected' ? tickers : undefined,
+      companyIds: scope === 'selected' && tickers.length === 0 ? companyIds : undefined,
       amountPerCompanyMinor,
       supportedCompanies: result.supportedCompanies,
       totalSpentMinor: result.totalSpentMinor,
@@ -957,6 +963,7 @@ export async function adminSupportCompaniesFromStateFund(req: Request, res: Resp
       amountPerCompanyMinor: result.amountPerCompanyMinor,
       totalSpentMinor: result.totalSpentMinor,
       boostedTickers: result.boostedTickers,
+      tickers: result.tickers,
       balanceAfter: money(result.balanceAfter),
     });
   } catch (e) {

@@ -326,8 +326,8 @@ export function PoliticsConfigPage() {
                 <label className="text-slate-700">Chu kỳ phụ cấp (ngày game)
                   <input type="number" className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" value={draft.salaryIntervalGameDays ?? mayorConfig.salaryIntervalGameDays} onChange={(e) => setMayorCfgDraft((s) => ({ ...s, salaryIntervalGameDays: Number(e.target.value) }))} />
                 </label>
-                <label className="text-slate-700">Cooldown chính sách (phút)
-                  <input type="number" className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" value={draft.policyCooldownMinutes ?? mayorConfig.policyCooldownMinutes} onChange={(e) => setMayorCfgDraft((s) => ({ ...s, policyCooldownMinutes: Number(e.target.value) }))} />
+                <label className="text-slate-700">Cooldown chính sách (phút) — không còn áp dụng
+                  <input type="number" className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 opacity-60" value={draft.policyCooldownMinutes ?? mayorConfig.policyCooldownMinutes} disabled title="Mọi hành động của Thị trưởng không giới hạn thời gian" onChange={(e) => setMayorCfgDraft((s) => ({ ...s, policyCooldownMinutes: Number(e.target.value) }))} />
                 </label>
                 <label className="text-slate-700">Hạn mức chi quỹ (VNĐ/lần)
                   <input type="number" className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" value={draft.treasurySpendLimitMinor ?? mayorConfig.treasurySpendLimitMinor} onChange={(e) => setMayorCfgDraft((s) => ({ ...s, treasurySpendLimitMinor: Number(e.target.value) }))} />

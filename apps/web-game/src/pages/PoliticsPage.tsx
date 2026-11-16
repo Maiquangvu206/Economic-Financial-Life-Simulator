@@ -46,6 +46,10 @@ export function PoliticsPage() {
   const [otRate, setOtRate] = useState<string>('');
   const [welfarePerCitizen, setWelfarePerCitizen] = useState<string>('');
   const [welfareMax, setWelfareMax] = useState<string>('');
+  const [supportTickers, setSupportTickers] = useState<string>('');
+  const [supportAll, setSupportAll] = useState(false);
+  const [supportAmountPerCompany, setSupportAmountPerCompany] = useState<string>('');
+  const [supportReason, setSupportReason] = useState<string>('Hỗ trợ doanh nghiệp theo chỉ định của Thị trưởng');
 
   async function handleAction(key: string, fn: () => Promise<unknown>, onDone?: () => void) {
     setBusy(key);
@@ -118,7 +122,7 @@ export function PoliticsPage() {
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                 <div className="text-slate-500">Đặc quyền/giới hạn</div>
-                <div className="font-medium">Chính sách whitelist, có cooldown & kiểm soát ngân sách</div>
+                <div className="font-medium">Chính sách whitelist, không giới hạn thời gian & kiểm soát ngân sách</div>
               </div>
             </div>
             <p className="text-[11px] text-slate-500">
@@ -140,7 +144,7 @@ export function PoliticsPage() {
         <Panel title="Hành động & Chính sách của Thị trưởng (Pha B)" borderColor="amber">
           <div className="space-y-4 text-sm">
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-              Mọi hành động được kiểm tra server-side (whitelist, ngưỡng, cooldown {mayor.config.policyCooldownMinutes} phút, nguồn quỹ/giới hạn). Lạm dụng sẽ bị thu hồi tư cách.
+              Mọi hành động của Thị trưởng được kiểm tra server-side (whitelist, ngưỡng, nguồn quỹ/giới hạn) nhưng <b>không giới hạn thời gian</b> — có thể gửi yêu cầu liên tục. Lạm dụng sẽ bị thu hồi tư cách.
             </div>
 
             {policyMsg && (
@@ -217,6 +221,78 @@ export function PoliticsPage() {
                   }
                 >
                   {busy === 'policy-welfare' ? 'Đang thực hiện…' : 'Ban hành gói hỗ trợ'}
+                </GameButton>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2 lg:col-span-2">
+                <div className="font-semibold text-slate-900">Hỗ trợ doanh nghiệp chỉ định (theo Mã chứng khoán)</div>
+                <div className="text-xs text-slate-600">
+                  Chi từ quỹ đất nước vào quỹ công ty đã niêm yết. Hạn mức tổng mỗi lần: {formatMoney(mayor.config.treasurySpendLimitMinor)}. Nhập mã CK (vd: VCB, FPT) hoặc hỗ trợ toàn bộ. <b>Không giới hạn thời gian gửi yêu cầu.</b>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={supportAll}
+                    onChange={(e) => setSupportAll(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 accent-amber-500"
+                  />
+                  Hỗ trợ toàn bộ công ty đang hoạt động/IPO
+                </label>
+                {!supportAll && (
+                  <GameInput
+                    label="Mã chứng khoán (phân tách bằng dấu phẩy)"
+                    value={supportTickers}
+                    onChange={(e) => setSupportTickers(e.target.value.toUpperCase())}
+                    placeholder="VCB, FPT, ..."
+                  />
+                )}
+                <GameInput
+                  label="Số tiền mỗi công ty (VNĐ)"
+                  type="number"
+                  value={supportAmountPerCompany}
+                  onChange={(e) => setSupportAmountPerCompany(e.target.value)}
+                  placeholder="VD: 50000000"
+                />
+                <GameInput
+                  label="Lý do"
+                  value={supportReason}
+                  onChange={(e) => setSupportReason(e.target.value)}
+                  placeholder="Lý do hỗ trợ doanh nghiệp"
+                />
+                <GameButton
+                  variant="primary"
+                  disabled={busy === 'policy-support-companies'}
+                  onClick={() => {
+                    const amount = Math.trunc(Number(supportAmountPerCompany));
+                    if (!Number.isFinite(amount) || amount <= 0) {
+                      setPolicyMsg('Nhập số tiền hỗ trợ mỗi công ty (> 0).');
+                      return;
+                    }
+                    const tickers = supportTickers
+                      .split(/[,\s;]+/)
+                      .map((t) => t.trim().toUpperCase())
+                      .filter(Boolean);
+                    if (!supportAll && tickers.length === 0) {
+                      setPolicyMsg('Nhập ít nhất một Mã chứng khoán hoặc chọn hỗ trợ toàn bộ.');
+                      return;
+                    }
+                    void handleAction(
+                      'policy-support-companies',
+                      () => apiRequest('/api/v1/politics/mayor/actions', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          type: 'support_companies',
+                          supportAllCompanies: supportAll,
+                          tickers: supportAll ? undefined : tickers,
+                          amountPerCompanyMinor: amount,
+                          reason: supportReason.trim() || 'Hỗ trợ doanh nghiệp theo chỉ định của Thị trưởng',
+                        }),
+                      }),
+                      () => setPolicyMsg(`Đã gửi yêu cầu hỗ trợ ${supportAll ? 'toàn bộ doanh nghiệp' : tickers.join(', ')}.`),
+                    );
+                  }}
+                >
+                  {busy === 'policy-support-companies' ? 'Đang thực hiện…' : 'Hỗ trợ doanh nghiệp từ quỹ'}
                 </GameButton>
               </div>
             </div>

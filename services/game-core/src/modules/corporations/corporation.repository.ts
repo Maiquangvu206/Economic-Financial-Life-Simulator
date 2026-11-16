@@ -268,7 +268,6 @@ export class CorporationRepository {
          AND p.merged_into_property_id IS NULL
          AND COALESCE(NULLIF(TRIM(p.construction_option), ''), NULL) IS NOT NULL
        ORDER BY c.name ASC, p.updated_at DESC NULLS LAST, p.id`,
-      [characterId],
     );
 
     return [...coreLand.rows, ...provinceLand.rows, ...companyProps.rows];
