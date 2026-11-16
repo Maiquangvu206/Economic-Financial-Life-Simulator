@@ -49,6 +49,8 @@ export interface TradeRow {
   id: string;
   tickerId: string;
   symbol: string;
+  buyerCharacterId: string | null;
+  sellerCharacterId: string | null;
   priceMinor: string;
   amount: number;
   executedAt: Date;
@@ -163,7 +165,10 @@ export class StockMarketRepository {
 
   async listTrades(characterId: string): Promise<TradeRow[]> {
     const result = await this.db.query<TradeRow>(
-      `SELECT tr.id, tr.ticker_id AS "tickerId", t.symbol, tr.price_minor AS "priceMinor",
+      `SELECT tr.id, tr.ticker_id AS "tickerId", t.symbol,
+              tr.buyer_character_id AS "buyerCharacterId",
+              tr.seller_character_id AS "sellerCharacterId",
+              tr.price_minor AS "priceMinor",
               tr.amount, tr.executed_at AS "executedAt"
        FROM stock_trades tr
        JOIN stock_tickers t ON t.id = tr.ticker_id
@@ -282,8 +287,11 @@ export class StockMarketRepository {
           RETURNING shares`,
         [characterId, tickerId, sellQty],
       );
-      const remaining = res.rows[0]?.shares;
-      if (remaining !== undefined && Number(remaining) <= 0) {
+      if (!res.rows[0]) {
+        throw new Error('insufficient_shares_or_holding_missing');
+      }
+      const remaining = Number(res.rows[0].shares);
+      if (remaining <= 0) {
         await db.query(
           `DELETE FROM stock_holdings WHERE character_id = $1::uuid AND ticker_id = $2::uuid`,
           [characterId, tickerId],

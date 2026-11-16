@@ -69,6 +69,8 @@ export type PortfolioDto = z.infer<typeof PortfolioDtoSchema>;
 export const TradeDtoSchema = z.object({
   id: IdSchema,
   tickerId: IdSchema,
+  symbol: z.string(),
+  side: OrderSideSchema,
   price: MoneySchema,
   amount: z.number().int().positive(),
   executedAt: z.string().datetime(),

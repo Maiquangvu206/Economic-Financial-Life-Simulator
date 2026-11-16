@@ -46,10 +46,15 @@ function toHoldingDto(row: Awaited<ReturnType<typeof stockMarketRepository.listH
   };
 }
 
-function toTradeDto(row: Awaited<ReturnType<typeof stockMarketRepository.listTrades>>[number]): TradeDto {
+function toTradeDto(
+  row: Awaited<ReturnType<typeof stockMarketRepository.listTrades>>[number],
+  viewerCharacterId: string,
+): TradeDto {
   return {
     id: row.id,
     tickerId: row.tickerId,
+    symbol: row.symbol,
+    side: row.buyerCharacterId === viewerCharacterId ? 'buy' : 'sell',
     price: money(Number(row.priceMinor)),
     amount: row.amount,
     executedAt: row.executedAt.toISOString(),
@@ -117,7 +122,7 @@ export class StockMarketService {
         await this.repository.updateHolding(client, character.id, tickerId, qty, priceMinor);
         const tradeId = await this.repository.createTrade(client, tickerId, character.id, null, priceMinor, qty);
 
-        const trade: TradeDto = { id: tradeId, tickerId, price: money(priceMinor), amount: qty, executedAt: nowIso };
+        const trade: TradeDto = { id: tradeId, tickerId, symbol: ticker.symbol, side: 'buy', price: money(priceMinor), amount: qty, executedAt: nowIso };
         return {
           ok: true,
           side,
@@ -142,7 +147,14 @@ export class StockMarketService {
         );
       }
 
-      await this.repository.updateHolding(client, character.id, tickerId, -qty);
+      try {
+        await this.repository.updateHolding(client, character.id, tickerId, -qty);
+      } catch (e) {
+        throw AppError.conflict(
+          'insufficient_shares',
+          `Không thể cập nhật số cổ phiếu sở hữu khi bán. Vui lòng thử lại.`,
+        );
+      }
       await ledger.transfer(client, {
         from: { ownerType: 'market', ownerId: SYSTEM_MARKET_ID },
         to: { ownerType: 'character', ownerId: character.id },
@@ -154,7 +166,7 @@ export class StockMarketService {
       });
       const tradeId = await this.repository.createTrade(client, tickerId, null, character.id, priceMinor, qty);
 
-      const trade: TradeDto = { id: tradeId, tickerId, price: money(priceMinor), amount: qty, executedAt: nowIso };
+      const trade: TradeDto = { id: tradeId, tickerId, symbol: ticker.symbol, side: 'sell', price: money(priceMinor), amount: qty, executedAt: nowIso };
       return {
         ok: true,
         side,
@@ -189,7 +201,7 @@ export class StockMarketService {
     const db = this.repository.db;
     const character = await requireCharacterByUserId(db, userId);
     const rows = await this.repository.listTrades(character.id);
-    return rows.map(toTradeDto);
+    return rows.map((row) => toTradeDto(row, character.id));
   }
 
   async getOrderBook(_tickerId: string) {

@@ -223,21 +223,33 @@ export function StockMarketPage() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-slate-200 text-[10px] uppercase text-slate-500">
-                <th className="text-left pb-2">Mã (ticker)</th>
+                <th className="text-left pb-2">Loại</th>
+                <th className="text-left pb-2">Mã</th>
                 <th className="text-right pb-2">Giá khớp</th>
                 <th className="text-right pb-2">Số lượng</th>
+                <th className="text-right pb-2">Tổng giá trị</th>
                 <th className="text-left pb-2">Thời gian</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {myTrades.length > 0 ? myTrades.map((trade) => (
-                <tr key={trade.id} className="hover:bg-slate-50/50">
-                  <td className="pb-2 font-mono text-xs">{trade.tickerId.slice(0, 8)}…</td>
-                  <td className="pb-2 text-right font-mono">{formatMoney(trade.price.amount)}</td>
-                  <td className="pb-2 text-right">{trade.amount}</td>
-                  <td className="pb-2 text-left text-[10px] text-slate-500">{new Date(trade.executedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-                </tr>
-              )) : <tr><td colSpan={4} className="pb-4 text-center text-xs text-slate-500">Chưa có giao dịch nào.</td></tr>}
+              {myTrades.length > 0 ? myTrades.map((trade) => {
+                const isBuy = trade.side === 'buy';
+                const total = trade.price.amount * trade.amount;
+                return (
+                  <tr key={trade.id} className="hover:bg-slate-50/50">
+                    <td className="pb-2">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${isBuy ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                        {isBuy ? 'Mua' : 'Bán'}
+                      </span>
+                    </td>
+                    <td className="pb-2 font-mono font-semibold text-xs">{trade.symbol || `${trade.tickerId.slice(0, 8)}…`}</td>
+                    <td className="pb-2 text-right font-mono">{formatMoney(trade.price.amount)}</td>
+                    <td className={`pb-2 text-right font-mono ${isBuy ? 'text-emerald-700' : 'text-rose-700'}`}>{isBuy ? '+' : '-'}{trade.amount}</td>
+                    <td className="pb-2 text-right font-mono text-slate-700">{formatMoney(total)}</td>
+                    <td className="pb-2 text-left text-[10px] text-slate-500">{new Date(trade.executedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                  </tr>
+                );
+              }) : <tr><td colSpan={6} className="pb-4 text-center text-xs text-slate-500">Chưa có giao dịch nào.</td></tr>}
             </tbody>
           </table>
         </div>
