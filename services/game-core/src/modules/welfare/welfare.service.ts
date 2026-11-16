@@ -76,6 +76,8 @@ export class WelfareService {
 
   async getAvailableForUser(userId: string, gameYear?: number, gameMonth?: number, gameDay?: number): Promise<WelfareAvailableDto[]> {
     const character = await requireCharacterByUserId(this.db, userId);
+    const roleRes = await (this.db as any).query(`SELECT role FROM users WHERE id = $1`, [userId]);
+    const role = String(roleRes.rows[0]?.role ?? 'player');
     const periodYear = gameYear ?? await this.getGameYear(this.db);
     const r = await (this.db as any).query(
       `SELECT b.*, wc.id AS claim_id
@@ -85,6 +87,7 @@ export class WelfareService {
        ORDER BY b.month NULLS LAST, b.day NULLS LAST, b.name ASC`,
       [character.id, periodYear],
     );
+    const staffBlocked = role === 'admin' || role === 'moderator';
     return r.rows.map((row: any) => {
       const claimed = !!row.claim_id;
       const matchesDate = row.month == null || row.day == null
@@ -93,7 +96,7 @@ export class WelfareService {
       return {
         ...this.toDto(row),
         claimed,
-        claimable: !claimed && matchesDate && Number(row.bonus_minor) >= 0,
+        claimable: !staffBlocked && !claimed && matchesDate && Number(row.bonus_minor) >= 0,
         periodYear,
       } as WelfareAvailableDto;
     });
@@ -102,6 +105,11 @@ export class WelfareService {
   async claim(userId: string, input: ClaimWelfareRequest): Promise<ClaimWelfareResponse> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      const roleRes = await (client as any).query(`SELECT role FROM users WHERE id = $1`, [userId]);
+      const role = String(roleRes.rows[0]?.role ?? 'player');
+      if (role === 'admin' || role === 'moderator') {
+        throw AppError.forbidden('Tài khoản quản trị/điều hành không được nhận phúc lợi.');
+      }
       const periodYear = input.periodYear ?? input.gameYear ?? await this.getGameYear(client);
 
       let benefitRow: any = null;

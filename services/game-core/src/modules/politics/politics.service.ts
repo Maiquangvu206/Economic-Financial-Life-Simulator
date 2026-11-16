@@ -463,7 +463,9 @@ export class PoliticsService {
         const citizens = await client.query<{ id: string }>(
           `SELECT c.id FROM characters c
            JOIN users u ON u.id = c.user_id
-           WHERE COALESCE(c.is_alive,true)=true AND (u.status IS DISTINCT FROM 'banned')
+           WHERE COALESCE(c.is_alive,true)=true
+             AND (u.status IS DISTINCT FROM 'banned')
+             AND u.role = 'player'
            ORDER BY c.created_at DESC
            LIMIT $1`,
           [maxCitizens],

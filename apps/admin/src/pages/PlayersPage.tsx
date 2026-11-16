@@ -314,60 +314,93 @@ export function PlayersPage() {
                         <span className="text-[10px] text-slate-500">Không có tài khoản</span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-[11px]">{p.cccd ?? '—'}</td>
-                    <td className="py-2.5 px-3 space-y-1.5">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${p.isAlive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
-                        {p.isAlive ? 'Sống' : 'Đã chết'} · {p.age} tuổi
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <label className="text-[10px] text-slate-600">Tuổi thọ tối đa:</label>
-                        <input
-                          type="number"
-                          min={p.age + 1}
-                          max={200}
-                          value={deathAgeDrafts[p.id] ?? ''}
-                          onChange={(e) => setDeathAgeDrafts((s) => ({ ...s, [p.id]: e.target.value }))}
-                          placeholder="—"
-                          className="w-16 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[11px]"
-                          title="Khi nhân vật đạt tuổi này sẽ qua đời và yêu cầu chuyển sang nhân vật kế tiếp. Để trống để gỡ cấu hình."
-                        />
-                        <button
-                          type="button"
-                          disabled={busy != null || !p.isAlive}
-                          onClick={() => doAction(p.id, 'set_death_age', p.fullName)}
-                          className="rounded-md bg-sky-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
-                          title="Lưu tuổi thọ tối đa (khi đạt tuổi sẽ chết). Để trống rồi bấm Lưu để gỡ."
-                        >
-                          Lưu
-                        </button>
-                      </div>
-                      {p.deathAge != null && (
-                        <div className="text-[10px] text-slate-500">Đã cấu hình: chết ở {p.deathAge} tuổi</div>
-                      )}
-                      {p.accountStatus && p.accountStatus !== 'active' && (
-                        <div className="text-[10px] font-semibold text-rose-700">TK: {p.accountStatus}</div>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-mono">{fmtMoney(p.cash)}</td>
-                    <td className="py-2.5 px-3 text-right font-mono">{p.heatLevel}</td>
-                    <td className="py-2.5 px-3">
-                      <div className="flex flex-wrap gap-1">
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'grant_aid', p.fullName)} className="rounded-lg bg-emerald-50 border border-emerald-200 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">Cứu trợ</button>
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'fine', p.fullName)} className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50">Phạt</button>
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'ban', p.fullName)} className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50" title="Khóa tài khoản (người dùng sẽ bị đăng xuất theo thời gian thực và không thể đăng nhập)">Khóa</button>
-                        <button disabled={busy!=null} onClick={() => doAction(p.id,'unban', p.fullName)} className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50" title="Mở khóa tài khoản (cho phép đăng nhập lại)">Mở</button>
-                        {isSuperAdmin && (
-                          <button
-                            disabled={busy!=null}
-                            onClick={() => doAction(p.id,'force_delete', `${p.fullName}${p.email ? ` (${p.email})` : ''}`)}
-                            className="rounded-lg bg-red-700 border border-red-800 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-600 disabled:opacity-50"
-                            title="Chỉ super admin: xóa cưỡng chế khi phát hiện bất thường (không thể hoàn tác)"
-                          >
-                            Xóa cưỡng chế
-                          </button>
-                        )}
-                      </div>
-                    </td>
+                    {currentRole === 'player' ? (
+                      <>
+                        <td className="py-2.5 px-3 font-mono text-[11px]">{p.cccd ?? '—'}</td>
+                        <td className="py-2.5 px-3 space-y-1.5">
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${p.isAlive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                            {p.isAlive ? 'Sống' : 'Đã chết'} · {p.age} tuổi
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <label className="text-[10px] text-slate-600">Tuổi thọ tối đa:</label>
+                            <input
+                              type="number"
+                              min={p.age + 1}
+                              max={200}
+                              value={deathAgeDrafts[p.id] ?? ''}
+                              onChange={(e) => setDeathAgeDrafts((s) => ({ ...s, [p.id]: e.target.value }))}
+                              placeholder="—"
+                              className="w-16 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[11px]"
+                              title="Khi nhân vật đạt tuổi này sẽ qua đời và yêu cầu chuyển sang nhân vật kế tiếp. Để trống để gỡ cấu hình."
+                            />
+                            <button
+                              type="button"
+                              disabled={busy != null || !p.isAlive}
+                              onClick={() => doAction(p.id, 'set_death_age', p.fullName)}
+                              className="rounded-md bg-sky-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+                              title="Lưu tuổi thọ tối đa (khi đạt tuổi sẽ chết). Để trống rồi bấm Lưu để gỡ."
+                            >
+                              Lưu
+                            </button>
+                          </div>
+                          {p.deathAge != null && (
+                            <div className="text-[10px] text-slate-500">Đã cấu hình: chết ở {p.deathAge} tuổi</div>
+                          )}
+                          {p.accountStatus && p.accountStatus !== 'active' && (
+                            <div className="text-[10px] font-semibold text-rose-700">TK: {p.accountStatus}</div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono">{fmtMoney(p.cash)}</td>
+                        <td className="py-2.5 px-3 text-right font-mono">{p.heatLevel}</td>
+                        <td className="py-2.5 px-3">
+                          <div className="flex flex-wrap gap-1">
+                            <button disabled={busy!=null} onClick={() => doAction(p.id,'grant_aid', p.fullName)} className="rounded-lg bg-emerald-50 border border-emerald-200 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">Cứu trợ</button>
+                            <button disabled={busy!=null} onClick={() => doAction(p.id,'fine', p.fullName)} className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50">Phạt</button>
+                            <button disabled={busy!=null} onClick={() => doAction(p.id,'ban', p.fullName)} className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50" title="Khóa tài khoản (người dùng sẽ bị đăng xuất theo thời gian thực và không thể đăng nhập)">Khóa</button>
+                            <button disabled={busy!=null} onClick={() => doAction(p.id,'unban', p.fullName)} className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50" title="Mở khóa tài khoản (cho phép đăng nhập lại)">Mở</button>
+                            {isSuperAdmin && (
+                              <button
+                                disabled={busy!=null}
+                                onClick={() => doAction(p.id,'force_delete', `${p.fullName}${p.email ? ` (${p.email})` : ''}`)}
+                                className="rounded-lg bg-red-700 border border-red-800 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-600 disabled:opacity-50"
+                                title="Chỉ super admin: xóa cưỡng chế khi phát hiện bất thường (không thể hoàn tác)"
+                              >
+                                Xóa cưỡng chế
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-2.5 px-3 text-[11px] text-slate-400">—</td>
+                        <td className="py-2.5 px-3 text-[11px] text-slate-500">
+                          <div className="font-medium text-slate-700">Tài khoản {ROLE_LABEL[currentRole] || currentRole}</div>
+                          <div className="text-[10px] text-slate-400">Không áp dụng CCCD/Tuổi thọ/Tài sản người chơi</div>
+                          {p.accountStatus && p.accountStatus !== 'active' && (
+                            <div className="text-[10px] font-semibold text-rose-700 mt-1">TK: {p.accountStatus}</div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-[11px] text-slate-400">—</td>
+                        <td className="py-2.5 px-3 text-[11px] text-slate-400">—</td>
+                        <td className="py-2.5 px-3">
+                          <div className="flex flex-wrap gap-1">
+                            <button disabled={busy!=null} onClick={() => doAction(p.id,'ban', p.fullName)} className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50" title="Khóa tài khoản">Khóa</button>
+                            <button disabled={busy!=null} onClick={() => doAction(p.id,'unban', p.fullName)} className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50" title="Mở khóa tài khoản">Mở khóa</button>
+                            {isSuperAdmin && (
+                              <button
+                                disabled={busy!=null}
+                                onClick={() => doAction(p.id,'force_delete', `${p.fullName}${p.email ? ` (${p.email})` : ''}`)}
+                                className="rounded-lg bg-red-700 border border-red-800 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-600 disabled:opacity-50"
+                                title="Chỉ super admin: xóa cưỡng chế (không thể hoàn tác)"
+                              >
+                                Xóa
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 );
               })
