@@ -365,39 +365,10 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
                 return { wx, wy };
               }
 
-            // Smooth Zoom on Mouse Wheel
-            function handleWheel(e: React.WheelEvent<HTMLCanvasElement>) {
-              e.preventDefault();
-              const canvas = canvasRef.current;
-              if (!canvas) return;
-
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const mouseX = (e.clientX - rect.left) * scaleX;
-            const mouseY = (e.clientY - rect.top) * scaleY;
-
-            const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-            setView((v) => {
-              const nextZoom = Math.min(2.6, Math.max(0.7, v.zoom * zoomFactor));
-              if (nextZoom === v.zoom) return v;
-
-                const centerX = canvas.width / 2;
-                const centerY = canvas.height / 2;
-
-                const wx = (mouseX - (centerX + v.panX)) / v.zoom;
-                const wy = (mouseY - (centerY + v.panY)) / v.zoom;
-
-                const newPanX = mouseX - centerX - wx * nextZoom;
-                const newPanY = mouseY - centerY - wy * nextZoom;
-
-                return {
-                  panX: Math.max(-canvasWidth * 0.8, Math.min(canvasWidth * 0.8, newPanX)),
-                  panY: Math.max(-canvasHeight * 0.8, Math.min(canvasHeight * 0.8, newPanY)),
-                  zoom: nextZoom,
-                };
-              });
-          }
+            // Vô hiệu hóa zoom bằng lăn chuột (chỉ zoom bằng nút +/-)
+            function handleWheel(_e: React.WheelEvent<HTMLCanvasElement>) {
+              // intentionally no-op
+            }
 
         // Pointer Drag & Click
         function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -478,7 +449,7 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
           const handleZoomIn = () =>
             setView((v) => ({ ...v, zoom: Math.min(2.6, Number((v.zoom + 0.25).toFixed(2))) }));
           const handleZoomOut = () =>
-            setView((v) => ({ ...v, zoom: Math.max(0.7, Number((v.zoom - 0.25).toFixed(2))) }));
+            setView((v) => ({ ...v, zoom: Math.max(1, Number((v.zoom - 0.25).toFixed(2))) }));
           const handleReset = () => setView({ panX: 0, panY: 0, zoom: 1 });
 
           return (
@@ -533,7 +504,6 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
                   width={canvasWidth}
                   height={canvasHeight}
                   className="block aspect-[16/10] w-full max-h-[640px] cursor-grab touch-none select-none active:cursor-grabbing"
-                  onWheel={handleWheel}
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
@@ -558,7 +528,7 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
                 </div>
 
                   <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                    <span>Kéo chuột để di chuyển · Lăn chuột để zoom</span>
+                    <span>Kéo chuột để di chuyển · Dùng nút +/- để phóng to</span>
                     {auctioningTile && (
                       <span className="flex items-center gap-1 font-bold text-rose-600">
                         <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
