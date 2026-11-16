@@ -292,6 +292,7 @@ export class EducationService {
         requiredScore: EARLY_GRAD_PASS_SCORE,
       });
 
+      // Chuẩn thời gian: cửa sổ làm bài 30 phút thực (= 30 ngày game)
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
       await client.query(`UPDATE education_early_grad_tests SET expires_at = $2 WHERE id = $1`, [testId, expiresAt]);
 

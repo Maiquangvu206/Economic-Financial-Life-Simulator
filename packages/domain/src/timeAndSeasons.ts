@@ -100,6 +100,16 @@ export function getDayPeriod(hour: number): DayPeriodInfo {
 export const GAME_DAYS_PER_YEAR = 360;
 export const GAME_DAYS_PER_MONTH = 30;
 export const GAME_TICK_INTERVAL_MS_DEFAULT = 60_000;
+export const GAME_MS_PER_DAY = GAME_TICK_INTERVAL_MS_DEFAULT;
+export const GAME_MS_PER_MONTH = GAME_DAYS_PER_MONTH * GAME_MS_PER_DAY; // 30 phút thực = 1 tháng game
+
+export function gameDaysToMs(days: number): number {
+  return Math.max(0, Math.round(days)) * GAME_MS_PER_DAY;
+}
+
+export function gameMonthsToMs(months: number): number {
+  return Math.max(0, months) * GAME_MS_PER_MONTH;
+}
 
 export interface CanonicalGameTime {
   year: number;

@@ -137,11 +137,13 @@ export class EducationRepository {
   }
 
   async createDegree(client: Db, characterId: string, university: UniversityRow): Promise<string> {
+    // Chuẩn thời gian: 1 tháng game = 30 ngày game = 30 phút thực
+    const graduatesAt = new Date(Date.now() + university.durationMonths * 30 * 60 * 1000);
     const result = await client.query<{ id: string }>(
       `INSERT INTO degrees (id, character_id, university_id, degree_code, status, graduates_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, 'enrolled', now() + make_interval(months => $4))
+       VALUES (gen_random_uuid(), $1, $2, $3, 'enrolled', $4::timestamptz)
        RETURNING id`,
-      [characterId, university.id, university.degreeCode, university.durationMonths],
+      [characterId, university.id, university.degreeCode, graduatesAt.toISOString()],
     );
     return result.rows[0]!.id;
   }

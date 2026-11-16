@@ -104,6 +104,7 @@ export async function processGameTick(): Promise<GameTickResult> {
     applied.push(`employments: ${employments.rows.length} salaries paid`);
 
     // ---- 4. Rent collection ----
+    // Chuẩn thời gian: 1 tháng game = 30 ngày game = 30 phút thực
     const leases = await client.query<{
       id: string;
       property_id: string;
@@ -137,7 +138,7 @@ export async function processGameTick(): Promise<GameTickResult> {
       );
 
       await client.query(
-        `UPDATE leases SET next_due_at = next_due_at + interval '1 month', updated_at = now() WHERE id = $1`,
+        `UPDATE leases SET next_due_at = next_due_at + interval '30 minutes', updated_at = now() WHERE id = $1`,
         [lease.id],
       );
 
@@ -158,6 +159,7 @@ export async function processGameTick(): Promise<GameTickResult> {
     applied.push(`leases: ${leases.rows.length} rent processed`);
 
     // ---- 5. Loan interest + default/foreclosure ----
+    // 1 tháng game = 30 ngày game (30 phút thực) cho kỳ hạn/lãi; ân hạn mặc định 30 ngày game
     const loans = await client.query<{
       id: string;
       borrower_id: string;
@@ -183,7 +185,7 @@ export async function processGameTick(): Promise<GameTickResult> {
         bankGraceDays: 30,
       });
 
-      // Accrue interest if active/grace and due date passed
+      // Accrue interest if active/grace and due date passed (mỗi 30 ngày game)
       if (loan.status !== 'defaulted' && loan.next_due_at <= now) {
         const interest = accrueSimpleInterest({
           principalMinor: outstanding,
@@ -209,7 +211,7 @@ export async function processGameTick(): Promise<GameTickResult> {
         }
 
         await client.query(
-          `UPDATE loans SET next_due_at = next_due_at + interval '1 month' WHERE id = $1`,
+          `UPDATE loans SET next_due_at = next_due_at + interval '30 minutes' WHERE id = $1`,
           [loan.id],
         );
       }

@@ -1,21 +1,22 @@
 import { clamp, percentOf } from './money.js';
+import { GAME_DAYS_PER_YEAR, GAME_MS_PER_DAY } from './timeAndSeasons.js';
 
 export interface InterestInput {
   principalMinor: number;
   annualRatePct: number;
-  /** Number of real-time days the balance has been outstanding. */
+  /** Number of in-game days the balance has been outstanding (1 ngày game = 1 phút thực). */
   days: number;
 }
 
 /**
- * Simple daily interest, rounded to minor units.
+ * Simple daily interest, rounded to minor units (theo ngày/năm game).
  * Compounding policy belongs to the loan product, not to this function.
  */
 export function accrueSimpleInterest(input: InterestInput): number {
   if (input.principalMinor <= 0 || input.annualRatePct <= 0 || input.days <= 0) {
     return 0;
   }
-  const dailyRate = input.annualRatePct / 100 / 365;
+  const dailyRate = input.annualRatePct / 100 / GAME_DAYS_PER_YEAR;
   return Math.round(input.principalMinor * dailyRate * input.days);
 }
 
@@ -46,7 +47,7 @@ export interface DefaultEvaluationInput {
   outstandingMinor: number;
   gracePeriodEnd: Date;
   now: Date;
-  /** Extra days the bank tolerates before legal action. */
+  /** Extra in-game days the bank tolerates before legal action. */
   bankGraceDays: number;
 }
 
@@ -55,8 +56,7 @@ export type LoanHealth = 'current' | 'grace' | 'default' | 'foreclose';
 export function evaluateLoanHealth(input: DefaultEvaluationInput): LoanHealth {
   if (input.outstandingMinor <= 0) return 'current';
 
-  const dayMs = 86_400_000;
-  const overdueDays = Math.floor((input.now.getTime() - input.gracePeriodEnd.getTime()) / dayMs);
+  const overdueDays = Math.floor((input.now.getTime() - input.gracePeriodEnd.getTime()) / GAME_MS_PER_DAY);
   if (overdueDays <= 0) return 'current';
   if (overdueDays <= input.bankGraceDays) return 'grace';
   if (overdueDays <= input.bankGraceDays * 2) return 'default';

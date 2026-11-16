@@ -26,7 +26,8 @@ import {
   type SavingsTermRow,
 } from './banking.repository.js';
 
-const DAY_MS = 86_400_000;
+const GAME_DAY_MS = 60_000; // 1 ngày game = 1 phút thực tế
+const GAME_MONTH_MS = 30 * GAME_DAY_MS; // 1 tháng game = 30 ngày game
 const MAX_LOAN_MINOR = 2_000_000_000; // trần hệ thống an toàn
 const PROPERTY_LTV_PCT = 80;
 const COMPANY_LTV_PCT = 70;
@@ -100,7 +101,7 @@ function toLoanDto(row: LoanRow): LoanDto {
 }
 
 function depositInterest(row: SavingsDepositRow, term: SavingsTermRow | null, now = Date.now()): number {
-  const days = Math.max(0, Math.floor((now - row.opened_at.getTime()) / DAY_MS));
+  const days = Math.max(0, Math.floor((now - row.opened_at.getTime()) / GAME_DAY_MS));
   const gross = accrueSimpleInterest({
     principalMinor: toMinor(row.balance_minor),
     annualRatePct: Number(row.annual_rate_pct),
@@ -126,7 +127,7 @@ export class BankingService {
     const debtService = await this.repository.monthlyDebtService(db, characterId);
 
     const accountAgeMonths = stats.oldestLoan
-      ? Math.max(0, Math.round((Date.now() - stats.oldestLoan.getTime()) / (DAY_MS * 30)))
+      ? Math.max(0, Math.round((Date.now() - stats.oldestLoan.getTime()) / GAME_MONTH_MS))
       : 0;
 
     const profile: CreditProfile = {
@@ -214,7 +215,7 @@ export class BankingService {
 
       const daysSinceOpened = Math.max(
         0,
-        Math.floor((Date.now() - savingsRow.opened_at.getTime()) / DAY_MS),
+        Math.floor((Date.now() - savingsRow.opened_at.getTime()) / GAME_DAY_MS),
       );
       const savingsInterestEarned = accrueSimpleInterest({
         principalMinor: savingsTotal,
@@ -276,7 +277,7 @@ export class BankingService {
   }
 
   private monthMs(months: number): number {
-    return months * 30 * DAY_MS;
+    return months * GAME_MONTH_MS;
   }
 
   private async rolloverMaturedSavings(client: Db, characterId: string): Promise<void> {
@@ -491,7 +492,7 @@ export class BankingService {
         annualRatePct: rate,
         termMonths: input.termMonths,
       });
-      const nextDue = new Date(Date.now() + 30 * DAY_MS);
+      const nextDue = new Date(Date.now() + GAME_MONTH_MS);
 
       const loan = await this.repository.createLoan(client, {
         borrowerId: character.id,
@@ -564,7 +565,7 @@ export class BankingService {
         [loanId],
       );
       const since = lastPayment.rows[0]?.paid_at ?? loan.created_at;
-      const days = Math.max(0, Math.floor((Date.now() - since.getTime()) / DAY_MS));
+      const days = Math.max(0, Math.floor((Date.now() - since.getTime()) / GAME_DAY_MS));
       const accruedInterest = accrueSimpleInterest({
         principalMinor: outstanding,
         annualRatePct: Number(loan.interest_rate_pct),
@@ -599,7 +600,7 @@ export class BankingService {
         loanId,
         Math.max(0, remaining),
         status,
-        status === 'repaid' ? null : new Date(Date.now() + 30 * DAY_MS),
+        status === 'repaid' ? null : new Date(Date.now() + GAME_MONTH_MS),
       );
 
       await this.repository.recordCreditEvent(client, character.id, 'loan_payment', 5);

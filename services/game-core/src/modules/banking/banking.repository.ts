@@ -380,9 +380,11 @@ export class BankingRepository {
       annualRatePct: number;
     },
   ): Promise<SavingsDepositRow> {
+    // Chuẩn thời gian: 1 tháng game = 30 ngày game = 30 phút thực
+    const GAME_MONTH_MS = 30 * 60 * 1000;
     const maturesAt =
       input.termMonths > 0
-        ? new Date(Date.now() + input.termMonths * 30 * 24 * 60 * 60 * 1000)
+        ? new Date(Date.now() + input.termMonths * GAME_MONTH_MS)
         : null;
     const r = await db.query<SavingsDepositRow>(
       `INSERT INTO savings_deposits
