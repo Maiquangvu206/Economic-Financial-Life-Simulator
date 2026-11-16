@@ -4,7 +4,7 @@ import { enqueueDomainEvent } from '../outboxEvents.js';
 import { publishClient } from '../publisher.js';
 import { env } from '../config/env.js';
 import { Rooms } from '@efls/contracts';
-import { accrueSimpleInterest, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR } from '@efls/domain';
+import { accrueSimpleInterest, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR } from '@efls/domain';
 
 export interface GameTickResult {
   tick: number;
@@ -39,7 +39,7 @@ export async function processGameTick(): Promise<GameTickResult> {
     }>(`SELECT current_day, current_year, season, macro FROM game_state WHERE id = 1`);
 
     const currentDayRaw = Number(gameState.rows[0]?.current_day ?? 0);
-    const currentYear = Number(gameState.rows[0]?.current_year ?? 1);
+    const currentYear = Number(gameState.rows[0]?.current_year ?? GAME_START_YEAR);
     const macro = (gameState.rows[0]?.macro && typeof gameState.rows[0].macro === 'object') ? { ...(gameState.rows[0].macro as any) } : {};
     const normalizedCurrentDay = ((Math.floor(currentDayRaw) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
 
@@ -326,6 +326,8 @@ export async function processGameTick(): Promise<GameTickResult> {
     }
 
     // ---- 9. Mayor term expiry & salary (Pha A/C, best-effort) ----
+    // Dùng SAVEPOINT: nếu bước best-effort lỗi thì chỉ rollback phần này, không làm hỏng transaction tick.
+    await client.query('SAVEPOINT mayor_step');
     try {
       const macroRes = await client.query<{ macro: any }>(`SELECT macro FROM game_state WHERE id = 1`);
       const macro = (macroRes.rows[0]?.macro && typeof macroRes.rows[0].macro === 'object') ? macroRes.rows[0].macro : {};
@@ -391,13 +393,13 @@ export async function processGameTick(): Promise<GameTickResult> {
                 );
                 await client.query(
                   `INSERT INTO ledger_accounts (id, owner_type, owner_id, kind, balance_minor, is_system)
-                   VALUES (gen_random_uuid(), 'government', $1, 'treasury', 0, true)
+                   VALUES (gen_random_uuid(), 'government', $1, 'cash', 0, true)
                    ON CONFLICT (owner_type, owner_id, kind, currency) DO NOTHING`,
                   ['00000000-0000-0000-0000-000000000002'],
                 );
                 await client.query(
                   `UPDATE ledger_accounts SET balance_minor = balance_minor - $2, updated_at = now()
-                   WHERE owner_type='government' AND owner_id=$1 AND kind='treasury' AND currency='VND'`,
+                   WHERE owner_type='government' AND owner_id=$1 AND kind='cash' AND currency='VND'`,
                   ['00000000-0000-0000-0000-000000000002', salaryMinor],
                 );
                 await client.query(
@@ -405,13 +407,22 @@ export async function processGameTick(): Promise<GameTickResult> {
                    WHERE owner_type='character' AND owner_id=$1 AND kind='cash' AND currency='VND'`,
                   [term.winner_character_id, salaryMinor],
                 );
+                // Sổ cái chuẩn: ledger_transactions + ledger_entries (không có cột from/to_account_id)
+                const salaryTx = await client.query<{ id: string }>(
+                  `INSERT INTO ledger_transactions (id, kind, description, reference_type, reference_id)
+                   VALUES (gen_random_uuid(), 'mayor_salary', 'Phụ cấp Thị trưởng', 'election', $1::uuid)
+                   RETURNING id`,
+                  [term.id],
+                );
                 await client.query(
-                  `INSERT INTO ledger_transactions (id, from_account_id, to_account_id, amount_minor, currency, kind, description, reference_type, reference_id)
-                   SELECT gen_random_uuid(), g.id, c.id, $3, 'VND', 'mayor_salary', 'Phụ cấp Thị trưởng', 'election', $4::uuid
-                   FROM ledger_accounts g, ledger_accounts c
-                   WHERE g.owner_type='government' AND g.owner_id=$1 AND g.kind='treasury' AND g.currency='VND'
-                     AND c.owner_type='character' AND c.owner_id=$2 AND c.kind='cash' AND c.currency='VND'`,
-                  ['00000000-0000-0000-0000-000000000002', term.winner_character_id, salaryMinor, term.id],
+                  `INSERT INTO ledger_entries (id, transaction_id, account_id, delta_minor)
+                   SELECT gen_random_uuid(), $1::uuid, a.id,
+                          CASE WHEN a.owner_type = 'government' THEN -$2::bigint ELSE $2::bigint END
+                   FROM ledger_accounts a
+                   WHERE a.currency = 'VND'
+                     AND ((a.owner_type = 'government' AND a.owner_id = $3::uuid AND a.kind = 'cash')
+                       OR (a.owner_type = 'character' AND a.owner_id = $4::uuid AND a.kind = 'cash'))`,
+                  [salaryTx.rows[0]!.id, salaryMinor, '00000000-0000-0000-0000-000000000002', term.winner_character_id],
                 );
                 await client.query(
                   `UPDATE elections SET salary_last_game_day = $2, salary_last_game_year = $3 WHERE id = $1`,
@@ -435,6 +446,11 @@ export async function processGameTick(): Promise<GameTickResult> {
         }
       }
     } catch (e) {
+      try {
+        await client.query('ROLLBACK TO SAVEPOINT mayor_step');
+      } catch {
+        /* ignore */
+      }
       logger.warn({ err: e }, 'Mayor term/salary tick step failed (best-effort)');
     }
 

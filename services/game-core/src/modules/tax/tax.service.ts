@@ -6,6 +6,7 @@ import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service
 import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { notify } from '../notifications/notification.service.js';
 import { type TaxOverviewExtDto, MoneySchema } from '@efls/contracts';
+import { GAME_START_YEAR } from '@efls/domain';
 import { taxRepository } from './tax.repository.js';
 
 function money(amount: number) {
@@ -53,7 +54,9 @@ export class TaxService {
     const totalDue = assessments
       .filter((a) => a.status === 'due')
       .reduce((sum, a) => sum + Number(a.taxDueMinor), 0);
-    const currentYear = new Date().getFullYear();
+    // Năm tính thuế theo năm game (mốc hệ thống 01/01/2000), không dùng năm thực tế
+    const yearRow = await (db as any).query(`SELECT current_year FROM game_state WHERE id = 1`);
+    const currentYear = Number(yearRow.rows[0]?.current_year ?? GAME_START_YEAR);
     const latestAudit = audits[0];
     const auditRisk = latestAudit?.riskScore ?? this.computeRisk(character.heat_level, 0, 0);
     const audited = (latestAudit?.status ?? 'none') !== 'open';

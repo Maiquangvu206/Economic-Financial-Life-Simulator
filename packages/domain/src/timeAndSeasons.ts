@@ -97,6 +97,8 @@ export function getDayPeriod(hour: number): DayPeriodInfo {
 }
 
 /** Chuẩn thời gian game: 1 ngày game = 1 phút thực tế, 1 năm = 360 ngày (12 tháng x 30 ngày). */
+/** Mốc khởi đầu hệ thống: 01/01/2000. */
+export const GAME_START_YEAR = 2000;
 export const GAME_DAYS_PER_YEAR = 360;
 export const GAME_DAYS_PER_MONTH = 30;
 export const GAME_TICK_INTERVAL_MS_DEFAULT = 60_000;
@@ -155,7 +157,7 @@ export function deriveCanonicalGameTime(params: {
   const period = getDayPeriod(hour).period;
 
   return {
-    year: Math.max(1, Math.floor(params.year)),
+    year: Math.max(GAME_START_YEAR, Math.floor(params.year)),
     month,
     day,
     dayOfYear: normalizedDay,

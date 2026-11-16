@@ -507,7 +507,7 @@ export function LawPage() {
                       apiRequest('/api/v1/tax/assess', {
                         method: 'POST',
                         body: JSON.stringify({
-                          taxYear: tax?.currentYear ?? new Date().getFullYear(),
+                          taxYear: tax?.currentYear ?? 2000,
                         }),
                       }),
                     )
@@ -523,7 +523,7 @@ export function LawPage() {
                       apiRequest('/api/v1/tax/audit/start', {
                         method: 'POST',
                         body: JSON.stringify({
-                          taxYear: tax?.currentYear ?? new Date().getFullYear(),
+                          taxYear: tax?.currentYear ?? 2000,
                         }),
                       }),
                     )

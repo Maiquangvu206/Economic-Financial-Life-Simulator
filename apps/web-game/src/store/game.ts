@@ -157,11 +157,12 @@ function computeFromAnchor(state: Pick<GameState, 'year' | 'month' | 'day' | 'da
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
-  year: 2026,
+  // Mốc khởi đầu hệ thống: 01/01/2000
+  year: 2000,
   month: 1,
-  day: 15,
-  dayOfYear: 14,
-  hour: 8,
+  day: 1,
+  dayOfYear: 0,
+  hour: 0,
   minute: 0,
   tickAnchorAt: null,
   timeSpeed: 1, // cố định: 1 ngày game = 1 phút thực (24 phút game/giây thực)

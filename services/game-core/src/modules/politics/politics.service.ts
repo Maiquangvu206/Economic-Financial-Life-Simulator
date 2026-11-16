@@ -448,7 +448,7 @@ export class PoliticsService {
         const nextMacro = { ...prevMacro, otRatePercent: value };
         await client.query(
           `INSERT INTO game_state (id, current_day, current_year, season, macro)
-           VALUES (1, 0, 1, 'spring', $1::jsonb)
+           VALUES (1, 0, 2000, 'spring', $1::jsonb)
            ON CONFLICT (id) DO UPDATE SET macro = $1::jsonb, updated_at = now()`,
           [JSON.stringify(nextMacro)],
         );

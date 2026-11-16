@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { deriveCanonicalGameTime } from '@efls/domain';
+import { deriveCanonicalGameTime, GAME_START_YEAR } from '@efls/domain';
 import { pool } from '../../shared/db/pool.js';
 import { AppError } from '../../shared/http/errors.js';
 import { listActionLogs, writeActionLog } from '../../shared/audit/actionLog.js';
@@ -14,11 +14,13 @@ import type { MacroSnapshotDto, TriggerMacroEventRequest, CreateAdminAccountRequ
 
 function gameTimePayload(row: { current_day: any; current_year: any; season: any; updated_at?: any; macro?: any }) {
   const dayOfYear = Number(row.current_day ?? 0);
-  const year = Number(row.current_year ?? 1);
+  const year = Number(row.current_year ?? GAME_START_YEAR);
   const t = deriveCanonicalGameTime({ dayOfYear, year, tickUpdatedAt: row.updated_at ?? null });
   const macro = row.macro && typeof row.macro === 'object' ? (row.macro as any) : {};
-  const override = macro.seasonOverride;
+  // Mùa hiệu lực = mùa theo lịch (tháng game); chỉ ghi đè khi override còn đúng ngày game hiện tại.
+  // Không dùng cột game_state.season (có thể lệch do dữ liệu cũ).
   let effectiveSeason = t.season;
+  const override = macro.seasonOverride;
   if (override && typeof override === 'object') {
     const oy = Number(override.year);
     const od = Number(override.dayOfYear);
@@ -26,9 +28,6 @@ function gameTimePayload(row: { current_day: any; current_year: any; season: any
     if (oy === year && od === dayOfYear && ['spring', 'summer', 'autumn', 'winter'].includes(os)) {
       effectiveSeason = os as any;
     }
-  } else if (row.season && ['spring', 'summer', 'autumn', 'winter'].includes(String(row.season))) {
-    // fallback to stored season if present
-    effectiveSeason = String(row.season) as any;
   }
   return {
     currentDay: dayOfYear,
@@ -95,13 +94,13 @@ export async function getMacroSnapshot(req: Request, res: Response): Promise<voi
       }
     }
 
-    const state = stateRes.rows[0] ?? { current_day: 0, current_year: 1, season: 'spring', macro: {} };
+    const state = stateRes.rows[0] ?? { current_day: 0, current_year: GAME_START_YEAR, season: 'spring', macro: {} };
     const macro = (state.macro && typeof state.macro === 'object') ? state.macro : {};
     let stateFundBalanceMinor = 0;
     try { stateFundBalanceMinor = await getStateFundBalance(client as any); } catch { stateFundBalanceMinor = 0; }
     const snapshot: MacroSnapshotDto = {
       tick: Number(state.current_day ?? 0),
-      inGameYear: Number(state.current_year ?? 1),
+      inGameYear: Number(state.current_year ?? GAME_START_YEAR),
       moneySupply: money(Number(moneyRes.rows[0]?.total ?? 0)),
       inflationPct: Number((macro as any).inflationPct ?? 0),
       cpi: Number((macro as any).cpi ?? 100),
@@ -408,7 +407,7 @@ export async function adminPlayerAction(req: Request, res: Response): Promise<vo
 export async function getGameConfig(req: Request, res: Response): Promise<void> {
   ensureAdmin(req);
   const r = await pool.query(`SELECT current_day, current_year, season, macro, updated_at FROM game_state WHERE id = 1`);
-  const row = r.rows[0] ?? { current_day: 0, current_year: 1, season: 'spring', macro: {}, updated_at: null };
+  const row = r.rows[0] ?? { current_day: 0, current_year: GAME_START_YEAR, season: 'spring', macro: {}, updated_at: null };
   const macro = (row.macro && typeof row.macro === 'object') ? row.macro : {};
   const time = gameTimePayload(row);
   res.json({
@@ -448,7 +447,7 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
   // Mùa do admin đặt: ghi đè tạm thời trong ngày game hiện tại, sang ngày game kế tiếp tự về theo lịch tự động
   const stateRow = await pool.query<{ current_day: number; current_year: number }>(`SELECT current_day, current_year FROM game_state WHERE id = 1`);
   const curDay = Number(stateRow.rows[0]?.current_day ?? 0);
-  const curYear = Number(stateRow.rows[0]?.current_year ?? 1);
+  const curYear = Number(stateRow.rows[0]?.current_year ?? GAME_START_YEAR);
   if (body.season && ['spring', 'summer', 'autumn', 'winter'].includes(String(body.season))) {
     nextMacro.seasonOverride = { season: String(body.season), year: curYear, dayOfYear: curDay };
   } else if (body.season === null) {
@@ -456,7 +455,7 @@ export async function updateGameConfig(req: Request, res: Response): Promise<voi
   }
   await pool.query(
     `INSERT INTO game_state (id, current_day, current_year, season, macro)
-     VALUES (1, COALESCE($1,0), COALESCE($2,1), COALESCE($3,'spring'), $4::jsonb)
+     VALUES (1, COALESCE($1,0), COALESCE($2,2000), COALESCE($3,'spring'), $4::jsonb)
      ON CONFLICT (id) DO UPDATE SET
        current_day = COALESCE($1, game_state.current_day),
        current_year = COALESCE($2, game_state.current_year),
@@ -492,7 +491,7 @@ function normalizeRestrictionContact(raw: any) {
 
 export async function getGameConfigPublic(_req: Request, res: Response): Promise<void> {
   const r = await pool.query(`SELECT current_day, current_year, season, macro, updated_at FROM game_state WHERE id = 1`);
-  const row = r.rows[0] ?? { current_day: 0, current_year: 1, season: 'spring', macro: {}, updated_at: null };
+  const row = r.rows[0] ?? { current_day: 0, current_year: GAME_START_YEAR, season: 'spring', macro: {}, updated_at: null };
   const macro = (row.macro && typeof row.macro === 'object') ? row.macro : {};
   const time = gameTimePayload(row);
   res.json({
@@ -519,7 +518,7 @@ export async function triggerMacroEvent(req: Request, res: Response): Promise<vo
   const nextMacro = { ...prevMacro, activeEvents: [eventRecord, ...activeEvents].slice(0, 20) };
   await pool.query(
     `INSERT INTO game_state (id, current_day, current_year, season, macro)
-     VALUES (1, 0, 1, 'spring', $1::jsonb)
+     VALUES (1, 0, 2000, 'spring', $1::jsonb)
      ON CONFLICT (id) DO UPDATE SET macro = $1::jsonb, updated_at = now()`,
     [JSON.stringify(nextMacro)],
   );
@@ -780,7 +779,7 @@ export async function updateInterestRateConfig(req: Request, res: Response): Pro
 
     await client.query(
       `INSERT INTO game_state (id, current_day, current_year, season, macro)
-       VALUES (1, 0, 1, 'spring', $1::jsonb)
+       VALUES (1, 0, 2000, 'spring', $1::jsonb)
        ON CONFLICT (id) DO UPDATE SET macro = $1::jsonb, updated_at = now()`,
       [JSON.stringify(nextMacro)],
     );
