@@ -347,7 +347,7 @@ export function AiEventConsolePage() {
             <input
               value={sweepTarget}
               onChange={(e) => setSweepTarget(e.target.value)}
-              placeholder="Character ID hoặc CCCD (12 số)"
+              placeholder="Mã nhân vật hoặc số CCCD (12 số)"
               className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
             />
             <textarea
@@ -355,7 +355,7 @@ export function AiEventConsolePage() {
               onChange={(e) => setSweepNote(e.target.value)}
               rows={2}
               maxLength={500}
-              placeholder="Ghi chú/lý do (audit log, tuỳ chọn)"
+              placeholder="Ghi chú/lý do (không bắt buộc)"
               className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs"
             />
             <button
@@ -375,7 +375,7 @@ export function AiEventConsolePage() {
               onChange={(e) => setSweepNote(e.target.value)}
               rows={2}
               maxLength={500}
-              placeholder="Ghi chú/lý do (audit log, tuỳ chọn)"
+              placeholder="Ghi chú/lý do (không bắt buộc)"
               className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs"
             />
             <button

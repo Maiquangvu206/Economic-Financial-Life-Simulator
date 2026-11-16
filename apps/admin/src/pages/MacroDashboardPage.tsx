@@ -193,7 +193,7 @@ export function MacroDashboardPage() {
                   value={supportScope}
                   onChange={(e) => setSupportScope(e.target.value as 'all' | 'selected')}
                 >
-                  <option value="all">Toàn bộ công ty (active/IPO)</option>
+                  <option value="all">Toàn bộ công ty đang hoạt động</option>
                   <option value="selected">Chỉ định công ty</option>
                 </select>
               </label>

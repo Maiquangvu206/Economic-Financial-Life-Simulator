@@ -128,8 +128,9 @@ export function createApp(): Express {
   app.use((_req, res) => {
     res.status(404).json({
       type: 'https://efls.game/errors/not-found',
-      title: 'Route not found',
+      title: 'Không tìm thấy đường dẫn',
       status: 404,
+      detail: 'Yêu cầu không hợp lệ hoặc trang không tồn tại.',
     });
   });
 

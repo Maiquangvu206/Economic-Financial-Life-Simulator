@@ -118,7 +118,7 @@ export function EducationConfigPage() {
           <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">{editingUni ? 'Sửa trường/ngành' : 'Thêm trường/ngành'}</h2>
           <form onSubmit={saveUni} className="space-y-3 text-sm">
             <label className="block text-xs text-slate-700">Tên trường<input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.name} onChange={e=>setUniForm({...uniForm,name:e.target.value})} /></label>
-            <label className="block text-xs text-slate-700">Mã ngành/bằng cấp (degree_code)<input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.degreeCode} onChange={e=>setUniForm({...uniForm,degreeCode:e.target.value})} /></label>
+            <label className="block text-xs text-slate-700">Mã ngành/bằng cấp<input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.degreeCode} onChange={e=>setUniForm({...uniForm,degreeCode:e.target.value})} placeholder="Ví dụ: CNTT, KINH_TE" /></label>
             <label className="block text-xs text-slate-700">Ngành/Lĩnh vực (field)<select className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.field} onChange={e=>setUniForm({...uniForm,field:e.target.value})}>{INDUSTRIES.map(i=><option key={i} value={i}>{i}</option>)}</select></label>
             <label className="block text-xs text-slate-700">Học phí/tháng (VNĐ)<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.tuitionMinor} onChange={e=>setUniForm({...uniForm,tuitionMinor:e.target.value})} /></label>
             <div className="text-[11px] text-slate-500">Tổng học phí = học phí/tháng × thời gian học: <span className="font-mono font-semibold text-emerald-700">{fmtMoney(totalTuitionPreview)}</span></div>
@@ -159,7 +159,7 @@ export function EducationConfigPage() {
             <label className="block text-xs text-slate-700">Tên công việc<input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.title} onChange={e=>setJobForm({...jobForm,title:e.target.value})} /></label>
             <label className="block text-xs text-slate-700">Ngành/Lĩnh vực<select className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.industry} onChange={e=>setJobForm({...jobForm,industry:e.target.value})}>{INDUSTRIES.map(i=><option key={i} value={i}>{i}</option>)}</select></label>
             <label className="block text-xs text-slate-700">Mức lương cơ bản (VNĐ)<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.baseSalaryMinor} onChange={e=>setJobForm({...jobForm,baseSalaryMinor:e.target.value})} /></label>
-            <label className="block text-xs text-slate-700">Yêu cầu bằng cấp (required_degree, tùy chọn)<input list="degree-codes-admin" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.requiredDegree} onChange={e=>setJobForm({...jobForm,requiredDegree:e.target.value})} placeholder="vd: BK_HUST" /><datalist id="degree-codes-admin">{degreeOptions.map(d=><option key={d} value={d} />)}</datalist></label>
+            <label className="block text-xs text-slate-700">Bằng cấp yêu cầu (không bắt buộc)<input list="degree-codes-admin" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.requiredDegree} onChange={e=>setJobForm({...jobForm,requiredDegree:e.target.value})} placeholder="Chọn hoặc nhập mã bằng cấp" /><datalist id="degree-codes-admin">{degreeOptions.map(d=><option key={d} value={d} />)}</datalist></label>
             <div className="grid grid-cols-3 gap-2">
               <label className="block text-xs text-slate-700">Điểm tín dụng<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.minCreditScore} onChange={e=>setJobForm({...jobForm,minCreditScore:e.target.value})} /></label>
               <label className="block text-xs text-slate-700">Năng lượng<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.energyCost} onChange={e=>setJobForm({...jobForm,energyCost:e.target.value})} /></label>
@@ -194,7 +194,7 @@ export function EducationConfigPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600">
-        <span className="font-semibold">Ghi chú:</span> Học phí tính theo <b>tháng</b>; tổng học phí đã đóng = học phí/tháng × thời gian học. “Mức lương sau tốt nghiệp” được cấu hình theo việc làm gắn với bằng cấp (required_degree). Tốt nghiệp sớm: đạt ≥ 2/3 thời gian khóa học, làm bài kiểm tra 5 câu trắc nghiệm cơ bản do AI sinh theo ngành/lĩnh vực.
+        <span className="font-semibold">Lưu ý:</span> Học phí tính theo <b>tháng</b>; tổng học phí = học phí/tháng × thời gian học. “Mức lương sau tốt nghiệp” là mức tham khảo theo bằng cấp yêu cầu của công việc. Có thể xét tốt nghiệp sớm khi học đủ thời gian quy định và hoàn thành bài kiểm tra ngắn.
       </div>
     </div>
   );
