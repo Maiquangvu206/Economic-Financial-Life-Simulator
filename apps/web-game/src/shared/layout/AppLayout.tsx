@@ -166,6 +166,7 @@ export function AppLayout() {
       minute: gameConfig.minute,
       season: gameConfig.season,
       period: gameConfig.period,
+      tickUpdatedAt: (gameConfig as any).tickUpdatedAt,
     });
   }, [
     gameConfig?.currentYear,
@@ -177,6 +178,7 @@ export function AppLayout() {
     gameConfig?.minute,
     gameConfig?.season,
     gameConfig?.period,
+    (gameConfig as any)?.tickUpdatedAt,
     syncServerTime,
   ]);
 
@@ -264,6 +266,7 @@ export function AppLayout() {
         minute: payload.minute ?? 0,
         season: payload.season,
         period: payload.period,
+        tickUpdatedAt: payload.tickUpdatedAt ?? payload.at,
       });
       void queryClient.invalidateQueries({ queryKey: ['game-config'] });
     };

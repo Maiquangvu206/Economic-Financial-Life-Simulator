@@ -456,6 +456,7 @@ export async function processGameTick(): Promise<GameTickResult> {
         minute: 0,
         tick,
         at: nowIso,
+        tickUpdatedAt: nowIso,
         standard: '1_day_game_per_1_real_minute',
       };
       const usersRes = await pool.query<{ id: string }>(`SELECT id FROM users`);

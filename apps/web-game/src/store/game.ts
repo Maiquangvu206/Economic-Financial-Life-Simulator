@@ -13,12 +13,14 @@ export interface GameHoliday {
 }
 
 export interface GameState {
-  // Thời gian thực trong game (tự động trôi)
+  // Thời gian thực trong game (đồng bộ theo server; 1 ngày game = 1 phút thực)
   year: number;
   month: number;
   day: number;
+  dayOfYear: number;
   hour: number;
   minute: number;
+  tickAnchorAt: number | null; // mốc thời gian thực khi bắt đầu ngày game hiện tại (từ server)
   timeSpeed: number; // giữ tương thích; tốc độ thực tế cố định: 1 ngày game = 1 phút thực
   isPaused: boolean;
 
@@ -64,6 +66,7 @@ export interface GameState {
     minute?: number;
     season?: Season;
     period?: DayPeriod;
+    tickUpdatedAt?: string | number | Date | null;
   }) => void;
   setTimeSpeed: (speed: number) => void;
   togglePause: () => void;
@@ -125,12 +128,42 @@ function calculateDayPeriod(hour: number): DayPeriod {
   return 'night';
 }
 
+const GAME_MS_PER_DAY = 60_000;
+
+function computeFromAnchor(state: Pick<GameState, 'year' | 'month' | 'day' | 'dayOfYear' | 'hour' | 'minute' | 'season' | 'tickAnchorAt' | 'isPaused'>, nowMs = Date.now()) {
+  let hour = 0;
+  let minute = 0;
+  let hasProgress = false;
+  if (state.tickAnchorAt != null && !state.isPaused) {
+    const elapsed = Math.max(0, Math.min(GAME_MS_PER_DAY - 1, nowMs - state.tickAnchorAt));
+    const totalGameMinutes = Math.floor((elapsed / GAME_MS_PER_DAY) * 24 * 60);
+    hour = Math.floor(totalGameMinutes / 60) % 24;
+    minute = totalGameMinutes % 60;
+    hasProgress = true;
+  } else if (state.tickAnchorAt != null && state.isPaused) {
+    // giữ nguyên giờ/phút hiện tại khi tạm dừng (anchor đã được điều chỉnh)
+    hour = state.hour;
+    minute = state.minute;
+    hasProgress = true;
+  }
+  if (!hasProgress) {
+    // Chưa có mốc server: giữ hiển thị hiện tại, không tự suy luận tiến trình
+    hour = state.hour;
+    minute = state.minute;
+  }
+  const period = calculateDayPeriod(hour);
+  const holiday = DEFAULT_HOLIDAYS.find((h) => h.day === state.day && h.month === state.month) ?? null;
+  return { hour, minute, period, holiday };
+}
+
 export const useGameStore = create<GameState>((set, get) => ({
   year: 2026,
   month: 1,
   day: 15,
+  dayOfYear: 14,
   hour: 8,
   minute: 0,
+  tickAnchorAt: null,
   timeSpeed: 1, // cố định: 1 ngày game = 1 phút thực (24 phút game/giây thực)
   isPaused: false,
 
@@ -202,49 +235,18 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
   },
 
-  tickTime: (deltaMinutes = 24) => {
+  tickTime: () => {
     const state = get();
     if (state.isPaused) return;
-
-    let { minute, hour, day, month, year, holidayGiftClaimed } = state;
-    minute += deltaMinutes;
-
-    if (minute >= 60) {
-      hour += Math.floor(minute / 60);
-      minute %= 60;
-    }
-
-    if (hour >= 24) {
-      day += Math.floor(hour / 24);
-      hour %= 24;
-    }
-
-    // 30 ngày mỗi tháng, 360 ngày/năm (đồng bộ chuẩn hệ thống: 1 ngày game = 1 phút thực)
-    if (day > 30) {
-      month += Math.floor((day - 1) / 30);
-      day = ((day - 1) % 30) + 1;
-    }
-
-    if (month > 12) {
-      year += Math.floor((month - 1) / 12);
-      month = ((month - 1) % 12) + 1;
-      // Đầu năm mới reset danh sách nhận quà
-      holidayGiftClaimed = {};
-    }
-
-    const season = calculateSeason(month);
-    const period = calculateDayPeriod(hour);
-    const holiday = DEFAULT_HOLIDAYS.find((h) => h.day === day && h.month === month) ?? null;
-
-    let newLetter = state.lastHolidayLetter;
-
-    // Tự động gửi thư chúc mừng & Lì xì Tết / Tiền thưởng Lễ (client-side prompt; claim thực tế qua server)
+    const { hour, minute, period, holiday } = computeFromAnchor(state);
+    let { holidayGiftClaimed, lastHolidayLetter } = state;
+    // Hiển thị thư chúc mừng/ngày lễ khi đến đúng ngày (client prompt; claim thực tế qua server)
     if (holiday) {
-      const claimKey = `${year}-${holiday.id}`;
+      const claimKey = `${state.year}-${holiday.id}`;
       if (!holidayGiftClaimed[claimKey]) {
         holidayGiftClaimed = { ...holidayGiftClaimed, [claimKey]: true };
         const isTet = holiday.id.includes('tet');
-        newLetter = {
+        lastHolidayLetter = {
           title: isTet
             ? '🧧 THƯ CHÚC TẾT & LÌ XÌ ĐẦU NĂM'
             : `🏮 THƯ CHÚC MỪNG DỊP LỄ ${holiday.nameVi.toUpperCase()}`,
@@ -252,7 +254,74 @@ export const useGameStore = create<GameState>((set, get) => ({
             ? 'Ủy ban Nhân dân Thành phố & Hiệp hội Doanh nghiệp'
             : 'Bộ Lao động & Quỹ Phúc lợi Công dân',
           content: isTet
-            ? `Nhân dịp Tết Nguyên Đán năm ${year}, kính chúc công dân và gia đình An Khang Thịnh Vượng, Vạn Sự Như Ý! Ủy ban gửi tặng bạn phong bao lì xì may mắn để khởi đầu năm mới hanh thông.`
+            ? `Nhân dịp Tết Nguyên Đán năm ${state.year}, kính chúc công dân và gia đình An Khang Thịnh Vượng, Vạn Sự Như Ý! Ủy ban gửi tặng bạn phong bao lì xì may mắn để khởi đầu năm mới hanh thông.`
+            : `Nhân dịp kỷ niệm ${holiday.nameVi}, xin gửi tới bạn lời chúc mừng nồng nhiệt cùng khoản tiền thưởng phúc lợi xã hội đã được chuyển vào tài khoản!`,
+          bonusCash: isTet ? 2_000_000 : 1_000_000,
+        };
+      }
+    }
+    // Chỉ cập nhật khi có thay đổi để tránh render thừa
+    if (
+      hour !== state.hour ||
+      minute !== state.minute ||
+      period !== state.period ||
+      holiday?.id !== state.activeHoliday?.id ||
+      lastHolidayLetter !== state.lastHolidayLetter ||
+      holidayGiftClaimed !== state.holidayGiftClaimed
+    ) {
+      set({ hour, minute, period, activeHoliday: holiday, holidayGiftClaimed, lastHolidayLetter });
+    }
+  },
+
+  syncServerTime: (time) => {
+    const s = get();
+    const nextYear = time.currentYear ?? s.year;
+    const nextMonth = time.currentMonth ?? s.month;
+    const fallbackDayOfMonth = (() => {
+      if (typeof time.dayOfYear === 'number') return (Math.floor(time.dayOfYear) % 30) + 1;
+      if (typeof time.currentDay === 'number' && time.currentDay >= 0 && time.currentDay <= 359) return (Math.floor(time.currentDay) % 30) + 1;
+      return s.day;
+    })();
+    const dayOfMonth = time.currentDayOfMonth ?? fallbackDayOfMonth;
+    const nextDayOfYear = typeof time.dayOfYear === 'number'
+      ? ((Math.floor(time.dayOfYear) % 360) + 360) % 360
+      : (typeof time.currentDay === 'number' && time.currentDay >= 0 && time.currentDay <= 359
+          ? ((Math.floor(time.currentDay) % 360) + 360) % 360
+          : (Math.max(1, nextMonth) - 1) * 30 + (Math.max(1, dayOfMonth) - 1));
+    const nextSeason = time.season ?? calculateSeason(nextMonth);
+
+    // Mốc tiến trình thực tế: ưu tiên tickUpdatedAt từ server (lưu trữ tiến trình theo thời gian thực), fallback suy ra từ hour/minute
+    let tickAnchorAt: number | null = null;
+    if (time.tickUpdatedAt != null) {
+      const t = time.tickUpdatedAt instanceof Date ? time.tickUpdatedAt.getTime() : new Date(time.tickUpdatedAt as any).getTime();
+      if (!Number.isNaN(t)) tickAnchorAt = t;
+    }
+    if (tickAnchorAt == null && typeof time.hour === 'number' && typeof time.minute === 'number') {
+      const elapsed = ((Math.max(0, Math.min(23, time.hour)) * 60 + Math.max(0, Math.min(59, time.minute))) / (24 * 60)) * GAME_MS_PER_DAY;
+      tickAnchorAt = Date.now() - elapsed;
+    }
+    if (tickAnchorAt == null) tickAnchorAt = s.tickAnchorAt;
+
+    const baseState = { year: nextYear, month: nextMonth, day: dayOfMonth, dayOfYear: nextDayOfYear, hour: s.hour, minute: s.minute, season: nextSeason, tickAnchorAt, isPaused: s.isPaused };
+    const { hour, minute, period, holiday } = computeFromAnchor(baseState);
+    // Nếu server truyền hour/minute rõ và chưa có anchor chuẩn, ưu tiên giá trị server ngay lần sync đầu
+    const useServerHM = tickAnchorAt == null && typeof time.hour === 'number' && typeof time.minute === 'number';
+    const finalHour = useServerHM ? (time.hour as number) : hour;
+    const finalMinute = useServerHM ? (time.minute as number) : minute;
+    const finalPeriod = useServerHM ? (time.period ?? calculateDayPeriod(finalHour)) : period;
+
+    let holidayGiftClaimed = nextYear !== s.year ? {} : s.holidayGiftClaimed;
+    let lastHolidayLetter = s.lastHolidayLetter;
+    if (holiday) {
+      const claimKey = `${nextYear}-${holiday.id}`;
+      if (!holidayGiftClaimed[claimKey]) {
+        holidayGiftClaimed = { ...holidayGiftClaimed, [claimKey]: true };
+        const isTet = holiday.id.includes('tet');
+        lastHolidayLetter = {
+          title: isTet ? '🧧 THƯ CHÚC TẾT & LÌ XÌ ĐẦU NĂM' : `🏮 THƯ CHÚC MỪNG DỊP LỄ ${holiday.nameVi.toUpperCase()}`,
+          sender: isTet ? 'Ủy ban Nhân dân Thành phố & Hiệp hội Doanh nghiệp' : 'Bộ Lao động & Quỹ Phúc lợi Công dân',
+          content: isTet
+            ? `Nhân dịp Tết Nguyên Đán năm ${nextYear}, kính chúc công dân và gia đình An Khang Thịnh Vượng, Vạn Sự Như Ý! Ủy ban gửi tặng bạn phong bao lì xì may mắn để khởi đầu năm mới hanh thông.`
             : `Nhân dịp kỷ niệm ${holiday.nameVi}, xin gửi tới bạn lời chúc mừng nồng nhiệt cùng khoản tiền thưởng phúc lợi xã hội đã được chuyển vào tài khoản!`,
           bonusCash: isTet ? 2_000_000 : 1_000_000,
         };
@@ -260,50 +329,39 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     set({
-      minute,
-      hour,
-      day,
-      month,
-      year,
-      season,
-      period,
-      activeHoliday: holiday,
-      holidayGiftClaimed,
-      lastHolidayLetter: newLetter,
-    });
-  },
-
-  syncServerTime: (time) => {
-    // currentDay từ server là dayOfYear (0-359); ngày trong tháng là currentDayOfMonth (1-30)
-    const nextMonth = time.currentMonth ?? get().month;
-    const nextYear = time.currentYear ?? get().year;
-    const fallbackDayOfMonth = (() => {
-      if (typeof time.dayOfYear === 'number') return (Math.floor(time.dayOfYear) % 30) + 1;
-      if (typeof time.currentDay === 'number' && time.currentDay >= 0 && time.currentDay <= 359) return (Math.floor(time.currentDay) % 30) + 1;
-      return get().day;
-    })();
-    const dayOfMonth = time.currentDayOfMonth ?? fallbackDayOfMonth;
-    const nextHour = typeof time.hour === 'number' ? time.hour : get().hour;
-    const nextMinute = typeof time.minute === 'number' ? time.minute : get().minute;
-    const nextSeason = time.season ?? calculateSeason(nextMonth);
-    const nextPeriod = time.period ?? calculateDayPeriod(nextHour);
-    const holiday = DEFAULT_HOLIDAYS.find((h) => h.day === dayOfMonth && h.month === nextMonth) ?? null;
-    set((s) => ({
       year: nextYear,
       month: nextMonth,
       day: dayOfMonth,
-      hour: nextHour,
-      minute: nextMinute,
+      dayOfYear: nextDayOfYear,
+      hour: finalHour,
+      minute: finalMinute,
       season: nextSeason,
-      period: nextPeriod,
+      period: finalPeriod,
       activeHoliday: holiday,
-      // reset quà năm nếu năm server thay đổi
-      holidayGiftClaimed: nextYear !== s.year ? {} : s.holidayGiftClaimed,
-    }));
+      tickAnchorAt,
+      holidayGiftClaimed,
+      lastHolidayLetter,
+    });
   },
 
   setTimeSpeed: (_speed) => set({ timeSpeed: 1 }),
-  togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
+  togglePause: () => set((state) => {
+    const nextPaused = !state.isPaused;
+    let tickAnchorAt = state.tickAnchorAt;
+    if (tickAnchorAt != null) {
+      // Giữ nguyên tiến trình hiển thị khi tạm dừng/tiếp tục
+      const now = Date.now();
+      const elapsed = Math.max(0, Math.min(GAME_MS_PER_DAY - 1, now - tickAnchorAt));
+      if (nextPaused) {
+        // đóng băng tại thời điểm hiện tại
+        tickAnchorAt = now - elapsed;
+      } else {
+        // tiếp tục từ tiến trình đã đóng băng
+        tickAnchorAt = now - elapsed;
+      }
+    }
+    return { isPaused: nextPaused, tickAnchorAt };
+  }),
   setSeason: (season) => set({ season }),
   setWeather: (weather) => set({ weather }), // giữ API tương thích, không cấu hình từ admin
 
