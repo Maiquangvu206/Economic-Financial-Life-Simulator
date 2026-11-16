@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -101,11 +101,28 @@ export function AppLayout() {
   const isRestricted = user?.status === 'restricted';
 
   // Đồng bộ thanh báo cáo (topbar) theo dữ liệu nhân vật thực từ server, tránh hiển thị dữ liệu mẫu
+  const prevCashRef = useRef<number | null>(null);
   useEffect(() => {
     if (!me) return;
+    const nextCash = me.cash?.amount ?? 0;
+    const prevCash = prevCashRef.current;
+    if (prevCash !== null && nextCash !== prevCash) {
+      const delta = nextCash - prevCash;
+      if (delta !== 0) {
+        const sign = delta > 0 ? '+' : '-';
+        toast({
+          title: `${sign}${formatMoney(Math.abs(delta))} ₫`,
+          description: `Số dư: ${formatMoney(nextCash)} ₫`,
+          variant: delta > 0 ? 'success' : 'warning',
+          durationMs: 3000,
+        });
+      }
+    }
+    prevCashRef.current = nextCash;
+
     setGameState({
-      cash: me.cash?.amount ?? 0,
-      netWorth: me.netWorth?.amount ?? me.cash?.amount ?? 0,
+      cash: nextCash,
+      netWorth: me.netWorth?.amount ?? nextCash,
       energy: typeof me.healthEnergy === 'number' ? me.healthEnergy : 100,
       heatLevel: typeof me.heatLevel === 'number' ? me.heatLevel : 0,
       creditScore: typeof me.creditScore === 'number' ? me.creditScore : 650,

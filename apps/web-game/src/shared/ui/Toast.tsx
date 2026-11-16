@@ -6,6 +6,7 @@ interface Toast {
   title: string;
   description?: string;
   variant?: 'success' | 'warning' | 'error' | 'info';
+  durationMs?: number;
 }
 
 const VARIANT: Record<string, string> = {
@@ -27,10 +28,11 @@ export function toast(t: Omit<Toast, 'id'>) {
   const id = crypto.randomUUID();
   toastState = [...toastState, { ...t, id }];
   emit();
+  const duration = typeof t.durationMs === 'number' ? t.durationMs : 5000;
   setTimeout(() => {
     toastState = toastState.filter((x) => x.id !== id);
     emit();
-  }, 5000);
+  }, duration);
 }
 
 export function dismissToast(id: string) {
