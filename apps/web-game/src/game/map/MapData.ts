@@ -19,8 +19,8 @@ export interface MapRoad {
 export interface MapProperty {
   id: string;
   nodeId: string;
-  ownerId: string | null;
-  ownerCharacterId: string | null;
+  ownerId?: string | null;
+  ownerCharacterId?: string | null;
   name: string;
   type:
     | 'apartment'
@@ -35,22 +35,29 @@ export interface MapProperty {
     | 'boutique_hotel'
     | 'shopping_center'
     | 'office_tower';
-  status: 'unowned' | 'owned' | 'listed' | 'auction';
+  propertyType?: string;
+  status: 'unowned' | 'owned' | 'listed' | 'auction' | string;
   /** Giá mua (VNĐ minor units). */
   purchasePriceMinor: number;
   /** Giá bán nếu đang listing (VNĐ minor units). */
-  askingPriceMinor: number | null;
+  askingPriceMinor?: number | null;
   /** Hiện tại người chơi đang xem có sở hữu không. */
   isMine: boolean;
-  valueMinor: number;
+  valueMinor?: number;
+  location?: { x: number; y: number } | null;
+  provinceSource?: 'core' | 'province-land';
   constructionOption?: string | null;
   constructionLabel?: string | null;
-  constructionTier?: 'single' | 'small' | 'large' | null;
+  constructionTier?: 'single' | 'small' | 'large' | string | null;
   constructionMultiplier?: number;
   constructionCostMinor?: number;
   constructionBuiltAt?: string | null;
   mergedIntoPropertyId?: string | null;
   mergeGroupId?: string | null;
+  mergedMembers?: any[];
+  offers?: any[];
+  isMergedMember?: boolean;
+  mergedPrimaryId?: string | null;
 }
 
 export interface MapMeta {

@@ -68,6 +68,10 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
     export interface MergedCluster {
       cells: Array<{ x: number; y: number }>;
       label: string;
+      constructionOption?: string | null;
+      constructionLabel?: string | null;
+      isMine?: boolean;
+      propertyType?: string | null;
     }
 
     interface MapCanvas2DProps {
@@ -152,7 +156,11 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
             const propByCoord = new Map<string, NonNullable<MapData['properties']>[number]>();
             for (const p of mapData?.properties ?? []) {
               const n = (mapData?.nodes ?? []).find((node) => node.id === p.nodeId);
-              if (n) propByCoord.set(`${n.x}-${n.y}`, p);
+              if (n) {
+                propByCoord.set(`${n.x}-${n.y}`, p);
+              } else if (p.location && Number.isFinite(p.location.x) && Number.isFinite(p.location.y)) {
+                propByCoord.set(`${p.location.x}-${p.location.y}`, p);
+              }
             }
 
             // 1. Vẽ đúng 100% các ô đất trong bản đồ đô thị (từ [0,0] đến [cols-1, rows-1])
@@ -227,21 +235,47 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
                 }
               }
 
-                  // 2. Khối hợp thửa (Merged Clusters)
+                  // 2. Khối hợp thửa/công trình (Merged Clusters) - viền ngoài, không kẻ viền giữa các ô liền kề
                   for (const cluster of mergedClusters) {
                     if (cluster.cells.length === 0) continue;
-                    ctx.fillStyle = 'rgba(249, 115, 22, 0.28)';
-                    ctx.strokeStyle = '#EA580C';
-                    ctx.lineWidth = 2.5;
+                    const cellSet = new Set(cluster.cells.map((c) => `${c.x}-${c.y}`));
+                    const opt = cluster.constructionOption ?? null;
+                    const hasConstruction = !!opt || !!cluster.constructionLabel;
+                    const style = (() => {
+                      switch (opt) {
+                        case 'company_hq': return { fill: 'rgba(59,130,246,0.22)', stroke: '#2563EB', text: '#1D4ED8', icon: '🏢' };
+                        case 'house4': return { fill: 'rgba(34,197,94,0.20)', stroke: '#16A34A', text: '#15803D', icon: '🏠' };
+                        case 'shop': return { fill: 'rgba(245,158,11,0.22)', stroke: '#D97706', text: '#B45309', icon: '🏪' };
+                        case 'garage': return { fill: 'rgba(100,116,139,0.22)', stroke: '#475569', text: '#334155', icon: '🚗' };
+                        case 'mini-apartment': return { fill: 'rgba(168,85,247,0.22)', stroke: '#9333EA', text: '#7E22CE', icon: '🏘️' };
+                        case 'boutique-hotel': return { fill: 'rgba(236,72,153,0.22)', stroke: '#DB2777', text: '#BE185D', icon: '🏨' };
+                        case 'shopping-center': return { fill: 'rgba(249,115,22,0.22)', stroke: '#EA580C', text: '#C2410C', icon: '🏬' };
+                        case 'office-tower': return { fill: 'rgba(14,165,233,0.22)', stroke: '#0284C7', text: '#0369A1', icon: '🏙️' };
+                        default: return { fill: hasConstruction ? 'rgba(99,102,241,0.20)' : 'rgba(249,115,22,0.24)', stroke: hasConstruction ? '#6366F1' : '#EA580C', text: hasConstruction ? '#4338CA' : '#C2410C', icon: hasConstruction ? '🏗️' : '🧩' };
+                      }
+                    })();
 
+                    // Tô nền cụm
+                    ctx.fillStyle = style.fill;
                     for (const cell of cluster.cells) {
-                      const px = cell.x * CELL_SIZE;
-                      const py = cell.y * CELL_SIZE;
-                      ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
-                      ctx.strokeRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+                      ctx.fillRect(cell.x * CELL_SIZE, cell.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
                     }
 
-                    // Nhãn khối hợp thửa
+                    // Viền ngoài cụm (chỉ cạnh không tiếp giáp ô cùng cụm)
+                    ctx.strokeStyle = style.stroke;
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    for (const cell of cluster.cells) {
+                      const x = cell.x * CELL_SIZE;
+                      const y = cell.y * CELL_SIZE;
+                      if (!cellSet.has(`${cell.x}-${cell.y - 1}`)) { ctx.moveTo(x, y); ctx.lineTo(x + CELL_SIZE, y); }
+                      if (!cellSet.has(`${cell.x + 1}-${cell.y}`)) { ctx.moveTo(x + CELL_SIZE, y); ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE); }
+                      if (!cellSet.has(`${cell.x}-${cell.y + 1}`)) { ctx.moveTo(x, y + CELL_SIZE); ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE); }
+                      if (!cellSet.has(`${cell.x - 1}-${cell.y}`)) { ctx.moveTo(x, y); ctx.lineTo(x, y + CELL_SIZE); }
+                    }
+                    ctx.stroke();
+
+                    // Nhãn + icon công trình/cụm tại trọng tâm
                     const centroid = cluster.cells.reduce(
                       (acc, c) => ({
                         sx: acc.sx + c.x * CELL_SIZE + CELL_SIZE / 2,
@@ -251,16 +285,20 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
                     );
                     const lx = centroid.sx / cluster.cells.length;
                     const ly = centroid.sy / cluster.cells.length;
-
+                    const shortLabel = (cluster.constructionLabel || cluster.label || '').toString();
                     ctx.save();
-                    ctx.font = 'bold 11px sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    ctx.lineWidth = 3;
-                    ctx.strokeStyle = '#FFFFFF';
-                    ctx.strokeText(cluster.label, lx, ly);
-                    ctx.fillStyle = '#EA580C';
-                    ctx.fillText(cluster.label, lx, ly);
+                    ctx.font = '16px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+                    ctx.fillText(style.icon, lx, ly - 8);
+                    if (shortLabel) {
+                      ctx.font = 'bold 10px sans-serif';
+                      ctx.lineWidth = 3;
+                      ctx.strokeStyle = '#FFFFFF';
+                      ctx.strokeText(shortLabel.slice(0, 22), lx, ly + 10);
+                      ctx.fillStyle = style.text;
+                      ctx.fillText(shortLabel.slice(0, 22), lx, ly + 10);
+                    }
                     ctx.restore();
                   }
 

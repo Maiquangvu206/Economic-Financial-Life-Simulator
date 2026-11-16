@@ -124,58 +124,139 @@ export function CityPage() {
     if (!mapDto) return null;
     let properties: any[] = [];
     if (activeProvince === '001' && realEstate) {
-      properties = realEstate.properties.map((p) => ({
-        id: p.id,
-        nodeId: p.nodeId,
-        ownerId: p.ownerCharacterId,
-        ownerCharacterId: p.ownerCharacterId,
-        name: p.name,
-        type: p.propertyType,
-        status: p.status,
-        purchasePriceMinor: p.purchasePrice.amount,
-        askingPriceMinor: p.askingPrice?.amount ?? null,
-        isMine: p.isMine,
-        valueMinor: p.currentValue.amount,
-        location: p.location,
-        constructionOption: p.constructionOption ?? null,
-        constructionLabel: p.constructionLabel ?? null,
-        constructionTier: p.constructionTier ?? null,
-        constructionMultiplier: p.constructionMultiplier ?? 1,
-        constructionCostMinor: p.constructionCostMinor ?? 0,
-        constructionBuiltAt: p.constructionBuiltAt ?? null,
-        mergedIntoPropertyId: p.mergedIntoPropertyId ?? null,
-        mergeGroupId: p.mergeGroupId ?? null,
-        offers: p.offers ?? [],
-        provinceSource: 'core',
-      }));
+      properties = realEstate.properties.flatMap((p) => {
+        const base = {
+          id: p.id,
+          nodeId: p.nodeId,
+          ownerId: p.ownerCharacterId,
+          ownerCharacterId: p.ownerCharacterId,
+          name: p.name,
+          type: p.propertyType,
+          status: p.status,
+          purchasePriceMinor: p.purchasePrice.amount,
+          askingPriceMinor: p.askingPrice?.amount ?? null,
+          isMine: p.isMine,
+          valueMinor: p.currentValue.amount,
+          location: p.location,
+          constructionOption: p.constructionOption ?? null,
+          constructionLabel: p.constructionLabel ?? null,
+          constructionTier: p.constructionTier ?? null,
+          constructionMultiplier: p.constructionMultiplier ?? 1,
+          constructionCostMinor: p.constructionCostMinor ?? 0,
+          constructionBuiltAt: p.constructionBuiltAt ?? null,
+          mergedIntoPropertyId: p.mergedIntoPropertyId ?? null,
+          mergeGroupId: p.mergeGroupId ?? null,
+          mergedMembers: p.mergedMembers ?? [],
+          offers: p.offers ?? [],
+          provinceSource: 'core',
+        };
+        const members = (p.mergedMembers ?? []).map((m: any) => ({
+          id: m.id,
+          nodeId: m.nodeId,
+          ownerId: p.ownerCharacterId,
+          ownerCharacterId: p.ownerCharacterId,
+          name: m.name ?? base.name,
+          type: m.propertyType ?? base.type,
+          status: m.status ?? base.status,
+          purchasePriceMinor: m.purchasePrice?.amount ?? 0,
+          askingPriceMinor: null,
+          isMine: p.isMine,
+          valueMinor: m.currentValue?.amount ?? 0,
+          location: m.location ?? p.location,
+          constructionOption: p.constructionOption ?? null,
+          constructionLabel: p.constructionLabel ?? null,
+          constructionTier: p.constructionTier ?? null,
+          constructionMultiplier: p.constructionMultiplier ?? 1,
+          constructionCostMinor: p.constructionCostMinor ?? 0,
+          constructionBuiltAt: p.constructionBuiltAt ?? null,
+          mergedIntoPropertyId: m.mergedIntoPropertyId ?? p.id,
+          mergeGroupId: m.mergeGroupId ?? p.mergeGroupId ?? null,
+          offers: [],
+          provinceSource: 'core',
+          isMergedMember: true,
+          mergedPrimaryId: p.id,
+        }));
+        return [base, ...members];
+      });
     } else if (provinceLand?.properties) {
-      properties = provinceLand.properties.map((p: any) => ({
-        id: p.id,
-        nodeId: p.nodeId ?? p.id,
-        ownerId: p.ownerCharacterId,
-        ownerCharacterId: p.ownerCharacterId,
-        name: p.name,
-        type: p.propertyType,
-        status: p.status,
-        purchasePriceMinor: p.purchasePrice?.amount ?? 0,
-        askingPriceMinor: p.askingPrice?.amount ?? null,
-        isMine: !!p.isMine,
-        valueMinor: p.currentValue?.amount ?? 0,
-        constructionOption: p.constructionOption ?? null,
-        constructionLabel: p.constructionLabel ?? null,
-        constructionTier: p.constructionTier ?? null,
-        constructionMultiplier: p.constructionMultiplier ?? 1,
-        constructionCostMinor: p.constructionCostMinor ?? 0,
-        constructionBuiltAt: p.constructionBuiltAt ?? null,
-        mergedIntoPropertyId: p.mergedIntoPropertyId ?? null,
-        mergeGroupId: p.mergeGroupId ?? null,
-        offers: p.offers ?? [],
-        provinceSource: 'province-land',
-        location: p.location,
-      }));
+      properties = provinceLand.properties.flatMap((p: any) => {
+        const base = {
+          id: p.id,
+          nodeId: p.nodeId ?? p.id,
+          ownerId: p.ownerCharacterId,
+          ownerCharacterId: p.ownerCharacterId,
+          name: p.name,
+          type: p.propertyType,
+          status: p.status,
+          purchasePriceMinor: p.purchasePrice?.amount ?? 0,
+          askingPriceMinor: p.askingPrice?.amount ?? null,
+          isMine: !!p.isMine,
+          valueMinor: p.currentValue?.amount ?? 0,
+          constructionOption: p.constructionOption ?? null,
+          constructionLabel: p.constructionLabel ?? null,
+          constructionTier: p.constructionTier ?? null,
+          constructionMultiplier: p.constructionMultiplier ?? 1,
+          constructionCostMinor: p.constructionCostMinor ?? 0,
+          constructionBuiltAt: p.constructionBuiltAt ?? null,
+          mergedIntoPropertyId: p.mergedIntoPropertyId ?? null,
+          mergeGroupId: p.mergeGroupId ?? null,
+          mergedMembers: p.mergedMembers ?? [],
+          offers: p.offers ?? [],
+          provinceSource: 'province-land',
+          location: p.location,
+        };
+        const members = (p.mergedMembers ?? []).map((m: any) => ({
+          id: m.id,
+          nodeId: m.nodeId ?? m.id,
+          ownerId: p.ownerCharacterId,
+          ownerCharacterId: p.ownerCharacterId,
+          name: m.name ?? base.name,
+          type: m.propertyType ?? base.type,
+          status: m.status ?? base.status,
+          purchasePriceMinor: m.purchasePrice?.amount ?? 0,
+          askingPriceMinor: null,
+          isMine: !!p.isMine,
+          valueMinor: m.currentValue?.amount ?? 0,
+          location: m.location ?? p.location,
+          constructionOption: p.constructionOption ?? null,
+          constructionLabel: p.constructionLabel ?? null,
+          constructionTier: p.constructionTier ?? null,
+          constructionMultiplier: p.constructionMultiplier ?? 1,
+          constructionCostMinor: p.constructionCostMinor ?? 0,
+          constructionBuiltAt: p.constructionBuiltAt ?? null,
+          mergedIntoPropertyId: m.mergedIntoPropertyId ?? p.id,
+          mergeGroupId: m.mergeGroupId ?? p.mergeGroupId ?? null,
+          offers: [],
+          provinceSource: 'province-land',
+          isMergedMember: true,
+          mergedPrimaryId: p.id,
+        }));
+        return [base, ...members];
+      });
     }
     return { ...mapDto, properties };
   }, [mapDto, realEstate, provinceLand, activeProvince]);
+
+  const actualMergedClusters = useMemo(() => {
+    const props = (mapData?.properties ?? []).filter((p: any) => !p.isMergedMember && (p.mergeGroupId || (p.mergedMembers?.length ?? 0) > 0 || p.mergedIntoPropertyId));
+    return props
+      .map((p: any) => {
+        const cells = [
+          p.location,
+          ...((p.mergedMembers ?? []).map((m: any) => m.location).filter(Boolean)),
+        ].filter((c: any) => c && Number.isFinite(c.x) && Number.isFinite(c.y));
+        if (cells.length <= 1) return null;
+        return {
+          cells,
+          label: p.constructionLabel || p.name || `Hợp thửa ${cells.length} ô`,
+          constructionOption: p.constructionOption ?? null,
+          constructionLabel: p.constructionLabel ?? null,
+          isMine: !!p.isMine,
+          propertyType: p.type ?? p.propertyType ?? null,
+        };
+      })
+      .filter(Boolean) as Array<{ cells: Array<{ x: number; y: number }>; label: string; constructionOption?: string | null; constructionLabel?: string | null; isMine?: boolean; propertyType?: string | null }>;
+  }, [mapData]);
 
   const handleSelectPlot = (col: number, row: number) => {
     setPurchaseError(null);
@@ -938,12 +1019,7 @@ export function CityPage() {
                                                             mapData={mapData ?? undefined}
                                                             selected={selected ? { col: selected.col, row: selected.row } : null}
                                                             auctioningTile={auctionTilePos}
-                                                            mergedClusters={ownedClusters
-                                                              .filter((c) => c.size > 1)
-                                                              .map((c) => ({
-                                                                cells: c.cells,
-                                                                label: `Hợp thửa ${c.size} ô`,
-                                                              }))}
+                                                            mergedClusters={actualMergedClusters}
                                                             onSelectPlot={handleSelectPlot}
                                                             onSelectFill={handleSelectFill}
                                                           />

@@ -3,9 +3,13 @@ import type { PoolClient } from 'pg';
 import { toMinor, withTransaction } from '../../shared/db/tx.js';
 import { requireCharacterByUserId, requireLivingCharacterByUserId, resolveCharacterByCccd } from '../../shared/actors/character.js';
 import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js';
+import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { callAiService } from '../../shared/ai/aiClient.js';
 import { notify } from '../notifications/notification.service.js';
 import { loadCurrentSeasonEffects } from '../../shared/season/seasonEffects.js';
+import { CONSTRUCTION_OPTIONS } from '@efls/domain';
+import { realEstateRepository } from '../real-estate/real-estate.repository.js';
+import { provinceLandRepository } from '../province-land/provinceLand.repository.js';
 import {
   type CompanyDto,
   type CompanyEmployeesDto,
@@ -200,11 +204,16 @@ export class CorporationService {
       try {
         if (premisesRecord.type === 'land_core' && premisesRecord.corePropertyId) {
           await this.repository.lockAndClaimCoreLandPremises(client, premisesRecord.corePropertyId, character.id, companyId);
+          // Nếu chọn đất nền thô: tự động xây dựng trụ sở công ty (lấy tên công ty).
+          await this.autoBuildCompanyHqOnCoreLandIfNeeded(client, character.id, premisesRecord.corePropertyId, name);
         } else if (premisesRecord.type === 'land_province' && premisesRecord.provinceLandPropertyId) {
           const claimed = await this.repository.lockAndClaimProvinceLandPremises(client, premisesRecord.provinceLandPropertyId, character.id, companyId);
           if (claimed.provinceCode) {
+            premisesRecord.provinceCode = claimed.provinceCode;
             await client.query(`UPDATE companies SET premises_province_code = $2 WHERE id = $1`, [companyId, claimed.provinceCode]);
           }
+          // Nếu chọn đất nền thô: tự động xây dựng trụ sở công ty (lấy tên công ty).
+          await this.autoBuildCompanyHqOnProvinceLandIfNeeded(client, character.id, premisesRecord.provinceLandPropertyId, name);
         } else if (premisesRecord.type === 'company_property' && premisesRecord.companyPropertyId) {
           await this.repository.validateCompanyPropertyPremises(client, premisesRecord.companyPropertyId);
         }
@@ -389,6 +398,137 @@ export class CorporationService {
       });
 
       return result;
+    });
+  }
+
+  private isRawBuildableLand(constructionOption: string | null | undefined, propertyType: string | null | undefined): boolean {
+    const opt = String(constructionOption ?? '').trim().toLowerCase();
+    const isUnbuilt = !opt || opt === 'none';
+    return isUnbuilt && String(propertyType ?? '').toLowerCase() === 'land';
+  }
+
+  private async autoBuildCompanyHqOnCoreLandIfNeeded(
+    client: PoolClient,
+    characterId: string,
+    propertyId: string,
+    companyName: string,
+  ): Promise<void> {
+    const row = await realEstateRepository.findById(propertyId, client);
+    if (!row) return;
+    if (row.ownerCharacterId !== characterId) return;
+    if (row.mergedIntoPropertyId || row.mergeGroupId) return;
+    if (!this.isRawBuildableLand(row.constructionOption, row.propertyType)) return;
+    if (row.status !== 'owned') return;
+
+    const option = (CONSTRUCTION_OPTIONS.single ?? []).find((o) => o.id === 'company_hq');
+    if (!option) return;
+    const label = (companyName || '').trim() || option.label;
+    const totalBaseValue = Number(row.currentValueMinor);
+    const costMinor = Math.max(0, Math.round(totalBaseValue * 0.2));
+    const balance = await ledger.getBalance(client, 'character', characterId);
+    if (balance < costMinor) {
+      throw AppError.conflict(
+        'insufficient_funds',
+        `Không đủ tiền để tự động xây dựng trụ sở công ty. Cần ${costMinor.toLocaleString('vi-VN')} ₫.`,
+      );
+    }
+
+    if (costMinor > 0) {
+      await creditStateFund(
+        client,
+        { ownerType: 'character', ownerId: characterId, kind: 'cash' },
+        costMinor,
+        {
+          amountMinor: costMinor,
+          reasonCode: 'property_construction_fee',
+          description: `Phí/thuế xây dựng ${label} (trụ sở công ty, 1 ô) vào quỹ đất nước`,
+          refType: 'property',
+          refId: row.id,
+          actorType: 'character',
+          actorId: characterId,
+          ledgerKind: 'property_construction',
+          ledgerDescription: `Tự động xây dựng ${label} (trụ sở công ty)`,
+        },
+      );
+    }
+
+    const newCurrentValueMinor = Math.round(totalBaseValue * option.valueMultiplier);
+    const newMonthlyRentMinor = Math.max(0, Math.round(newCurrentValueMinor * 0.005));
+    await realEstateRepository.applyConstruction(client, {
+      primaryId: row.id,
+      memberIds: [],
+      mergeGroupId: null,
+      optionId: option.id,
+      label,
+      tier: 'single',
+      multiplier: option.valueMultiplier,
+      costMinor,
+      newPropertyType: 'office',
+      newCurrentValueMinor,
+      newMonthlyRentMinor,
+    });
+  }
+
+  private async autoBuildCompanyHqOnProvinceLandIfNeeded(
+    client: PoolClient,
+    characterId: string,
+    propertyId: string,
+    companyName: string,
+  ): Promise<void> {
+    const rows = await provinceLandRepository.findByIds(client, [propertyId]);
+    const row = rows[0];
+    if (!row) return;
+    if (row.ownerCharacterId !== characterId) return;
+    if (row.mergedIntoPropertyId || row.mergeGroupId) return;
+    if (!this.isRawBuildableLand(row.constructionOption, row.propertyType)) return;
+    if (row.status !== 'owned') return;
+
+    const option = (CONSTRUCTION_OPTIONS.single ?? []).find((o) => o.id === 'company_hq');
+    if (!option) return;
+    const label = (companyName || '').trim() || option.label;
+    const totalBaseValue = Number(row.currentValueMinor);
+    const costMinor = Math.max(0, Math.round(totalBaseValue * 0.2));
+    const balance = await ledger.getBalance(client, 'character', characterId);
+    if (balance < costMinor) {
+      throw AppError.conflict(
+        'insufficient_funds',
+        `Không đủ tiền để tự động xây dựng trụ sở công ty. Cần ${costMinor.toLocaleString('vi-VN')} ₫.`,
+      );
+    }
+
+    if (costMinor > 0) {
+      await creditStateFund(
+        client,
+        { ownerType: 'character', ownerId: characterId, kind: 'cash' },
+        costMinor,
+        {
+          amountMinor: costMinor,
+          reasonCode: 'province_land_construction_fee',
+          description: `Phí/thuế xây dựng ${label} (trụ sở công ty, 1 ô) - ${row.provinceCode} vào quỹ đất nước`,
+          refType: 'province_land_property',
+          refId: row.id,
+          actorType: 'character',
+          actorId: characterId,
+          ledgerKind: 'property_construction',
+          ledgerDescription: `Tự động xây dựng ${label} (trụ sở công ty)`,
+        },
+      );
+    }
+
+    const newCurrentValueMinor = Math.round(totalBaseValue * option.valueMultiplier);
+    const newMonthlyRentMinor = Math.max(0, Math.round(newCurrentValueMinor * 0.005));
+    await provinceLandRepository.applyConstruction(client, {
+      primaryId: row.id,
+      memberIds: [],
+      mergeGroupId: null,
+      optionId: option.id,
+      label,
+      tier: 'single',
+      multiplier: option.valueMultiplier,
+      costMinor,
+      newPropertyType: 'office',
+      newCurrentValueMinor,
+      newMonthlyRentMinor,
     });
   }
 
@@ -1095,9 +1235,13 @@ export class CorporationService {
       try {
         if (premisesRecord.type === 'land_core' && premisesRecord.corePropertyId) {
           await this.repository.lockAndClaimCoreLandPremises(client, premisesRecord.corePropertyId, character.id, companyId);
+          // Nếu chọn đất nền thô: tự động xây dựng trụ sở công ty (lấy tên công ty).
+          await this.autoBuildCompanyHqOnCoreLandIfNeeded(client, character.id, premisesRecord.corePropertyId, company.name);
         } else if (premisesRecord.type === 'land_province' && premisesRecord.provinceLandPropertyId) {
           const claimed = await this.repository.lockAndClaimProvinceLandPremises(client, premisesRecord.provinceLandPropertyId, character.id, companyId);
           if (claimed.provinceCode) premisesRecord.provinceCode = claimed.provinceCode;
+          // Nếu chọn đất nền thô: tự động xây dựng trụ sở công ty (lấy tên công ty).
+          await this.autoBuildCompanyHqOnProvinceLandIfNeeded(client, character.id, premisesRecord.provinceLandPropertyId, company.name);
         } else if (premisesRecord.type === 'company_property' && premisesRecord.companyPropertyId) {
           await this.repository.validateCompanyPropertyPremises(client, premisesRecord.companyPropertyId);
         }

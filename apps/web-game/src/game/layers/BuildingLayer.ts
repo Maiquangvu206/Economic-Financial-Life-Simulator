@@ -31,7 +31,7 @@ export class BuildingLayer extends LayerBase {
       const pos = nodePos(prop.nodeId);
       if (!pos) continue;
 
-      const height = 20 + (prop.valueMinor % 40);
+      const height = 20 + ((prop.valueMinor ?? 0) % 40);
       const color = BUILDING_COLORS[prop.type] ?? 0xc7d2fe;
 
       const building = this.scene.add
