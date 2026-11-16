@@ -275,19 +275,36 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   syncServerTime: (time) => {
     const s = get();
-    const nextYear = time.currentYear ?? s.year;
-    const nextMonth = time.currentMonth ?? s.month;
-    const fallbackDayOfMonth = (() => {
-      if (typeof time.dayOfYear === 'number') return (Math.floor(time.dayOfYear) % 30) + 1;
-      if (typeof time.currentDay === 'number' && time.currentDay >= 0 && time.currentDay <= 359) return (Math.floor(time.currentDay) % 30) + 1;
-      return s.day;
-    })();
-    const dayOfMonth = time.currentDayOfMonth ?? fallbackDayOfMonth;
-    const nextDayOfYear = typeof time.dayOfYear === 'number'
-      ? ((Math.floor(time.dayOfYear) % 360) + 360) % 360
-      : (typeof time.currentDay === 'number' && time.currentDay >= 0 && time.currentDay <= 359
-          ? ((Math.floor(time.currentDay) % 360) + 360) % 360
-          : (Math.max(1, nextMonth) - 1) * 30 + (Math.max(1, dayOfMonth) - 1));
+    const rawYear = Number(time.currentYear);
+    const nextYear = Number.isFinite(rawYear) && rawYear > 0 ? Math.floor(rawYear) : s.year;
+
+    // Ưu tiên dayOfYear/currentDay (0-359) từ server làm nguồn chuẩn để suy ra tháng/ngày
+    let nextDayOfYear: number | null = null;
+    if (typeof time.dayOfYear === 'number' && Number.isFinite(time.dayOfYear)) {
+      nextDayOfYear = ((Math.floor(time.dayOfYear) % 360) + 360) % 360;
+    } else if (typeof time.currentDay === 'number' && Number.isFinite(time.currentDay)) {
+      const cd = Math.floor(time.currentDay);
+      if (cd >= 0 && cd <= 359) nextDayOfYear = cd;
+    }
+
+    let nextMonth = Number.isFinite(Number(time.currentMonth)) ? Math.floor(Number(time.currentMonth)) : NaN;
+    let dayOfMonth = Number.isFinite(Number(time.currentDayOfMonth)) ? Math.floor(Number(time.currentDayOfMonth)) : NaN;
+
+    if (nextDayOfYear != null) {
+      nextMonth = Math.floor(nextDayOfYear / 30) + 1;
+      dayOfMonth = (nextDayOfYear % 30) + 1;
+    } else {
+      if (!Number.isFinite(nextMonth) || nextMonth < 1) nextMonth = s.month;
+      if (nextMonth > 12) nextMonth = ((nextMonth - 1) % 12) + 1;
+      if (!Number.isFinite(dayOfMonth) || dayOfMonth < 1) dayOfMonth = s.day;
+      if (dayOfMonth > 30) dayOfMonth = ((dayOfMonth - 1) % 30) + 1;
+      nextDayOfYear = (Math.max(1, nextMonth) - 1) * 30 + (Math.max(1, dayOfMonth) - 1);
+    }
+
+    nextMonth = Math.min(12, Math.max(1, nextMonth));
+    dayOfMonth = Math.min(30, Math.max(1, dayOfMonth));
+    nextDayOfYear = ((Math.floor(nextDayOfYear) % 360) + 360) % 360;
+
     const nextSeason = time.season ?? calculateSeason(nextMonth);
 
     // Mốc tiến trình thực tế: ưu tiên tickUpdatedAt từ server (lưu trữ tiến trình theo thời gian thực), fallback suy ra từ hour/minute
