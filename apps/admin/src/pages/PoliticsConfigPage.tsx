@@ -238,9 +238,6 @@ export function PoliticsConfigPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Cấu hình & Quản trị Chính trị / Bầu cử</h1>
-          <p className="mt-1 text-xs text-slate-600">
-            Bầu cử Thị trưởng, nhiệm kỳ/quyền lợi/chính sách (3 pha) và thu hồi tư cách khi lạm dụng (admin).
-          </p>
         </div>
         <button type="button" onClick={() => refetch()} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
           Tải lại
@@ -266,18 +263,16 @@ export function PoliticsConfigPage() {
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 font-semibold">Đương nhiệm</span>
               <b className="text-slate-900">{mayor.characterName ?? '—'}</b>
-              <span className="text-xs text-slate-600">Character: <span className="font-mono">{mayor.characterId}</span></span>
-              <span className="text-xs text-slate-600">User: <span className="font-mono">{mayor.userId ?? '—'}</span></span>
+              
+              
             </div>
             <div className="grid gap-2 text-xs text-slate-700 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5"><div className="text-slate-500">Trạng thái</div><div className="font-medium">{termLabel(mayor.termStatus)}</div></div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5"><div className="text-slate-500">Bắt đầu</div><div className="font-medium">{fmtDate(mayor.termStartedAt)}</div></div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5"><div className="text-slate-500">Kết thúc</div><div className="font-medium">{fmtDate(mayor.termEndsAt)}</div></div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5"><div className="text-slate-500">Election</div><div className="font-mono text-[11px]">{mayor.electionId}</div></div>
-            </div>
+              </div>
             <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 space-y-2">
-              <div className="text-xs font-semibold text-rose-800">Thu hồi/Hủy tư cách Thị trưởng (khi lạm dụng)</div>
-              <p className="text-[11px] text-rose-700">Hành động có hiệu lực ngay: gỡ quyền/lợi ích nhiệm kỳ, ghi audit/notify/realtime. Không thể hoàn tác tư cách đã thu hồi.</p>
+              <div className="text-xs font-semibold text-rose-800">Thu hồi tư cách Thị trưởng</div>
               <textarea
                 className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs text-slate-800"
                 rows={2}
@@ -300,8 +295,7 @@ export function PoliticsConfigPage() {
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
           <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">1. Tạo cuộc bầu cử</h2>
           <form onSubmit={createElection} className="space-y-3 text-sm">
-            <div className="text-xs text-slate-600">Chức vụ: <b>Thị trưởng (mayor)</b>. Chỉ 1 cuộc mở tại một thời điểm.</div>
-            <label className="block text-xs text-slate-700">Thời điểm kết thúc (endsAt)
+            <label className="block text-xs text-slate-700">Thời điểm kết thúc
               <input type="datetime-local" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
             </label>
             <div className="grid grid-cols-2 gap-2">

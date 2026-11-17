@@ -87,9 +87,6 @@ export function RestrictionSettingsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Bảo trì hệ thống & Hạn chế tài khoản</h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Tạm dừng hệ thống khi nâng cấp/sửa chữa và cấu hình thông tin liên hệ hỗ trợ cho tài khoản bị hạn chế.
-          </p>
         </div>
         <button
           type="button"
@@ -107,23 +104,13 @@ export function RestrictionSettingsPage() {
       <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Tạm dừng hệ thống (Bảo trì/Nâng cấp)</h2>
-            <p className="text-xs text-slate-700 mt-1">
-              Khi bật, người chơi sẽ thấy thông báo bảo trì và không thể thao tác trong trò chơi. Thời gian trong game cũng tạm dừng. Quản trị viên vẫn có thể truy cập trang quản lý để tắt bảo trì.
-            </p>
+            <h2 className="text-sm font-semibold text-slate-900">Tạm dừng hệ thống</h2>
           </div>
           <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${maintenanceForm.enabled ? 'bg-amber-200 text-amber-900' : 'bg-slate-200 text-slate-700'}`}>
             {maintenanceForm.enabled ? 'Đang tạm dừng' : 'Đang hoạt động'}
           </span>
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-800">
-          <input
-            type="checkbox"
-            checked={!!maintenanceForm.enabled}
-            onChange={(e) => setMaintenanceForm((f) => ({ ...f, enabled: e.target.checked }))}
-          />
-          Bật chế độ bảo trì (tạm dừng hệ thống cho người chơi)
-        </label>
+        
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block text-sm text-slate-700">
             Tiêu đề thông báo bảo trì
@@ -216,13 +203,6 @@ export function RestrictionSettingsPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        <div className="font-semibold mb-1">Cách hoạt động</div>
-        <ul className="list-disc pl-5 space-y-1 text-xs">
-          <li><b>Bảo trì hệ thống:</b> tạm dừng toàn bộ thao tác của người chơi và tạm dừng thời gian trong game để nâng cấp/sửa chữa; quản trị viên vẫn thao tác được trang quản lý.</li>
-          <li><b>Hạn chế tài khoản:</b> chỉ áp dụng cho từng tài khoản bị hạn chế (khác với khóa đăng nhập), người dùng thấy thông báo và kênh liên hệ ở trên.</li>
-        </ul>
-      </section>
-    </div>
+</div>
   );
 }

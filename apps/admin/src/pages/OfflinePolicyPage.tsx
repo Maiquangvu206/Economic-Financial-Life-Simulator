@@ -46,10 +46,7 @@ export function OfflinePolicyPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Cấu hình Offline (toàn hệ thống)</h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Thiết lập chính sách xử lý khi người chơi vắng mặt: giới hạn bù thời gian, tự nhận phúc lợi, tự trả hóa đơn/nợ, và mặc định cho người chơi.
-          </p>
+          <h1 className="text-xl font-semibold text-slate-900">Cấu hình Xử lý Vắng mặt (Offline)</h1>
         </div>
         <button
           type="button"
@@ -84,13 +81,12 @@ export function OfflinePolicyPage() {
             onChange={(e) => setForm((f) => ({ ...f, maxOfflineMinutes: Number(e.target.value) }))}
             className="mt-1 w-full max-w-xs rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
           />
-          <span className="mt-1 block text-xs text-slate-500">Ví dụ 1440 = 24 giờ. Hệ thống chỉ ghi nhận/xử lý trong giới hạn này.</span>
+
         </label>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
         <h2 className="text-sm font-semibold text-slate-900">Cho phép tác vụ tự động</h2>
-        <p className="text-xs text-slate-600">Nếu tắt tại đây, người chơi không thể bật tác vụ tương ứng dù có cấu hình cá nhân.</p>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={!!form.allowCatchup} onChange={(e) => setForm((f) => ({ ...f, allowCatchup: e.target.checked }))} />
           Cho phép bù tiến trình/mô phỏng thời gian offline (có giới hạn)
@@ -106,7 +102,7 @@ export function OfflinePolicyPage() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900">Mặc định cho người chơi (khi mới khởi tạo)</h2>
+        <h2 className="text-sm font-semibold text-slate-900">Cài đặt mặc định cho tài khoản mới</h2>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={!!form.defaultCatchup} onChange={(e) => setForm((f) => ({ ...f, defaultCatchup: e.target.checked }))} />
           Mặc định bật bù tiến trình offline
@@ -121,18 +117,10 @@ export function OfflinePolicyPage() {
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={!!form.defaultShowRecap} onChange={(e) => setForm((f) => ({ ...f, defaultShowRecap: e.target.checked }))} />
-          Mặc định hiển thị Offline Recap khi đăng nhập/quay lại
+          Mặc định hiển thị Báo cáo tổng kết vắng mặt khi đăng nhập lại
         </label>
       </section>
 
-      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        <div className="font-semibold mb-1">Ghi chú vận hành</div>
-        <ul className="list-disc pl-5 space-y-1 text-xs">
-          <li>Tự nhận phúc lợi và tự trả nợ/thuế là <b>best-effort</b>, tuân theo điều kiện hiện có (đủ tiền, đủ điều kiện, chưa nhận trong kỳ).</li>
-          <li>Không mô phỏng lại toàn bộ tick thế giới; hệ thống ghi nhận khoảng offline có giới hạn và thực hiện các tác vụ tự động được hỗ trợ, sau đó tạo recap.</li>
-          <li>Người chơi có thể bật/tắt cài đặt cá nhân trong trang Báo cáo Offline (web-game), trong phạm vi chính sách cho phép.</li>
-        </ul>
-      </section>
-    </div>
+</div>
   );
 }

@@ -219,7 +219,7 @@ export function InterestRatesConfigPage() {
               </label>
             ))}
           </div>
-          <div className="text-[11px] text-slate-500">Gợi ý: giữ ngưỡng tăng dần (Thường ≤ Bạc ≤ Vàng ≤ Bạch Kim ≤ Kim Cương) để phân hạng rõ ràng.</div>
+
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">

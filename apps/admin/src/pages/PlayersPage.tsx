@@ -242,7 +242,6 @@ export function PlayersPage() {
     <div className="space-y-5">
       <PageHeader
         title="Quản lý người chơi & tài khoản"
-        description="Tra cứu, can thiệp người chơi, và (chỉ admin) cấp tài khoản/quyền quản trị. Thao tác nhạy cảm được ghi audit log và thông báo tới người dùng; thay đổi quyền yêu cầu đăng nhập lại để áp dụng."
         actions={<button type="button" onClick={() => refetch()} className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Làm mới</button>}
       />
 
@@ -250,7 +249,6 @@ export function PlayersPage() {
         <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Cấp tài khoản quản trị mới</h2>
-            <p className="text-[11px] text-slate-600 mt-0.5">Chỉ <b>admin</b> thực hiện được. Tạo tài khoản (kèm nhân vật) với quyền <b>admin</b> hoặc <b>moderator</b>, có thể đăng nhập qua cổng người chơi và truy cập admin portal.</p>
           </div>
           <form onSubmit={submitCreateAdmin} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-2 text-xs">
             <input required value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} type="email" placeholder="Email" className="rounded-lg border border-slate-300 bg-white px-3 py-2" />
@@ -258,8 +256,8 @@ export function PlayersPage() {
             <input required value={createForm.fullName} onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })} placeholder="Họ tên (nhân vật)" className="rounded-lg border border-slate-300 bg-white px-3 py-2" />
             <input required minLength={8} value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} type="password" placeholder="Mật khẩu (>=8 ký tự)" className="rounded-lg border border-slate-300 bg-white px-3 py-2" />
             <select value={createForm.role} onChange={(e) => setCreateForm({ ...createForm, role: e.target.value as 'admin' | 'moderator' })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-medium">
-              <option value="moderator">moderator (điều hành)</option>
-              <option value="admin">admin (quản trị)</option>
+              <option value="moderator">Điều hành viên (Moderator)</option>
+              <option value="admin">Quản trị viên (Admin)</option>
             </select>
             <button disabled={busy === 'create-admin'} type="submit" className="rounded-lg bg-amber-600 px-3 py-2 font-semibold text-white hover:bg-amber-500 disabled:opacity-50">
               {busy === 'create-admin' ? 'Đang tạo...' : 'Tạo tài khoản'}
@@ -309,7 +307,6 @@ export function PlayersPage() {
                   <tr key={p.id} className="hover:bg-slate-50/60 align-top">
                     <td className="py-2.5 px-3">
                       <div className="font-semibold text-slate-900">{p.fullName}</div>
-                      <div className="font-mono text-[10px] text-slate-500">{p.id}</div>
                     </td>
                     <td className="py-2.5 px-3 text-slate-700">
                       <div>{p.username ?? '—'}</div>
@@ -325,9 +322,9 @@ export function PlayersPage() {
                             onChange={(e) => setRoleDrafts((s) => ({ ...s, [p.userId!]: e.target.value }))}
                             className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] disabled:bg-slate-100"
                           >
-                            <option value="player">player - Người chơi</option>
-                            <option value="moderator">moderator - Điều hành</option>
-                            <option value="admin">admin - Quản trị</option>
+                            <option value="player">Người chơi</option>
+                            <option value="moderator">Điều hành viên</option>
+                            <option value="admin">Quản trị viên</option>
                           </select>
                           <div className="flex items-center gap-1">
                             <span className="text-[10px] text-slate-500">Hiện tại: {ROLE_LABEL[currentRole] || currentRole}</span>
@@ -380,7 +377,9 @@ export function PlayersPage() {
                           {p.deathAge != null && (
                             <div className="text-[10px] text-slate-500">Đã cấu hình: chết ở {p.deathAge} tuổi</div>
                           )}
-                          {p.accountStatus && p.accountStatus !== 'active' && (
+                          {p.accountStatus === 'banned' ? (
+                            <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">Tài khoản đã bị khóa</span>
+                          ) : (
                             <div className="text-[10px] font-semibold text-rose-700">TK: {p.accountStatus}</div>
                           )}
                         </td>
@@ -410,8 +409,9 @@ export function PlayersPage() {
                         <td className="py-2.5 px-3 text-[11px] text-slate-400">—</td>
                         <td className="py-2.5 px-3 text-[11px] text-slate-500">
                           <div className="font-medium text-slate-700">Tài khoản {ROLE_LABEL[currentRole] || currentRole}</div>
-                          <div className="text-[10px] text-slate-400">Không áp dụng CCCD/Tuổi thọ/Tài sản người chơi</div>
-                          {p.accountStatus && p.accountStatus !== 'active' && (
+                          {p.accountStatus === 'banned' ? (
+                            <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">Tài khoản đã bị khóa</span>
+                          ) : (
                             <div className="text-[10px] font-semibold text-rose-700 mt-1">TK: {p.accountStatus}</div>
                           )}
                         </td>

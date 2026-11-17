@@ -135,9 +135,6 @@ export function MapEditorPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h1 className="text-xl font-semibold tracking-tight text-slate-900">Cấu hình giá đất nền</h1>
-              <p className="mt-1 max-w-2xl text-sm text-slate-600">
-                Chọn thành phố/tỉnh và thiết lập đơn giá đất gốc (base_land_price). Lưu trực tiếp vào CSDL.
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -209,18 +206,13 @@ export function MapEditorPage() {
                 </select>
               </label>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Chọn khu vực để tải và cấu hình giá đất. Mọi tỉnh/thành đều có thể lưu cấu hình giá vào CSDL.
-            </p>
+
           </section>
 
           {/* 2. Ma trận giá theo loại đất */}
           <section className="border-t border-slate-100 pt-8">
             <div className="mb-4">
               <h2 className="text-sm font-semibold text-slate-900">2. Ma trận giá gốc theo loại đất</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Đặt mốc giá khởi điểm (VNĐ/ô) theo từng loại đất. Áp dụng cho toàn bộ ô thuộc loại tương ứng.
-              </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {ZONE_PRICE_ROWS.map((row) => {
@@ -253,10 +245,7 @@ export function MapEditorPage() {
                 className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
               >
                 Áp ma trận giá theo loại đất
-              </button>
-              <span className="text-xs text-slate-500">
-                Thay đổi áp dụng tạm thời, nhấn <b>Lưu CSDL</b> để ghi nhận.
-              </span>
+               </button>
             </div>
           </section>
         </div>

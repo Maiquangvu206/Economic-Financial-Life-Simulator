@@ -9,9 +9,46 @@ type AdminUniversityDto = { id: string; name: string; degreeCode: string; field:
 type AdminJobDto = { id: string; title: string; industry: string; baseSalary: Money; requiredDegree: string | null; minCreditScore: number; energyCost: number; openings: number };
 type AdminEducationConfigDto = { universities: AdminUniversityDto[]; jobs: AdminJobDto[] };
 
+const INDUSTRY_LABEL: Record<string, string> = {
+  finance_banking: 'Tài chính - Ngân hàng',
+  technology_ai: 'Công nghệ & AI',
+  real_estate: 'Bất động sản',
+  logistics: 'Logistics',
+  healthcare: 'Y tế',
+  education: 'Giáo dục',
+  agriculture: 'Nông nghiệp',
+  manufacturing: 'Sản xuất',
+  energy: 'Năng lượng',
+  energy_mining: 'Năng lượng & Khai khoáng',
+  entertainment: 'Giải trí',
+  hospitality: 'Du lịch - Khách sạn',
+  retail: 'Bán lẻ',
+};
+function industryLabel(v: string) { return INDUSTRY_LABEL[v] ?? v; }
+
 const INDUSTRIES = [
   'finance_banking','technology_ai','real_estate','logistics','healthcare','education','agriculture','manufacturing','energy','entertainment','hospitality','retail'
 ];
+
+const UNIVERSITY_NAME_LABEL: Record<string, string> = {
+  'City Law Academy': 'Học viện Luật Thành phố',
+  'Institute of Technology': 'Học viện Công nghệ',
+  'Metro Business School': 'Trường Kinh doanh Đô thị',
+};
+const DEGREE_CODE_LABEL: Record<string, string> = {
+  law: 'Luật',
+  computer_science: 'Khoa học máy tính',
+  business: 'Kinh tế / Kinh doanh',
+};
+function universityNameLabel(name: string) {
+  for (const [en, vi] of Object.entries(UNIVERSITY_NAME_LABEL)) {
+    if (name.toLowerCase().includes(en.toLowerCase())) return name.replace(new RegExp(en, 'i'), vi);
+  }
+  return name;
+}
+function degreeCodeLabel(code: string) {
+  return DEGREE_CODE_LABEL[code?.toLowerCase?.()] ?? code;
+}
 
 type UniForm = { name: string; degreeCode: string; field: string; tuitionMinor: string; durationMonths: string; postGradSalaryMinor: string };
 type JobForm = { title: string; industry: string; baseSalaryMinor: string; requiredDegree: string; minCreditScore: string; energyCost: string; openings: string };
@@ -105,7 +142,7 @@ export function EducationConfigPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Cấu hình Giáo dục & Đại học" description="Thiết lập ngành/trường, học phí (tính theo tháng), thời gian học và mức lương sau tốt nghiệp." />
+      <PageHeader title="Cấu hình Giáo dục & Đại học" description="Thiết lập trường đào tạo, học phí hàng tháng và mức lương khởi điểm sau tốt nghiệp." />
 
       {msg && (
         <div className={`rounded-xl border p-3 text-xs font-semibold ${msg.type === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}>
@@ -121,7 +158,7 @@ export function EducationConfigPage() {
           <form onSubmit={saveUni} className="space-y-3 text-sm">
             <label className="block text-xs text-slate-700">Tên trường<input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.name} onChange={e=>setUniForm({...uniForm,name:e.target.value})} /></label>
             <label className="block text-xs text-slate-700">Mã ngành/bằng cấp<input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.degreeCode} onChange={e=>setUniForm({...uniForm,degreeCode:e.target.value})} placeholder="Ví dụ: CNTT, KINH_TE" /></label>
-            <label className="block text-xs text-slate-700">Ngành/Lĩnh vực (field)<select className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.field} onChange={e=>setUniForm({...uniForm,field:e.target.value})}>{INDUSTRIES.map(i=><option key={i} value={i}>{i}</option>)}</select></label>
+            <label className="block text-xs text-slate-700">Ngành / Lĩnh vực<select className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.field} onChange={e=>setUniForm({...uniForm,field:e.target.value})}>{INDUSTRIES.map(i=><option key={i} value={i}>{industryLabel(i)}</option>)}</select></label>
             <label className="block text-xs text-slate-700">Học phí/tháng (VNĐ)<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.tuitionMinor} onChange={e=>setUniForm({...uniForm,tuitionMinor:e.target.value})} /></label>
             <div className="text-[11px] text-slate-500">Tổng học phí = học phí/tháng × thời gian học: <span className="font-mono font-semibold text-emerald-700">{fmtMoney(totalTuitionPreview)}</span></div>
             <label className="block text-xs text-slate-700">Thời gian học (tháng)<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={uniForm.durationMonths} onChange={e=>setUniForm({...uniForm,durationMonths:e.target.value})} /></label>
@@ -139,8 +176,8 @@ export function EducationConfigPage() {
             {universities.map(u => (
               <div key={u.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-start justify-between gap-2 text-sm">
                 <div>
-                  <div className="font-semibold text-slate-800">{u.name} <span className="text-xs font-mono text-emerald-700">({u.degreeCode})</span></div>
-                  <div className="text-xs text-slate-600 mt-0.5">Ngành: {u.field} · Học phí: {fmtMoney(u.tuition.amount)}/tháng · {u.durationMonths} tháng · Tổng: {fmtMoney(u.tuition.amount * u.durationMonths)}</div>
+                  <div className="font-semibold text-slate-800">{universityNameLabel(u.name)} <span className="text-xs font-mono text-emerald-700">({degreeCodeLabel(u.degreeCode)})</span></div>
+                  <div className="text-xs text-slate-600 mt-0.5">Ngành: {industryLabel(u.field)} · Học phí: {fmtMoney(u.tuition.amount)}/tháng · {u.durationMonths} tháng · Tổng: {fmtMoney(u.tuition.amount * u.durationMonths)}</div>
                   <div className="text-xs text-slate-600">Lương sau tốt nghiệp: {u.postGradSalary ? fmtMoney(u.postGradSalary.amount) : '—'}</div>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -159,7 +196,7 @@ export function EducationConfigPage() {
           <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">{editingJob ? 'Sửa công việc / mức lương' : 'Thêm công việc / mức lương sau tốt nghiệp'}</h2>
           <form onSubmit={saveJob} className="space-y-3 text-sm">
             <label className="block text-xs text-slate-700">Tên công việc<input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.title} onChange={e=>setJobForm({...jobForm,title:e.target.value})} /></label>
-            <label className="block text-xs text-slate-700">Ngành/Lĩnh vực<select className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.industry} onChange={e=>setJobForm({...jobForm,industry:e.target.value})}>{INDUSTRIES.map(i=><option key={i} value={i}>{i}</option>)}</select></label>
+            <label className="block text-xs text-slate-700">Ngành / Lĩnh vực<select className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.industry} onChange={e=>setJobForm({...jobForm,industry:e.target.value})}>{INDUSTRIES.map(i=><option key={i} value={i}>{industryLabel(i)}</option>)}</select></label>
             <label className="block text-xs text-slate-700">Mức lương cơ bản (VNĐ)<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.baseSalaryMinor} onChange={e=>setJobForm({...jobForm,baseSalaryMinor:e.target.value})} /></label>
             <label className="block text-xs text-slate-700">Bằng cấp yêu cầu (không bắt buộc)<input list="degree-codes-admin" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.requiredDegree} onChange={e=>setJobForm({...jobForm,requiredDegree:e.target.value})} placeholder="Chọn hoặc nhập mã bằng cấp" /><datalist id="degree-codes-admin">{degreeOptions.map(d=><option key={d} value={d} />)}</datalist></label>
             <div className="grid grid-cols-3 gap-2">
@@ -181,7 +218,7 @@ export function EducationConfigPage() {
               <div key={j.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-start justify-between gap-2 text-sm">
                 <div>
                   <div className="font-semibold text-slate-800">{j.title}</div>
-                  <div className="text-xs text-slate-600 mt-0.5">Ngành: {j.industry} · Lương: {fmtMoney(j.baseSalary.amount)} · Yêu cầu bằng: {j.requiredDegree || '—'}</div>
+                  <div className="text-xs text-slate-600 mt-0.5">Ngành: {industryLabel(j.industry)} · Lương: {fmtMoney(j.baseSalary.amount)} · Yêu cầu bằng: {j.requiredDegree ? degreeCodeLabel(j.requiredDegree) : '—'}</div>
                   <div className="text-xs text-slate-600">Tín dụng ≥ {j.minCreditScore} · Năng lượng {j.energyCost} · Vị trí {j.openings}</div>
                 </div>
                 <div className="flex gap-1 shrink-0">

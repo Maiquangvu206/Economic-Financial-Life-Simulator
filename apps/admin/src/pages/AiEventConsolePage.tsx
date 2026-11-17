@@ -141,29 +141,24 @@ export function AiEventConsolePage() {
     <div className="space-y-5">
       <PageHeader
         title="Trình điều khiển AI & Sự kiện"
-        description="Kích hoạt sự kiện vĩ mô và cấu hình tham số prompt LLM. AI chỉ đề xuất, core quyết định."
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <AdminStat
           label="Tổng gọi AI"
           value={String(aiMetrics?.generate.totalCalls ?? 0)}
-          hint="Tất cả task AI"
         />
         <AdminStat
           label="Chi phí AI"
           value={`$${Number(aiMetrics?.generate.totalCostUsd ?? 0).toFixed(4)}`}
-          hint="Ước lượng theo tokens"
         />
         <AdminStat
           label="Độ trễ trung bình"
           value={`${Math.round(aiMetrics?.generate.avgLatencyMs ?? 0)} ms`}
-          hint="Latency gọi AI service"
         />
         <AdminStat
           label="Tỷ lệ lỗi AI"
           value={`${((aiMetrics?.generate.errorRate ?? 0) * 100).toFixed(1)}%`}
-          hint="Calls lỗi / tổng"
           tone={(aiMetrics?.generate.errorRate ?? 0) > 0.1 ? 'negative' : 'default'}
         />
       </div>
@@ -201,7 +196,7 @@ export function AiEventConsolePage() {
           </label>
 
           <label className="block text-xs text-slate-600">
-            Thời lượng (năm in-game)
+            Thời lượng (năm)
             <input
               type="number"
               min={1}
@@ -213,7 +208,7 @@ export function AiEventConsolePage() {
           </label>
 
           <label className="block text-xs text-slate-600">
-            Lý do (audit log)
+            Lý do
             <textarea
               value={reason}
               onChange={(event) => setReason(event.target.value)}
@@ -235,7 +230,7 @@ export function AiEventConsolePage() {
         </section>
 
         <section className="panel space-y-3">
-          <h2 className="panel-title">GM AI — Điều chỉnh vĩ mô</h2>
+          <h2 className="panel-title">AI Điều Hành Kinh Tế — Điều chỉnh vĩ mô</h2>
           <dl className="grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-lg border border-slate-200 p-2">
               <dt className="text-slate-500">Lạm phát</dt>
@@ -267,7 +262,7 @@ export function AiEventConsolePage() {
             onClick={() => void handleGmAdjust()}
             className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
           >
-            Yêu cầu GM AI điều chỉnh
+            Yêu cầu AI Điều Hành phân tích
           </button>
           <div className="space-y-1">
             {(gmDirectives ?? []).slice(0, 5).map((d) => (
@@ -275,9 +270,9 @@ export function AiEventConsolePage() {
                 key={d.id}
                 className="flex items-center justify-between rounded-lg border border-slate-200 px-2 py-1 text-xs"
               >
-                <span className="font-medium">{d.action}</span>
+                <span className="font-medium">{d.action === 'do_nothing' ? 'Giữ nguyên chính sách hiện tại' : d.action}</span>
                 <span className="text-slate-500">
-                  {d.applied ? 'Đã áp dụng' : 'Giữ nguyên'} · {d.createdAt?.slice(0, 16)}
+                  {d.applied ? 'Đã áp dụng' : 'Giữ nguyên'} · {d.createdAt?.slice(11, 16)} - {d.createdAt?.slice(8, 10)}/{d.createdAt?.slice(5, 7)}/{d.createdAt?.slice(0, 4)}
                 </span>
               </div>
             ))}
@@ -286,23 +281,23 @@ export function AiEventConsolePage() {
       </div>
 
       <section className="panel">
-        <h2 className="panel-title">AI Metrics — Chi phí & Độ trễ (50 gọi gần nhất)</h2>
+        <h2 className="panel-title">Thống kê hiệu suất AI — Chi phí & Độ trễ</h2>
         <div className="overflow-auto max-h-[60vh]">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500">
-                <th className="py-2 text-left">Task</th>
-                <th className="py-2 text-left">Model</th>
-                <th className="py-2 text-right">Latency</th>
-                <th className="py-2 text-right">Tokens</th>
-                <th className="py-2 text-right">Cost</th>
-                <th className="py-2 text-left">Status</th>
+                <th className="py-2 text-left">Tác vụ</th>
+                <th className="py-2 text-left">Mô hình AI</th>
+                <th className="py-2 text-right">Độ trễ</th>
+                <th className="py-2 text-right">Lượng xử lý (Tokens)</th>
+                <th className="py-2 text-right">Chi phí</th>
+                <th className="py-2 text-left">Trạng thái</th>
               </tr>
             </thead>
             <tbody>
               {(aiMetrics?.recent ?? []).map((m) => (
                 <tr key={m.id} className="border-b border-slate-100">
-                  <td className="py-1.5">{m.task}</td>
+                  <td className="py-1.5">{m.task === 'gm_economy' ? 'Điều tiết kinh tế vĩ mô' : m.task}</td>
                   <td className="py-1.5 font-mono">{m.model}</td>
                   <td className="py-1.5 text-right font-mono">{m.latencyMs} ms</td>
                   <td className="py-1.5 text-right font-mono">
@@ -322,46 +317,12 @@ export function AiEventConsolePage() {
         </div>
       </section>
 
-      <section className="panel space-y-3">
-        <h2 className="panel-title">Tham số AI</h2>
-        <p className="text-xs text-slate-500">
-          Prompt được version hóa trong <code className="font-mono">ai/app/prompts/</code>. Thay đổi
-          prompt phải qua review và chạy eval trước khi bật production.
-        </p>
-        <dl className="grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-lg border border-slate-200 p-2">
-            <dt className="text-slate-500">Provider</dt>
-            <dd className="mt-0.5 font-mono text-slate-800">fake</dd>
-          </div>
-          <div className="rounded-lg border border-slate-200 p-2">
-            <dt className="text-slate-500">Timeout</dt>
-            <dd className="mt-0.5 font-mono text-slate-800">15s</dd>
-          </div>
-          <div className="rounded-lg border border-slate-200 p-2">
-            <dt className="text-slate-500">Judge model</dt>
-            <dd className="mt-0.5 font-mono text-slate-800">—</dd>
-          </div>
-          <div className="rounded-lg border border-slate-200 p-2">
-            <dt className="text-slate-500">News model</dt>
-            <dd className="mt-0.5 font-mono text-slate-800">—</dd>
-          </div>
-        </dl>
-        <p className="rounded-lg border border-amber-200/60 bg-amber-50 p-2 text-[11px] text-amber-800/90">
-          Không cấp quyền ghi trực tiếp cho AI. Mọi output phải qua schema validation và rule engine
-          của game-core.
-        </p>
-      </section>
-
       <section className="panel space-y-3 border-rose-200 bg-rose-50/30">
-        <h2 className="panel-title text-rose-800">Đại án Công an (do quản trị viên kích hoạt)</h2>
-        <p className="text-xs text-slate-700 leading-relaxed">
-          Đại án được <b>AI tự động xử lý</b>: khi Heat đạt ngưỡng trong lúc phạm tội và theo đánh giá định kỳ, AI đề xuất (mục tiêu/toàn hệ thống/không hành động) và core kiểm tra, áp dụng an toàn (có fallback). <b>Admin/moderator</b> vẫn có thể can thiệp thủ công hoặc chạy AI đánh giá ngay.
-          Quy tắc xử lý: phạt <b>10% tiền mặt</b>, ghi <b>án tích</b> (30 ngày tù), hạ Heat về <b>40</b>.
-        </p>
+        <h2 className="panel-title text-rose-800">Đại án Công an</h2>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
             <div className="text-sm font-semibold text-slate-900">Kích hoạt theo mục tiêu</div>
-            <div className="text-[11px] text-slate-600">Chỉ định một nhân vật bằng <b>Character ID</b> hoặc <b>CCCD</b> (ép thực thi kể cả khi Heat &lt; 80).</div>
+            
             <input
               value={sweepTarget}
               onChange={(e) => setSweepTarget(e.target.value)}
@@ -387,7 +348,7 @@ export function AiEventConsolePage() {
           </div>
           <div className="rounded-xl border border-rose-300 bg-white p-3 space-y-2">
             <div className="text-sm font-semibold text-slate-900">Quét toàn hệ thống</div>
-            <div className="text-[11px] text-slate-600">Thực thi Đại án cho <b>tất cả mọi nhân vật</b> trong hệ thống (bất kể Heat). Hành động quy mô lớn, sẽ ghi audit log và thông báo.</div>
+            
             <textarea
               value={sweepNote}
               onChange={(e) => setSweepNote(e.target.value)}
@@ -408,7 +369,7 @@ export function AiEventConsolePage() {
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
           <div className="text-sm font-semibold text-slate-900">AI tự động đánh giá & xử lý</div>
-          <div className="text-[11px] text-slate-600">AI sẽ phân tích tình hình (Heat/ứng viên) và đề xuất kích hoạt theo mục tiêu hoặc toàn hệ thống; core kiểm tra và áp dụng an toàn (có fallback). Admin vẫn có thể can thiệp thủ công như trên.</div>
+          
           <button
             type="button"
             disabled={sweepBusy}

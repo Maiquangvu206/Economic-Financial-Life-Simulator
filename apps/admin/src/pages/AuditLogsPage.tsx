@@ -40,6 +40,10 @@ function actionLabel(action: string) {
   return ACTION_LABELS[action] ?? action.replace(/[._-]+/g, ' ');
 }
 
+function actorLabel(id?: string | null) {
+  if (!id || id === 'system' || id === '00000000-0000-0000-0000-000000000000') return 'Hệ thống tự động';
+  return 'Quản trị viên (Admin)';
+}
 function shortId(id?: string | null) {
   if (!id) return '—';
   return id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id;
@@ -96,7 +100,7 @@ function summarize(action: string, detail: Record<string, unknown> | null | unde
         ? `Toàn hệ thống · ảnh hưởng ${d.affected ?? 0} nhân vật · phạt ${fmtValue(d.totalFineMinor)} ₫${d.note ? ` · ${fmtValue(d.note)}` : ''}`
         : `Nhân vật ${shortId(d.characterId as string)} · heat ${d.triggerHeat ?? '—'} · phạt ${fmtValue(d.fineMinor)} ₫${d.note ? ` · ${fmtValue(d.note)}` : ''}`;
     case 'ai.sweep.evaluate':
-      return `${pick('trigger') ?? 'auto'} · ${pick('action') ?? pick('scope') ?? '—'} · phạm vi ${pick('scope') ?? '—'} · ảnh hưởng ${d.affected ?? 0}${d.rationale ? ` · ${fmtValue(d.rationale)}` : ''}`;
+      return `Quét định kỳ · Không có vi phạm · Ảnh hưởng: ${d.affected ?? 0} người chơi${d.rationale ? ` · ${fmtValue(d.rationale)}` : ''}`;
     case 'admin.offline_policy.update': {
       const parts = [
         d.enabled != null ? `hệ thống ${d.enabled ? 'bật' : 'tắt'}` : null,
@@ -149,7 +153,6 @@ export function AuditLogsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Nhật ký Audit Log"
-        description="Ghi nhận các thao tác quản trị quan trọng (phát sóng, cấu hình, can thiệp người chơi, giftcode, sự kiện…) để kiểm toán."
         actions={<button type="button" onClick={() => refetch()} className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Làm mới</button>}
       />
 
@@ -205,10 +208,9 @@ export function AuditLogsPage() {
                       <td className="py-2.5 px-4 whitespace-nowrap text-slate-600">{fmtDate(log.createdAt)}</td>
                       <td className="py-2.5 px-4">
                         <div className="font-semibold text-slate-800">{actionLabel(log.action)}</div>
-                        <div className="mt-0.5 font-mono text-[10px] text-slate-400">{log.action}</div>
                       </td>
                       <td className="py-2.5 px-4 text-slate-700 leading-relaxed">{summarize(log.action, log.detail)}</td>
-                      <td className="py-2.5 px-4 text-slate-600" title={log.actorId ?? ''}>{shortId(log.actorId)}</td>
+                      <td className="py-2.5 px-4 text-slate-600">{actorLabel(log.actorId)}</td>
                       <td className="py-2.5 px-4 text-right">
                         {hasDetail ? (
                           <button
