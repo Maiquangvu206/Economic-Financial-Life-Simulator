@@ -122,6 +122,7 @@ export function useChatSocket() {
       socket.emit('room:join', { room: 'chat_room:global' } as any);
     };
     const onDisconnect = () => setConnected(false);
+    const onConnectError = () => setConnected(false);
     const onRateLimited = (p: { message: string }) => {
       pushToast({ variant: 'warning', title: 'Chat', description: p?.message || 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' });
     };
@@ -139,6 +140,7 @@ export function useChatSocket() {
     if (socket.connected) onConnect();
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('connect_error', onConnectError);
     socket.on('chat:global', onGlobal as any);
     socket.on('chat:private', onPrivate as any);
     socket.on('chat:message', onLegacy as any);
@@ -147,6 +149,7 @@ export function useChatSocket() {
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('connect_error', onConnectError);
       socket.off('chat:global', onGlobal as any);
       socket.off('chat:private', onPrivate as any);
       socket.off('chat:message', onLegacy as any);
@@ -158,6 +161,11 @@ export function useChatSocket() {
     const text = content.trim();
     if (!text) return;
     const socket = getGameSocket();
+    if (!socket.connected) {
+      pushToast({ variant: 'warning', title: 'Chat', description: 'Chưa kết nối realtime. Vui lòng đợi kết nối lại.' });
+      socket.connect();
+      return;
+    }
     const clientMsgId = uuid();
     const optimistic: UiChatMessage = {
       id: `tmp-${clientMsgId}`,
@@ -186,6 +194,11 @@ export function useChatSocket() {
     const text = content.trim();
     if (!text || !receiverId) return;
     const socket = getGameSocket();
+    if (!socket.connected) {
+      pushToast({ variant: 'warning', title: 'Chat', description: 'Chưa kết nối realtime. Vui lòng đợi kết nối lại.' });
+      socket.connect();
+      return;
+    }
     const clientMsgId = uuid();
     const optimistic: UiChatMessage = {
       id: `tmp-${clientMsgId}`,

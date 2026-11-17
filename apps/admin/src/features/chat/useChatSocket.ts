@@ -92,6 +92,7 @@ export function useChatSocket() {
     const socket = getAdminSocket();
     const onConnect = () => { setConnected(true); socket.emit('room:join', { room: 'chat_room:global' } as any); };
     const onDisconnect = () => setConnected(false);
+    const onConnectError = () => setConnected(false);
     const onRateLimited = (p: { message: string }) => pushAdminToast({ variant: 'warning', title: 'Chat', description: p?.message || 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' });
     const handle = (raw: any, countUnread?: boolean) => { const msg = normIncoming(raw); if (msg) upsertMessage(msg, { countUnread }); };
     const onGlobal = (m: any) => handle(m, false);
@@ -100,6 +101,7 @@ export function useChatSocket() {
     if (socket.connected) onConnect();
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('connect_error', onConnectError);
     socket.on('chat:global', onGlobal as any);
     socket.on('chat:private', onPrivate as any);
     socket.on('chat:message', onLegacy as any);
@@ -107,6 +109,7 @@ export function useChatSocket() {
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('connect_error', onConnectError);
       socket.off('chat:global', onGlobal as any);
       socket.off('chat:private', onPrivate as any);
       socket.off('chat:message', onLegacy as any);
@@ -116,7 +119,9 @@ export function useChatSocket() {
 
   const sendGlobal = useCallback((content: string) => {
     const text = content.trim(); if (!text) return;
-    const socket = getAdminSocket(); const clientMsgId = uuid();
+    const socket = getAdminSocket();
+    if (!socket.connected) { pushAdminToast({ variant: 'warning', title: 'Chat', description: 'Chưa kết nối realtime. Vui lòng đợi kết nối lại.' }); socket.connect(); return; }
+    const clientMsgId = uuid();
     const optimistic: UiChatMessage = { id: `tmp-${clientMsgId}`, clientMsgId, channel: 'global', senderId: myUserIdRef.current, senderName: '', senderRole: '', receiverId: null, content: text, createdAt: new Date().toISOString(), localStatus: 'sending' };
     upsertMessage(optimistic);
     socket.emit('chat:global', { content: text, clientMsgId } as any, (ack: ChatAck) => {
@@ -127,7 +132,9 @@ export function useChatSocket() {
 
   const sendPrivate = useCallback((receiverId: string, content: string) => {
     const text = content.trim(); if (!text || !receiverId) return;
-    const socket = getAdminSocket(); const clientMsgId = uuid();
+    const socket = getAdminSocket();
+    if (!socket.connected) { pushAdminToast({ variant: 'warning', title: 'Chat', description: 'Chưa kết nối realtime. Vui lòng đợi kết nối lại.' }); socket.connect(); return; }
+    const clientMsgId = uuid();
     const optimistic: UiChatMessage = { id: `tmp-${clientMsgId}`, clientMsgId, channel: 'private', senderId: myUserIdRef.current, senderName: '', senderRole: '', receiverId, content: text, createdAt: new Date().toISOString(), localStatus: 'sending' };
     upsertMessage(optimistic);
     socket.emit('chat:private', { receiverId, content: text, clientMsgId } as any, (ack: ChatAck) => {

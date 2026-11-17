@@ -83,7 +83,10 @@ export function ChatWidget() {
     if (!search.trim()) { setSearchResults([]); return; }
     setSearching(true);
     const t = setTimeout(() => {
-      void chat.searchUsers(search).then((r) => { if (alive) setSearchResults(r); }).finally(() => { if (alive) setSearching(false); });
+      void chat.searchUsers(search)
+        .then((r) => { if (alive) setSearchResults(r); })
+        .catch(() => { if (alive) setSearchResults([]); })
+        .finally(() => { if (alive) setSearching(false); });
     }, 250);
     return () => { alive = false; clearTimeout(t); };
   }, [search, chat]);
