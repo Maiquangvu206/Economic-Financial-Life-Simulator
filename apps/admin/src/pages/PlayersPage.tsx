@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { adminRequest } from '../shared/api/httpClient';
 import { useAdminSession } from '../features/auth/session';
+import { useDialog } from '../shared/ui/DialogContext';
 
 type Money = { amount: number; currency: 'VND' };
 interface PlayerRow {
@@ -34,6 +35,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 export function PlayersPage() {
   const session = useAdminSession();
+  const { confirm, prompt } = useDialog();
   const isSuperAdmin = session?.user.role === 'admin';
 
   const [query, setQuery] = useState('');
@@ -81,7 +83,12 @@ export function PlayersPage() {
     if (action === 'set_death_age') {
       const draft = (deathAgeDrafts[id] ?? '').trim();
       if (!draft) {
-        const ok = confirm(`Gỡ cấu hình tuổi thọ tối đa cho${label ? ` "${label}"` : ' nhân vật này'}? (Nhân vật sẽ không chết theo ngưỡng tuổi thọ do admin đặt)`);
+        const ok = await confirm({
+          title: `Gỡ cấu hình tuổi thọ tối đa${label ? ` của "${label}"` : ' của nhân vật này'}?`,
+          type: 'warning',
+          confirmText: 'Gỡ cấu hình',
+          message: 'Nhân vật sẽ không còn chết theo ngưỡng tuổi thọ do admin đặt.',
+        });
         if (!ok) return;
         deathAge = null;
       } else {
@@ -92,31 +99,53 @@ export function PlayersPage() {
         }
         deathAge = val;
       }
-      note = prompt('Ghi chú (tuỳ chọn):', '') ?? '';
+      note = (await prompt({ title: 'Ghi chú (tuỳ chọn)', confirmText: 'Lưu ghi chú', cancelText: 'Bỏ qua' })) ?? '';
     } else if (action === 'force_delete') {
       if (!isSuperAdmin) return;
-      const ok = confirm(
-        `CƯỠNG CHẾ XÓA tài khoản${label ? ` "${label}"` : ''}?\n\n` +
-          'Hành động này sẽ xóa vĩnh viễn tài khoản/người dùng và nhân vật liên quan (dữ liệu liên kết có thể bị xóa theo ràng buộc). ' +
-          'Chỉ dùng khi phát hiện bất thường nghiêm trọng. Không thể hoàn tác.\n\nBấm OK để tiếp tục.',
-      );
+      const ok = await confirm({
+        title: `CƯỠNG CHẾ XÓA tài khoản${label ? ` "${label}"` : ''}?`,
+        type: 'danger',
+        confirmText: 'Xóa vĩnh viễn',
+        message: [
+          'Hành động này sẽ xóa VĨNH VIỄN tài khoản/người dùng và nhân vật liên quan (dữ liệu liên kết có thể bị xóa theo ràng buộc).',
+          'Chỉ dùng khi phát hiện bất thường nghiêm trọng.',
+          'Không thể hoàn tác.',
+        ],
+      });
       if (!ok) return;
-      note = (prompt('Nhập LÝ DO bắt buộc (ghi vào audit log):', '') ?? '').trim();
+      const reason = await prompt({
+        title: 'Nhập lý do bắt buộc',
+        type: 'danger',
+        confirmText: 'Tiếp tục xóa',
+        required: true,
+        placeholder: 'Lý do (ghi vào audit log)',
+      });
+      note = (reason ?? '').trim();
       if (!note) {
         setMsg('Đã hủy: cần nhập lý do để cưỡng chế xóa tài khoản.');
         return;
       }
     } else {
       if (action === 'fine' || action === 'grant_aid') {
-        const raw = prompt('Nhập số tiền (₫):', '1000000');
+        const raw = await prompt({
+          title: action === 'fine' ? 'Nhập số tiền phạt (₫)' : 'Nhập số tiền cứu trợ (₫)',
+          type: 'warning',
+          inputType: 'number',
+          defaultValue: '1000000',
+          confirmText: 'Xác nhận',
+        });
         if (raw == null) return;
         amount = Math.max(0, Math.round(Number(raw)));
         if (!amount) return;
       }
       if (action === 'ban') {
-        note = (prompt('Nhập lý do khóa tài khoản (tuỳ chọn):', 'Bị khóa bởi quản trị viên') ?? '').trim();
+        note = (await prompt({
+          title: 'Lý do khóa tài khoản (tuỳ chọn)',
+          defaultValue: 'Bị khóa bởi quản trị viên',
+          confirmText: 'Khóa tài khoản',
+        })) ?? '';
       } else {
-        note = prompt('Ghi chú (tuỳ chọn):', '') ?? '';
+        note = (await prompt({ title: 'Ghi chú (tuỳ chọn)', confirmText: 'Xác nhận', cancelText: 'Bỏ qua' })) ?? '';
       }
     }
 
@@ -185,8 +214,13 @@ export function PlayersPage() {
     const nextRole = roleDrafts[p.userId] || p.role || 'player';
     const currentRole = p.role || 'player';
     if (nextRole === currentRole) return;
-    if (!confirm(`Đổi quyền tài khoản ${p.email || p.username || p.userId} từ "${currentRole}" sang "${nextRole}"? Người dùng cần đăng nhập lại để áp dụng quyền mới.`)) return;
-    const note = prompt('Ghi chú (tuỳ chọn):', '') ?? '';
+    if (!await confirm({
+      title: `Đổi quyền tài khoản ${p.email || p.username || p.userId}?`,
+      type: 'warning',
+      confirmText: `Đổi sang "${nextRole}"`,
+      message: `Quyền sẽ thay đổi từ "${currentRole}" sang "${nextRole}". Người dùng cần đăng nhập lại để áp dụng quyền mới.`,
+    })) return;
+    const note = (await prompt({ title: 'Ghi chú (tuỳ chọn)', confirmText: 'Xác nhận', cancelText: 'Bỏ qua' })) ?? '';
     setBusy(`role-${p.userId}`);
     setMsg(null);
     try {

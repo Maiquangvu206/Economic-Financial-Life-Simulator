@@ -18,6 +18,7 @@ import { GameInput } from '../shared/ui/GameInput';
 import { formatMoney, formatCompact } from '../shared/lib/format';
 import { apiRequest, ApiError } from '../shared/api/httpClient';
 import { useToast } from '../shared/ui/Toast';
+import { useDialog } from '../shared/ui/DialogContext';
 
 type UnifiedProperty = PropertyDto & {
   __source: 'core' | 'province-land';
@@ -82,6 +83,7 @@ function isBuilt(p: PropertyDto): boolean {
 }
 
 export function RealEstatePage() {
+  const { confirm } = useDialog();
   const [buyTarget, setBuyTarget] = useState<UnifiedProperty | null>(null);
   const [listTarget, setListTarget] = useState<UnifiedProperty | null>(null);
   const [listPrice, setListPrice] = useState('');
@@ -462,8 +464,14 @@ export function RealEstatePage() {
                       variant="outline"
                       size="sm"
                       disabled={isBusy(`demolish-${p.__source}-${p.id}`)}
-                      onClick={() => {
-                        if (!window.confirm('Phá dỡ công trình/hủy hợp thửa để trả về đất nền? (Các lô trong cụm sẽ được tách lại; đề xuất mua đang chờ sẽ bị hủy)')) return;
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: 'Phá dỡ công trình / Hủy hợp thửa?',
+                          type: 'danger',
+                          confirmText: 'Phá dỡ',
+                          message: 'Công trình sẽ bị phá dỡ / hủy hợp thửa để trả về đất nền.',
+                        });
+                        if (!ok) return;
                         void runAction(
                           `demolish-${p.__source}-${p.id}`,
                           () => demolishUnified(p),
@@ -479,8 +487,17 @@ export function RealEstatePage() {
                       variant="outline"
                       size="sm"
                       disabled={isBusy(`terminate-${p.id}`)}
-                      onClick={() => {
-                        if (!window.confirm('Hủy hợp đồng thuê trước hạn với tư cách chủ sở hữu?\n\nLưu ý: bạn sẽ mất cọc (hoàn lại cọc cho người thuê) và phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.')) return;
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: 'Hủy hợp đồng thuê trước hạn (chủ sở hữu)?',
+                          type: 'warning',
+                          confirmText: 'Hủy hợp đồng',
+                          message: [
+                            'Bạn sẽ MẤT CỌC (hoàn lại cọc cho người thuê).',
+                            'Bạn phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.',
+                          ],
+                        });
+                        if (!ok) return;
                         void runAction(
                           `terminate-${p.id}`,
                           async () => {
@@ -581,8 +598,17 @@ export function RealEstatePage() {
                       variant="outline"
                       size="sm"
                       disabled={isBusy(`terminate-tenant-${p.id}`)}
-                      onClick={() => {
-                        if (!window.confirm('Hủy hợp đồng thuê trước hạn với tư cách người thuê?\n\nLưu ý: bạn sẽ mất cọc và phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.')) return;
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: 'Hủy hợp đồng thuê trước hạn (người thuê)?',
+                          type: 'warning',
+                          confirmText: 'Hủy hợp đồng',
+                          message: [
+                            'Bạn sẽ MẤT CỌC.',
+                            'Bạn phải thanh toán 50% số tiền thuê còn lại tính đến khi hết hợp đồng.',
+                          ],
+                        });
+                        if (!ok) return;
                         void runAction(
                           `terminate-tenant-${p.id}`,
                           async () => {

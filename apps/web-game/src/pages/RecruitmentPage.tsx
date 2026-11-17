@@ -8,6 +8,7 @@ import { Badge } from '../shared/ui/Badge';
 import { GameButton } from '../shared/ui/GameButton';
 import { GameInput } from '../shared/ui/GameInput';
 import { toast } from '../shared/ui/Toast';
+import { useDialog } from '../shared/ui/DialogContext';
 
 function moneyText(m: { amount: number }) {
   return `${Number(m.amount || 0).toLocaleString('vi-VN')} ₫`;
@@ -33,6 +34,7 @@ function statusLabel(job: RecruitmentJobDto) {
 }
 
 export function RecruitmentPage() {
+  const { confirm } = useDialog();
   const qc = useQueryClient();
 
   const { data, isLoading, error, refetch } = useQuery<RecruitmentOverviewDto>({
@@ -227,9 +229,15 @@ export function RecruitmentPage() {
                               size="sm"
                               className="w-full"
                               disabled={!job.canDelete || isActing}
-                              onClick={() => {
+                              onClick={async () => {
                                 if (!job.canDelete) return;
-                                if (!window.confirm('Xóa đợt tuyển này? Hành động không thể hoàn tác.')) return;
+                                const ok = await confirm({
+                                  title: 'Xóa đợt tuyển này?',
+                                  type: 'danger',
+                                  confirmText: 'Xóa vĩnh viễn',
+                                  message: 'Hành động này không thể hoàn tác.',
+                                });
+                                if (!ok) return;
                                 deleteJob.mutate(job.id);
                               }}
                               title={job.canDelete ? 'Xóa đợt tuyển' : 'Chưa đủ 1 ngày game kể từ khi đóng'}

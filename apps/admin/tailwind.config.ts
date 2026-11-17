@@ -23,6 +23,16 @@ export default {
       boxShadow: {
         soft: '0 12px 32px -18px rgba(71, 85, 105, 0.35)',
       },
+      keyframes: {
+        'dialog-fade': {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
+        },
+        'dialog-zoom': {
+          from: { opacity: '0', transform: 'scale(0.95) translateY(8px)' },
+          to: { opacity: '1', transform: 'scale(1) translateY(0)' },
+        },
+      },
     },
   },
   plugins: [],

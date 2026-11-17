@@ -64,19 +64,19 @@ describe('credit score', () => {
 
 describe('loan health', () => {
   it('moves through grace, default and foreclosure', () => {
+    // Chuẩn thời gian hiện hành: nợ quá hạn tính theo NGÀY GAME (1 ngày game = 1 phút thực).
     const graceEnd = new Date('2026-01-01T00:00:00Z');
+    const atGameDays = (days: number) => new Date(graceEnd.getTime() + days * 60_000); // 60_000ms = 1 ngày game
     const base = {
       outstandingMinor: 100_00,
       gracePeriodEnd: graceEnd,
       bankGraceDays: 10,
     };
 
-    expect(evaluateLoanHealth({ ...base, now: new Date('2026-01-01T00:00:00Z') })).toBe('current');
-    expect(evaluateLoanHealth({ ...base, now: new Date('2026-01-06T00:00:00Z') })).toBe('grace');
-    expect(evaluateLoanHealth({ ...base, now: new Date('2026-01-17T00:00:00Z') })).toBe('default');
-    expect(evaluateLoanHealth({ ...base, now: new Date('2026-02-01T00:00:00Z') })).toBe(
-      'foreclose',
-    );
+    expect(evaluateLoanHealth({ ...base, now: graceEnd })).toBe('current');
+    expect(evaluateLoanHealth({ ...base, now: atGameDays(5) })).toBe('grace');
+    expect(evaluateLoanHealth({ ...base, now: atGameDays(17) })).toBe('default');
+    expect(evaluateLoanHealth({ ...base, now: atGameDays(31) })).toBe('foreclose');
   });
 });
 

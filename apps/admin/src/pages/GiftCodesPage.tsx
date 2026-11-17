@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@efls/ui';
 import { adminRequest } from '../shared/api/httpClient';
+import { useDialog } from '../shared/ui/DialogContext';
 
 type GiftCodeDto = {
   id: string;
@@ -63,6 +64,7 @@ function fmtDate(iso?: string | null) {
 }
 
 export function GiftCodesPage() {
+  const { confirm } = useDialog();
   const [editing, setEditing] = useState<GiftCodeDto | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [busy, setBusy] = useState<string | null>(null);
@@ -159,7 +161,12 @@ export function GiftCodesPage() {
   }
 
   async function remove(id: string) {
-    if (!confirm('Xóa mã quà tặng này? Các bản ghi đã sử dụng cũng sẽ bị xóa.')) return;
+    if (!(await confirm({
+      title: 'Xóa mã quà tặng này?',
+      type: 'danger',
+      confirmText: 'Xóa',
+      message: 'Các bản ghi đã sử dụng của mã này cũng sẽ bị xóa theo.',
+    }))) return;
     setBusy(`del-${id}`);
     try {
       await adminRequest(`/api/v1/admin/gift-codes/${id}`, { method: 'DELETE' });

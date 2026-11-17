@@ -8,6 +8,7 @@ import { Badge } from '../shared/ui/Badge';
 import { formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
 import { useToast } from '../shared/ui/Toast';
+import { useDialog } from '../shared/ui/DialogContext';
 import type { CareersOverviewExtDto, UnlockedFeature, EarlyGraduateResultDto, EarlyGraduateStartResponse } from '@efls/contracts';
 
 const UNLOCK_LABEL: Record<UnlockedFeature, string> = {
@@ -19,6 +20,7 @@ const UNLOCK_LABEL: Record<UnlockedFeature, string> = {
 
 export function EducationPage() {
   const { toast } = useToast();
+  const { confirm } = useDialog();
   const { data: overview, isLoading, refetch } = useQuery<CareersOverviewExtDto>({
     queryKey: ['education', 'overview'],
     queryFn: () => apiRequest<CareersOverviewExtDto>('/api/v1/education/overview'),
@@ -56,9 +58,18 @@ export function EducationPage() {
   }
 
   async function handleDrop(degreeId: string, degreeCode: string) {
-    const ok = window.confirm(
-      `Bỏ học giữa chừng chương trình ${degreeCode}?\n\n- Toàn bộ học phí đã đóng sẽ KHÔNG được hoàn lại.\n- Bạn sẽ KHÔNG nhận được bằng cấp hay bất kỳ chức năng/lợi ích nào của bằng này.\n- Dữ liệu bằng cấp đang học sẽ bị xóa và không còn hiển thị trong mục Bằng cấp.\n- Bạn vẫn có thể ghi danh và học lại bằng này sau.\n\nBạn có chắc chắn muốn bỏ học?`,
-    );
+    const ok = await confirm({
+      title: `Bỏ học giữa chừng chương trình ${degreeCode}?`,
+      type: 'danger',
+      confirmText: 'Bỏ học',
+      cancelText: 'Tiếp tục học',
+      message: [
+        'Toàn bộ học phí đã đóng sẽ KHÔNG được hoàn lại.',
+        'Bạn sẽ KHÔNG nhận được bằng cấp hay bất kỳ chức năng/lợi ích nào của bằng này.',
+        'Dữ liệu bằng cấp đang học sẽ bị xóa và không còn hiển thị trong mục Bằng cấp.',
+        'Bạn vẫn có thể ghi danh và học lại bằng này sau.',
+      ],
+    });
     if (!ok) return;
     setBusy(`drop-${degreeId}`);
     try {

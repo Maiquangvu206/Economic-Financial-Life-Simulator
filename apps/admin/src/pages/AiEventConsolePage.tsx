@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AdminStat } from '../shared/ui/AdminStat';
 import { formatCompact } from '../shared/lib/format';
 import { adminRequest } from '../shared/api/httpClient';
+import { useDialog } from '../shared/ui/DialogContext';
 import {
   type AiMetricsOverviewDto,
   type GmSnapshotDto,
@@ -19,6 +20,7 @@ const EVENTS = [
 ] as const;
 
 export function AiEventConsolePage() {
+  const { confirm } = useDialog();
   const [eventType, setEventType] = useState<(typeof EVENTS)[number]['value']>('banking_crisis');
   const [severity, setSeverity] = useState(0.5);
   const [duration, setDuration] = useState(1);
@@ -76,11 +78,27 @@ export function AiEventConsolePage() {
   async function handleTriggerSweep(scope: 'character' | 'all') {
     const note = sweepNote.trim() || undefined;
     if (scope === 'all') {
-      if (!confirm('Xác nhận kích hoạt ĐẠI ÁN cho TẤT CẢ mọi nhân vật trong hệ thống? (Phạt 10% tiền mặt, ghi án tích, hạ Heat về 40 cho từng người)')) return;
+      const ok = await confirm({
+        title: 'Kích hoạt ĐẠI ÁN cho TẤT CẢ mọi nhân vật trong hệ thống?',
+        type: 'danger',
+        confirmText: 'Kích hoạt Đại án',
+        message: [
+          'Phạt 10% tiền mặt của từng nhân vật.',
+          'Ghi án tích cho từng nhân vật.',
+          'Hạ Heat về 40 cho từng nhân vật.',
+        ],
+      });
+      if (!ok) return;
     } else {
       const target = sweepTarget.trim();
       if (!target) return;
-      if (!confirm(`Xác nhận kích hoạt Đại án cho mục tiêu "${target}"? (Ép thực thi kể cả khi Heat < 80)`)) return;
+      const ok = await confirm({
+        title: `Kích hoạt Đại án cho mục tiêu "${target}"?`,
+        type: 'danger',
+        confirmText: 'Kích hoạt Đại án',
+        message: 'Sẽ ép thực thi án kể cả khi Heat < 80.',
+      });
+      if (!ok) return;
     }
     setSweepBusy(true);
     setSweepResult(null);

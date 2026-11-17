@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { adminRequest } from '../shared/api/httpClient';
+import { useDialog } from '../shared/ui/DialogContext';
 
 type SeasonId = 'spring' | 'summer' | 'autumn' | 'winter';
 
@@ -107,6 +108,7 @@ function fmtMoney(amount: number) {
 }
 
 export function SeasonCalendarPage() {
+  const { confirm } = useDialog();
   const [seasonRanges, setSeasonRanges] = useState<SeasonRangeDto[]>(DEFAULT_SEASON_RANGES);
   const [seasonEffects, setSeasonEffects] = useState<SeasonEffectsMap>(DEFAULT_SEASON_EFFECTS);
   const [otRatePercent, setOtRatePercent] = useState(300);
@@ -222,7 +224,7 @@ export function SeasonCalendarPage() {
   }
 
   async function removeBenefit(id: string) {
-    if (!confirm('Xóa phúc lợi này?')) return;
+    if (!(await confirm({ title: 'Xóa phúc lợi này?', type: 'danger', confirmText: 'Xóa' }))) return;
     setBusy(`del-${id}`);
     try {
       await adminRequest(`/api/v1/admin/welfare/${id}`, { method: 'DELETE' });

@@ -2,6 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@efls/ui';
 import { adminRequest } from '../shared/api/httpClient';
+import { useDialog } from '../shared/ui/DialogContext';
 
 type Money = { amount: number; currency: 'VND' };
 type AdminUniversityDto = { id: string; name: string; degreeCode: string; field: string; tuition: Money; durationMonths: number; postGradSalary?: Money | null };
@@ -23,6 +24,7 @@ function fmtMoney(amount: number) {
 }
 
 export function EducationConfigPage() {
+  const { confirm } = useDialog();
   const { data, isLoading, error, refetch } = useQuery<AdminEducationConfigDto>({
     queryKey: ['admin','education','config'],
     queryFn: () => adminRequest<AdminEducationConfigDto>('/api/v1/admin/education/config'),
@@ -68,7 +70,7 @@ export function EducationConfigPage() {
     } catch (err: any) { notify('err', err?.message || 'Không thể lưu trường/ngành.'); } finally { setBusy(null); }
   }
   async function removeUni(id: string) {
-    if (!confirm('Xóa trường/ngành này?')) return;
+    if (!(await confirm({ title: 'Xóa trường/ngành này?', type: 'danger', confirmText: 'Xóa' }))) return;
     setBusy(`del-uni-${id}`);
     try { await adminRequest(`/api/v1/admin/education/universities/${id}`, { method: 'DELETE' }); notify('ok', 'Đã xóa trường/ngành.'); await refetch(); }
     catch (err: any) { notify('err', err?.message || 'Không thể xóa (có thể đang được tham chiếu).'); } finally { setBusy(null); }
@@ -93,7 +95,7 @@ export function EducationConfigPage() {
     } catch (err: any) { notify('err', err?.message || 'Không thể lưu công việc.'); } finally { setBusy(null); }
   }
   async function removeJob(id: string) {
-    if (!confirm('Xóa công việc này?')) return;
+    if (!(await confirm({ title: 'Xóa công việc này?', type: 'danger', confirmText: 'Xóa' }))) return;
     setBusy(`del-job-${id}`);
     try { await adminRequest(`/api/v1/admin/education/jobs/${id}`, { method: 'DELETE' }); notify('ok', 'Đã xóa công việc.'); await refetch(); }
     catch (err: any) { notify('err', err?.message || 'Không thể xóa.'); } finally { setBusy(null); }

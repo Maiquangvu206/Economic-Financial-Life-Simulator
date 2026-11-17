@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { MapCanvas2D, ZONE_CONFIG } from '../game/map/MapCanvas2D';
 import { StatCard } from '../shared/ui/StatCard';
 import { Panel } from '../shared/ui/Panel';
+import { useDialog } from '../shared/ui/DialogContext';
 import { formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
 import {
@@ -34,6 +35,7 @@ interface SelectedPlot {
 }
 
 export function CityPage() {
+  const { confirm } = useDialog();
   const {
     data: character,
     isLoading: characterLoading,
@@ -466,7 +468,13 @@ export function CityPage() {
   async function handleDemolish() {
     if (!selected?.property) return;
     const p: any = selected.property;
-    if (!window.confirm('Phá dỡ công trình/hủy hợp thửa để trả về đất nền? (Các lô trong cụm sẽ được tách lại; đề xuất mua đang chờ sẽ bị hủy)')) return;
+    const ok = await confirm({
+      title: 'Phá dỡ công trình / Hủy hợp thửa?',
+      type: 'danger',
+      confirmText: 'Phá dỡ',
+      message: 'Công trình sẽ bị phá dỡ / hủy hợp thửa để trả về đất nền.',
+    });
+    if (!ok) return;
     setDemolishing(true);
     setDemolishError(null);
     setDemolishOk(null);

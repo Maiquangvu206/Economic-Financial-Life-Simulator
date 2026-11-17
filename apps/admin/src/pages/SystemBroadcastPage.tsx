@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@efls/ui';
 import { adminRequest } from '../shared/api/httpClient';
+import { useDialog } from '../shared/ui/DialogContext';
 
 export type BroadcastType = 'urgent' | 'maintenance' | 'event' | 'economy' | 'news';
 export type BroadcastScope = 'all' | 'workers' | 'investors' | 'businesses';
@@ -39,6 +40,7 @@ function fmtDate(iso: string) {
 }
 
 export function SystemBroadcastPage() {
+  const { confirm } = useDialog();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [type, setType] = useState<BroadcastType>('news');
@@ -95,7 +97,12 @@ export function SystemBroadcastPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Xóa thông báo này?')) return;
+    if (!(await confirm({
+      title: 'Xóa thông báo này?',
+      type: 'danger',
+      confirmText: 'Xóa',
+      message: 'Thông báo sẽ bị gỡ khỏi hệ thống và không còn hiển thị với người chơi.',
+    }))) return;
     try {
       await adminRequest(`/api/v1/admin/broadcasts/${id}`, { method: 'DELETE' });
       await refetch();

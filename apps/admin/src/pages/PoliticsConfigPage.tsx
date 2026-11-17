@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { adminRequest } from '../shared/api/httpClient';
+import { useDialog } from '../shared/ui/DialogContext';
 
 type Money = { amount: number; currency: 'VND' };
 
@@ -116,6 +117,7 @@ function termLabel(status?: string | null) {
 }
 
 export function PoliticsConfigPage() {
+  const { confirm } = useDialog();
   const [statusMessage, setStatusMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [durationDays, setDurationDays] = useState('7');
@@ -166,7 +168,12 @@ export function PoliticsConfigPage() {
   }
 
   async function endElection(id: string) {
-    if (!confirm('Chốt kết quả cuộc bầu cử này? Nếu có người thắng, nhiệm kỳ Thị trưởng sẽ được kích hoạt.')) return;
+    if (!(await confirm({
+      title: 'Chốt kết quả cuộc bầu cử này?',
+      type: 'warning',
+      confirmText: 'Chốt kết quả',
+      message: 'Nếu có người thắng, nhiệm kỳ Thị trưởng sẽ được kích hoạt.',
+    }))) return;
     setBusy(`end-${id}`);
     try {
       await adminRequest(`/api/v1/admin/politics/elections/${id}/end`, { method: 'POST' });
@@ -185,7 +192,12 @@ export function PoliticsConfigPage() {
       notify('err', 'Vui lòng nhập lý do thu hồi tư cách (tối thiểu 5 ký tự).');
       return;
     }
-    if (!confirm('Thu hồi tư cách Thị trưởng đương nhiệm? Quyền hạn/lợi ích sẽ bị gỡ ngay lập tức.')) return;
+    if (!(await confirm({
+      title: 'Thu hồi tư cách Thị trưởng đương nhiệm?',
+      type: 'danger',
+      confirmText: 'Thu hồi',
+      message: 'Quyền hạn/lợi ích của Thị trưởng sẽ bị gỡ ngay lập tức.',
+    }))) return;
     setBusy('revoke');
     try {
       await adminRequest('/api/v1/admin/politics/mayor/revoke', {

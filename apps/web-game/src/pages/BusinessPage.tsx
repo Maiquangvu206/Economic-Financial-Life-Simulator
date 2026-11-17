@@ -20,6 +20,7 @@ import { CCCDLookupInput } from '../shared/identity/CCCDLookupInput';
 import { Modal } from '../shared/ui/Modal';
 import { Badge } from '../shared/ui/Badge';
 import { useToast } from '../shared/ui/Toast';
+import { useDialog } from '../shared/ui/DialogContext';
 
 const INDUSTRIES: { value: IndustryType; label: string }[] = [
   { value: 'real_estate', label: 'Bất động sản' },
@@ -59,6 +60,7 @@ const ENTRY_TYPES = [
 ] as const;
 
 export function BusinessPage() {
+  const { confirm } = useDialog();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -1135,13 +1137,14 @@ export function BusinessPage() {
                 </p>
                 <GameButton
                   variant="outline"
-                  onClick={() => {
-                    if (
-                      confirm(
-                        `Giải thể "${selectedCompany.name}"? Hành động này không thể hoàn tác.`,
-                      )
-                    )
-                      dissolveCompany.mutate(selectedCompany.id);
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: `Giải thể "${selectedCompany.name}"?`,
+                      type: 'danger',
+                      confirmText: 'Giải thể',
+                      message: 'Công ty sẽ chuyển sang trạng thái phá sản/giải thể. Hành động này không thể hoàn tác.',
+                    });
+                    if (ok) dissolveCompany.mutate(selectedCompany.id);
                   }}
                   disabled={dissolveCompany.isPending}
                 >
