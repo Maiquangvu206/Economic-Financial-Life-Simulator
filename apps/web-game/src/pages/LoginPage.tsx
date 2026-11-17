@@ -253,9 +253,7 @@ export function LoginPage() {
               </ul>
             </div>
 
-            <p className="text-[11px] text-slate-500">
-              Server xác thực mọi giao dịch. AI chỉ đưa ra đề xuất.
-            </p>
+
           </div>
 
           {/* Form panel (đăng nhập/đăng ký) */}
@@ -301,13 +299,11 @@ export function LoginPage() {
                   ? 'Chào mừng trở lại'
                   : 'Bắt đầu cuộc sống mới'}
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              {staffDestination
-                ? 'Đăng nhập bằng tài khoản quản trị viên hoặc điều hành viên. Hệ thống sẽ tự mở bảng điều khiển.'
-                : mode === 'login'
-                  ? 'Một cổng duy nhất — hệ thống tự nhận diện vai trò và đưa bạn đến đúng nơi.'
-                  : 'Tài khoản mới sẽ nhận một nhân vật công dân khởi điểm.'}
-            </p>
+            {staffDestination ? (
+              <p className="mt-1 text-xs text-slate-500">
+                Đăng nhập bằng tài khoản quản trị viên hoặc điều hành viên. Hệ thống sẽ tự mở bảng điều khiển.
+              </p>
+            ) : null}
           </div>
 
           {/* Thông báo hệ thống hiển thị ở bảng riêng bên cạnh (không đặt trong phần đăng nhập) */}
@@ -339,13 +335,10 @@ export function LoginPage() {
                     placeholder="Nguyễn Văn An"
                     className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
                   />
-                  <span className="mt-1 block text-[10px] font-normal text-slate-400">
-                    Chỉ được chọn một lần lúc đăng ký (hoặc khi sinh con mới).
-                  </span>
                 </label>
 
                 <label className="block text-xs font-medium text-slate-600">
-                  Nơi sinh (1 trong 34 tỉnh/thành)
+                  Nơi sinh
                   <select
                     value={birthplaceCode}
                     onChange={(event) => setBirthplaceCode(event.target.value)}
@@ -357,9 +350,6 @@ export function LoginPage() {
                       </option>
                     ))}
                   </select>
-                  <span className="mt-1 block text-[10px] font-normal text-slate-400">
-                    CCCD 12 số của bạn sẽ mang mã tỉnh nơi sinh (3 số đầu).
-                  </span>
                 </label>
               </>
             ) : null}
@@ -411,12 +401,6 @@ export function LoginPage() {
                     : 'Tạo tài khoản & nhập thành phố'}
             </button>
           </form>
-
-          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
-            Hệ thống tự định tuyến theo vai trò: <b className="text-slate-700">công dân</b> vào
-            game, <b className="text-slate-700">quản trị viên / điều hành viên</b> vào bảng điều
-            khiển quản trị.
-          </div>
           </div>
         </div>
       </div>
