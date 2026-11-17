@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.v1 import education, gm, judge, news, npc, recruitment, underworld
+from app.api.v1 import ai_admin, education, gm, judge, news, npc, recruitment, underworld
 from app.core.security import require_service_token
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_service_token)])
@@ -11,3 +11,4 @@ router.include_router(gm.router)
 router.include_router(recruitment.router)
 router.include_router(education.router)
 router.include_router(underworld.router)
+router.include_router(ai_admin.router)

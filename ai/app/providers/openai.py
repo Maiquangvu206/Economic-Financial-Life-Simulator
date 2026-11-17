@@ -10,16 +10,32 @@ from app.providers.base import LLMProvider, ProviderError
 class OpenAIProvider(LLMProvider):
     name = "openai"
 
-    def __init__(self, settings: Settings) -> None:
-        base_url = (settings.openai_base_url or "https://api.openai.com/v1").rstrip("/")
-        is_official_openai = base_url.startswith("https://api.openai.com")
-        if is_official_openai and not settings.openai_api_key:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        timeout_ms: int | None = None,
+        max_tokens: int | None = None,
+        label: str | None = None,
+    ) -> None:
+        if settings is None:
+            from app.core.config import get_settings
+
+            settings = get_settings()
+        resolved_base = (base_url or settings.openai_base_url or "https://api.openai.com/v1").rstrip("/")
+        resolved_key = settings.openai_api_key if api_key is None else api_key
+        is_official_openai = resolved_base.startswith("https://api.openai.com")
+        if is_official_openai and not resolved_key:
             raise ProviderError("OPENAI_API_KEY is not set")
-        self._api_key = settings.openai_api_key
-        self._base_url = base_url
-        self._model = settings.openai_model
-        self._timeout = settings.ai_request_timeout_ms / 1000
-        self._max_tokens = settings.ai_max_output_tokens
+        self._api_key = resolved_key or ""
+        self._base_url = resolved_base
+        self._model = model or settings.openai_model
+        self._timeout = (timeout_ms or settings.ai_request_timeout_ms) / 1000
+        self._max_tokens = max_tokens or settings.ai_max_output_tokens
+        self.name = label or "openai"
 
     async def complete_json(
         self,

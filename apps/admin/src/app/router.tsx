@@ -3,6 +3,7 @@ import { RequireAdmin } from '../features/auth/guards';
 import { AdminLayout } from '../shared/layout/AdminLayout';
 import { AdminLoginPage } from '../pages/AdminLoginPage';
 import { AiEventConsolePage } from '../pages/AiEventConsolePage';
+import { AiProvidersPage } from '../pages/AiProvidersPage';
 import { ChatPage } from '../pages/ChatPage';
 import { AuditLogsPage } from '../pages/AuditLogsPage';
 import { EducationConfigPage } from '../pages/EducationConfigPage';
@@ -52,6 +53,7 @@ const router = createBrowserRouter([
           { path: 'players', element: <PlayersPage /> },
           { path: 'map-editor', element: <MapEditorPage /> },
           { path: 'ai-events', element: <AiEventConsolePage /> },
+          { path: 'ai-providers', element: <AiProvidersPage /> },
           { path: 'chat', element: <ChatPage /> },
           { path: '*', element: <Navigate to="/" replace /> },
         ],

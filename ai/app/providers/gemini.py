@@ -10,13 +10,28 @@ from app.providers.base import LLMProvider, ProviderError
 class GeminiProvider(LLMProvider):
     name = "gemini"
 
-    def __init__(self, settings: Settings) -> None:
-        if not settings.gemini_api_key:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        *,
+        api_key: str | None = None,
+        model: str | None = None,
+        timeout_ms: int | None = None,
+        max_tokens: int | None = None,
+        label: str | None = None,
+    ) -> None:
+        if settings is None:
+            from app.core.config import get_settings
+
+            settings = get_settings()
+        resolved_key = settings.gemini_api_key if api_key is None else api_key
+        if not resolved_key:
             raise ProviderError("GEMINI_API_KEY is not set")
-        self._api_key = settings.gemini_api_key
-        self._model = settings.gemini_model
-        self._timeout = settings.ai_request_timeout_ms / 1000
-        self._max_tokens = settings.ai_max_output_tokens
+        self._api_key = resolved_key
+        self._model = model or settings.gemini_model
+        self._timeout = (timeout_ms or settings.ai_request_timeout_ms) / 1000
+        self._max_tokens = max_tokens or settings.ai_max_output_tokens
+        self.name = label or "gemini"
 
     async def complete_json(
         self,

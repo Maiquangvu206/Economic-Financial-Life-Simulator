@@ -19,11 +19,8 @@ async def lifespan(app: FastAPI):
     configure_logging()
     settings = get_settings()
     provider = build_provider(settings)
-    logger.info(
-        "AI service starting (provider=%s, model=%s)",
-        provider.name,
-        settings.openai_model if provider.name == "openai" else settings.gemini_model,
-    )
+    app.state.provider = provider
+    logger.info("AI service starting (provider=%s)", provider.name)
     yield
 
 

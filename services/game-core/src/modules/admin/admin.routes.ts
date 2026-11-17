@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { UpsertUniversityRequestSchema, UpsertJobRequestSchema, AdminPlayerActionRequestSchema, UpdateGameConfigRequestSchema, TriggerMacroEventRequestSchema, CreateAdminAccountRequestSchema, SetUserRoleRequestSchema, AdminTriggerSweepRequestSchema, RevokeMayorRequestSchema, UpdateMayorConfigRequestSchema, UpdateInterestRateConfigRequestSchema, AdjustStateFundRequestSchema, SupportCompaniesFromStateFundRequestSchema, UpsertIndustryRevenueConfigsRequestSchema, AdminStockAdjustRequestSchema } from '@efls/contracts';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
@@ -40,6 +41,9 @@ import {
   upsertIndustryRevenueConfigs,
   adminAdjustStockPrice,
   getAdminMarketLogs,
+  getAiConfigAdmin,
+  updateAiConfigAdmin,
+  getAiStatusProxy,
 } from './admin.integration.js';
 
 export const adminRouter: Router = Router();
@@ -85,3 +89,24 @@ adminRouter.put('/industry-revenue-configs', validateBody(UpsertIndustryRevenueC
 // Stock market admin controls
 adminRouter.post('/stock-market/adjust-price', validateBody(AdminStockAdjustRequestSchema), asyncHandler(adminAdjustStockPrice));
 adminRouter.get('/stock-market/logs', asyncHandler(getAdminMarketLogs));
+
+// AI providers (config + monitoring)
+const UpdateAiConfigBodySchema = z.object({
+  config: z.object({
+    provider: z.string().optional(),
+    failoverChain: z.string().optional(),
+    cooldownSec: z.number().optional(),
+    timeoutMs: z.number().optional(),
+    openaiBaseUrl: z.string().optional(),
+    openaiModel: z.string().optional(),
+    openaiApiKey: z.string().optional(),
+    openaiEndpoints: z.array(z.object({ baseUrl: z.string().optional(), apiKey: z.string().optional(), model: z.string().optional() })).optional(),
+    geminiModel: z.string().optional(),
+    geminiApiKey: z.string().optional(),
+    geminiApiKeys: z.array(z.string()).optional(),
+    note: z.string().optional(),
+  }).optional(),
+}).passthrough();
+adminRouter.get('/ai/config', asyncHandler(getAiConfigAdmin));
+adminRouter.put('/ai/config', validateBody(UpdateAiConfigBodySchema), asyncHandler(updateAiConfigAdmin));
+adminRouter.get('/ai/status', asyncHandler(getAiStatusProxy));

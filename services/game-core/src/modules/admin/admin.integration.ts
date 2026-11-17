@@ -2,6 +2,7 @@
 import bcrypt from 'bcryptjs';
 import { DEFAULT_SEASON_EFFECTS, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, GAME_START_YEAR, getSeasonByMonthWithRanges, normalizeSeasonEffects, normalizeSeasonRanges } from '@efls/domain';
 import { pool } from '../../shared/db/pool.js';
+import { env } from '../../config/env.js';
 import { AppError } from '../../shared/http/errors.js';
 import { listActionLogs, writeActionLog } from '../../shared/audit/actionLog.js';
 import { notify } from '../notifications/notification.service.js';
@@ -1271,3 +1272,133 @@ export async function adminAdjustStockPrice(req: Request, res: Response): Promis
   }
 }
 
+
+
+// --- AI config & status (admin) ---
+function maskSecret(value: unknown): string {
+  const s = typeof value === 'string' ? value : '';
+  return s ? '********' : '';
+}
+
+function normalizeAiConfig(raw: any): any {
+  const c = raw && typeof raw === 'object' ? raw : {};
+  const endpoints = Array.isArray(c.openaiEndpoints) ? c.openaiEndpoints : [];
+  return {
+    provider: typeof c.provider === 'string' ? c.provider : 'fake',
+    failoverChain: typeof c.failoverChain === 'string' ? c.failoverChain : 'openai,gemini,fake',
+    cooldownSec: Number.isFinite(Number(c.cooldownSec)) ? Number(c.cooldownSec) : 60,
+    timeoutMs: Number.isFinite(Number(c.timeoutMs)) ? Number(c.timeoutMs) : 15000,
+    openaiBaseUrl: typeof c.openaiBaseUrl === 'string' ? c.openaiBaseUrl : 'https://api.openai.com/v1',
+    openaiModel: typeof c.openaiModel === 'string' ? c.openaiModel : '',
+    openaiApiKey: typeof c.openaiApiKey === 'string' ? c.openaiApiKey : '',
+    openaiEndpoints: endpoints.map((e: any) => ({
+      baseUrl: typeof e?.baseUrl === 'string' ? e.baseUrl : (typeof e?.base_url === 'string' ? e.base_url : ''),
+      apiKey: typeof e?.apiKey === 'string' ? e.apiKey : (typeof e?.api_key === 'string' ? e.api_key : ''),
+      model: typeof e?.model === 'string' ? e.model : '',
+    })),
+    geminiModel: typeof c.geminiModel === 'string' ? c.geminiModel : '',
+    geminiApiKey: typeof c.geminiApiKey === 'string' ? c.geminiApiKey : '',
+    geminiApiKeys: Array.isArray(c.geminiApiKeys) ? c.geminiApiKeys.filter((k: any) => typeof k === 'string') : [],
+    updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : null,
+    note: typeof c.note === 'string' ? c.note : '',
+  };
+}
+
+function maskAiConfig(cfg: any): any {
+  return {
+    ...cfg,
+    openaiApiKey: maskSecret(cfg.openaiApiKey),
+    openaiEndpoints: (cfg.openaiEndpoints || []).map((e: any) => ({ ...e, apiKey: maskSecret(e.apiKey) })),
+    geminiApiKey: maskSecret(cfg.geminiApiKey),
+    geminiApiKeys: (cfg.geminiApiKeys || []).map((k: string) => (k ? '********' : '')),
+  };
+}
+
+function mergeSecrets(next: any, prev: any): any {
+  const merged = { ...next };
+  if (merged.openaiApiKey === '********') merged.openaiApiKey = prev.openaiApiKey || '';
+  if (merged.geminiApiKey === '********') merged.geminiApiKey = prev.geminiApiKey || '';
+  merged.openaiEndpoints = (next.openaiEndpoints || []).map((e: any, i: number) => {
+    const pe = prev.openaiEndpoints?.[i] || {};
+    return { ...e, apiKey: e.apiKey === '********' ? (pe.apiKey || '') : (e.apiKey || '') };
+  });
+  merged.geminiApiKeys = (next.geminiApiKeys || []).map((k: string, i: number) => (k === '********' ? (prev.geminiApiKeys?.[i] || '') : k));
+  return merged;
+}
+
+export async function getAiConfigAdmin(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const r = await pool.query(`SELECT macro FROM game_state WHERE id = 1`);
+  const macro = (r.rows[0]?.macro && typeof r.rows[0].macro === 'object') ? r.rows[0].macro : {};
+  const cfg = normalizeAiConfig((macro as any).aiConfig);
+  res.json({ config: maskAiConfig(cfg), applyMode: 'save-only', note: 'Lưu cấu hình vào DB (macro). Để áp dụng runtime cho AI service hiện tại, cần cập nhật biến môi trường và khởi động lại dịch vụ AI (hoặc triển khai cơ chế đồng bộ cấu hình động).' });
+}
+
+export async function updateAiConfigAdmin(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const body = (req.body ?? {}) as any;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query(`SELECT macro FROM game_state WHERE id = 1 FOR UPDATE`);
+    const prevMacro = (existing.rows[0]?.macro && typeof existing.rows[0].macro === 'object') ? existing.rows[0].macro : {};
+    const prevCfg = normalizeAiConfig((prevMacro as any).aiConfig);
+    let nextCfg = normalizeAiConfig(body.config ?? body);
+    nextCfg = mergeSecrets(nextCfg, prevCfg);
+    nextCfg.updatedAt = new Date().toISOString();
+
+    const nextMacro = { ...prevMacro, aiConfig: nextCfg };
+    await client.query(
+      `INSERT INTO game_state (id, current_day, current_year, season, macro)
+       VALUES (1, 0, $1, 'spring', $2::jsonb)
+       ON CONFLICT (id) DO UPDATE SET macro = $2::jsonb, updated_at = now()`,
+      [GAME_START_YEAR, JSON.stringify(nextMacro)],
+    );
+
+    await writeActionLog(client as any, req.actorId, 'admin.ai.config.update', {
+      provider: nextCfg.provider,
+      failoverChain: nextCfg.failoverChain,
+      endpoints: Array.isArray(nextCfg.openaiEndpoints) ? nextCfg.openaiEndpoints.length : 0,
+      geminiKeys: Array.isArray(nextCfg.geminiApiKeys) ? nextCfg.geminiApiKeys.length : 0,
+    });
+    await client.query('COMMIT');
+
+    res.json({ ok: true, config: maskAiConfig(nextCfg), applyMode: 'save-only' });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getAiStatusProxy(req: Request, res: Response): Promise<void> {
+  ensureAdmin(req);
+  const baseUrl = (env.AI_SERVICE_URL || '').replace(/\/$/, '');
+  if (!baseUrl) {
+    res.status(503).json({ ready: false, error: 'AI_SERVICE_URL chưa được cấu hình' });
+    return;
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(2000, env.AI_REQUEST_TIMEOUT_MS || 15000));
+  try {
+    const r = await fetch(`${baseUrl}/v1/ai-admin/status`, {
+      headers: {
+        ...(env.AI_SERVICE_TOKEN ? { 'x-ai-token': env.AI_SERVICE_TOKEN } : {}),
+      },
+      signal: controller.signal,
+    });
+    const text = await r.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    if (!r.ok) {
+      res.status(502).json({ ready: false, error: `AI service trả về ${r.status}`, detail: data });
+      return;
+    }
+    res.json({ ready: true, ...data, fetchedAt: new Date().toISOString() });
+  } catch (e: any) {
+    res.status(502).json({ ready: false, error: e?.name === 'AbortError' ? 'Timeout khi gọi AI service' : 'Không thể kết nối AI service', detail: String(e?.message || e) });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
