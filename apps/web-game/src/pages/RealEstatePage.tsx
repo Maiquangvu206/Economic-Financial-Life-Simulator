@@ -359,16 +359,16 @@ export function RealEstatePage() {
 
   return (
     <div className="space-y-6 pb-8">
-      <PageHeader
-        title="Bất động sản"
-        description={`Tổng hợp tất cả tỉnh/thành (gồm đất lõi và đất/công trình tỉnh) để thống nhất với trang Thành phố.${provinceLandLoading ? ' Đang tải thêm dữ liệu tỉnh…' : ''}`}
-      />
+      <PageHeader title="Bất động sản" />
+      {provinceLandLoading ? (
+        <div className="text-xs text-slate-500">Đang tải thêm dữ liệu tỉnh…</div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Tài sản sở hữu" value={String(owned.length)} hint="Tổng (mọi tỉnh)" />
-        <StatCard label="Giá trị danh mục" value={formatCompact(portfolioValue)} hint="Tổng giá trị (mọi tỉnh)" />
-        <StatCard label="Thu nhập thuê/tháng" value={formatMoney(monthlyRentIncome)} hint="Ước tính" tone={monthlyRentIncome > 0 ? 'positive' : 'default'} />
-        <StatCard label="Đang bán (listing)" value={String(forSale.filter((p) => p.status === 'listed').length)} hint="Toàn hệ thống (bạn xem được)" tone="warning" />
+        <StatCard label="Tài sản sở hữu" value={String(owned.length)} />
+        <StatCard label="Giá trị danh mục" value={formatCompact(portfolioValue)} />
+        <StatCard label="Thu nhập thuê/tháng" value={formatMoney(monthlyRentIncome)} tone={monthlyRentIncome > 0 ? 'positive' : 'default'} />
+        <StatCard label="Đang bán" value={String(forSale.filter((p) => p.status === 'listed').length)} tone="warning" />
       </div>
 
       {incomingOffers.length > 0 && (

@@ -54,6 +54,23 @@ function tierVariant(tier?: string | null): 'default' | 'success' | 'warning' | 
   return 'default';
 }
 
+function creditBandLabel(band?: string | null): string {
+  switch (band) {
+    case 'very_good':
+      return 'Rất tốt';
+    case 'excellent':
+      return 'Xuất sắc';
+    case 'good':
+      return 'Tốt';
+    case 'fair':
+      return 'Trung bình';
+    case 'poor':
+      return 'Thấp';
+    default:
+      return band || '—';
+  }
+}
+
 type CharacterMe = {
   id: string;
   fullName: string;
@@ -477,9 +494,6 @@ export function FinancePage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-heading font-bold tracking-tight">Trung tâm Tài chính</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Bảng cân đối, sổ tiết kiệm theo kỳ hạn, khoản vay, chuyển khoản liên người dùng (thời gian thực) và cấp bậc tài khoản.
-          </p>
         </div>
         <GameButton
           variant="primary"
@@ -507,34 +521,29 @@ export function FinancePage() {
             <div className="flex items-center justify-end gap-2">
               <Badge variant={tierVariant(me?.accountTier)}>{tierLabel(me?.accountTier)}</Badge>
             </div>
-            <p className="text-[11px] text-slate-500">Dựa trên tài sản ròng (tiền mặt + tiết kiệm − nợ)</p>
           </div>
         </div>
       </Panel>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Tiền mặt (ví)"
+          label="Tiền mặt"
           value={formatMoney(overview.cash.amount)}
-          hint="Dùng để gửi tiết kiệm / trả nợ / chuyển khoản"
           tone="positive"
         />
         <StatCard
-          label="Tiết kiệm (tổng)"
+          label="Tiết kiệm"
           value={formatMoney(overview.savings.amount)}
-          hint={`${activeDeposits.length} sổ đang hoạt động`}
           tone="positive"
         />
         <StatCard
           label="Tổng nợ"
           value={formatMoney(overview.totalDebt.amount)}
-          hint="Khoản vay đang nợ"
           tone="negative"
         />
         <StatCard
           label="Tài sản ròng"
           value={formatMoney(overview.netWorth.amount)}
-          hint="Tiền mặt + tiết kiệm − nợ"
         />
       </div>
 
@@ -542,7 +551,7 @@ export function FinancePage() {
         <Panel title="Tín dụng & Hạn mức vay" borderColor="emerald">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-600">Credit Score</span>
+              <span className="text-sm text-slate-600">Điểm tín dụng</span>
               <span className="font-mono font-bold text-emerald-700">{overview.creditScore}</span>
             </div>
             <Badge
@@ -554,17 +563,17 @@ export function FinancePage() {
                     : 'error'
               }
             >
-              {overview.creditBand}
+              {creditBandLabel(overview.creditBand)}
             </Badge>
             <div className="mt-2">
-              <span className="text-[11px] text-slate-500 block">Hạn mức vay tối đa (tín dụng + thế chấp)</span>
+              <span className="text-[11px] text-slate-500 block">Hạn mức vay tối đa</span>
               <span className="font-mono font-semibold text-emerald-700">
                 {formatMoney(overview.maxLoanAmount.amount)}
               </span>
             </div>
             {overview.loanLimit && (
               <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-2 text-[11px] text-slate-700 space-y-1">
-                <div className="font-semibold text-slate-700">Cơ sở tính hạn mức (điểm tín dụng + tài sản)</div>
+                <div className="font-semibold text-slate-700">Cơ sở tính hạn mức</div>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
                   <span>Tiền mặt</span><span className="text-right font-mono">{formatMoney(overview.loanLimit.cash.amount)}</span>
                   <span>Tiết kiệm</span><span className="text-right font-mono">{formatMoney(overview.loanLimit.savings.amount)}</span>
@@ -580,10 +589,9 @@ export function FinancePage() {
                   <span className="font-mono">x{overview.loanLimit.scoreFactor}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Hạn mức tín dụng (không thế chấp)</span>
+                  <span>Hạn mức tín dụng</span>
                   <span className="font-mono font-semibold text-emerald-700">{formatMoney(overview.loanLimit.unsecuredLimit.amount)}</span>
                 </div>
-                <div className="text-[10px] text-slate-500 pt-0.5">Có thể vay thế chấp trên bất động sản hoặc công ty để tăng hạn mức (theo tỷ lệ LTV của tài sản).</div>
               </div>
             )}
             <div className="mt-1">
@@ -607,9 +615,9 @@ export function FinancePage() {
             </div>
 
             <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Gửi tiết kiệm (mở sổ mới)</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Gửi tiết kiệm</p>
               <div>
-                <label className="text-[11px] text-slate-500">Kỳ hạn & lãi suất (theo cấu hình)</label>
+                <label className="text-[11px] text-slate-500">Kỳ hạn & lãi suất</label>
                 <select
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                   value={selectedTerm}
@@ -664,20 +672,17 @@ export function FinancePage() {
                   onClick={() => handleWithdraw()}
                   disabled={withdrawSavings.isPending || activeDeposits.length === 0}
                 >
-                  {withdrawSavings.isPending ? 'Đang rút...' : 'Rút (tự chọn sổ)'}
+                  {withdrawSavings.isPending ? 'Đang rút...' : 'Rút'}
                 </GameButton>
                 <GameButton variant="outline" size="sm" onClick={() => setWithdrawAmount(String(totalSavings))} disabled={totalSavings <= 0}>
                   Tối đa
                 </GameButton>
               </div>
-              <p className="text-[11px] text-slate-500">
-                Rút tự chọn sổ đủ số dư, hoặc dùng nút “Rút từ sổ này” bên dưới để rút từ sổ cụ thể.
-              </p>
             </div>
           </div>
         </Panel>
 
-        <Panel title="Sổ khoản vay (tóm tắt)" borderColor="rose">
+        <Panel title="Tổng quan khoản vay" borderColor="rose">
           <div className="space-y-2 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-slate-600">Sổ đang vay</span>
@@ -687,19 +692,13 @@ export function FinancePage() {
               <span className="text-slate-600">Dư nợ hiện tại</span>
               <span className="font-mono font-semibold text-rose-700">{formatMoney(overview.totalDebt.amount)}</span>
             </div>
-            <p className="text-[11px] text-slate-500">
-              Chỉ hiển thị sổ chưa tất toán. Khoản vay quá hạn áp dụng quay vòng lãi: lãi nhập gốc và hạ mức uy tín.
-            </p>
           </div>
         </Panel>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <Panel title="Chuyển khoản (theo CCCD, thời gian thực)" borderColor="emerald">
+        <Panel title="Chuyển khoản nhanh qua CCCD" borderColor="emerald">
           <div className="space-y-3">
-            <p className="text-[11px] text-slate-500">
-              Nhập CCCD (12 số) người nhận để kiểm tra, xác nhận tên & trạng thái, sau đó chuyển tiền từ ví. Người nhận được thông báo ngay (realtime).
-            </p>
             <CCCDLookupInput
               value={transferCccd}
               onChange={(v) => { setTransferCccd(v); setLookupResult(null); }}
@@ -766,7 +765,7 @@ export function FinancePage() {
                         <p className="font-medium text-slate-800">
                           {incoming ? 'Nhận từ' : 'Chuyển tới'} {t.counterpartyName}
                         </p>
-                        <p className="text-[11px] text-slate-500">STK/Ref: <span className="font-mono">{t.counterpartyAccountNumber}</span></p>
+                        <p className="text-[11px] text-slate-500">Mã giao dịch: <span className="font-mono">{t.counterpartyAccountNumber}</span></p>
                         {t.message ? <p className="text-[11px] text-slate-600 mt-0.5">ND: {t.message}</p> : null}
                       </div>
                       <div className="text-right">
@@ -1038,32 +1037,32 @@ export function FinancePage() {
             return (
               <>
                 <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Hạn mức vay (dựa trên điểm tín dụng + tiền mặt + tiết kiệm + BĐS + công ty)</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Hạn mức vay</div>
                   <div className="grid grid-cols-1 gap-x-3 gap-y-1 text-xs text-slate-700 sm:grid-cols-2">
-                    <span>Điểm tín dụng</span><span className="text-right font-mono">{overview.creditScore} ({overview.creditBand})</span>
+                    <span>Điểm tín dụng</span><span className="text-right font-mono">{overview.creditScore} ({creditBandLabel(overview.creditBand)})</span>
                     <span>Tiền mặt</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.cash.amount ?? overview.cash.amount)}</span>
                     <span>Tiết kiệm</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.savings.amount ?? overview.savings.amount)}</span>
                     <span>Bất động sản</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.realEstate.amount ?? 0)}</span>
                     <span>Công ty</span><span className="text-right font-mono">{formatMoney(overview.loanLimit?.companies.amount ?? 0)}</span>
                   </div>
                   <div className="flex justify-between gap-2 text-xs pt-1 border-t border-slate-200">
-                    <span>Hạn mức tín dụng (không thế chấp)</span>
+                    <span>Hạn mức tín dụng</span>
                     <span className="font-mono font-semibold text-emerald-700 text-right">{formatMoney(unsecuredMax)}</span>
                   </div>
                   <div className="flex justify-between gap-2 text-xs">
-                    <span>Hạn mức áp dụng (theo lựa chọn)</span>
+                    <span>Hạn mức áp dụng</span>
                     <span className="font-mono font-semibold text-emerald-700 text-right">{formatMoney(effectiveMax)}</span>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[11px] text-slate-600">Tài sản thế chấp (tuỳ chọn)</label>
+                  <label className="text-[11px] text-slate-600">Tài sản thế chấp</label>
                   <select
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                     value={loanCollateral}
                     onChange={(e) => setLoanCollateral(e.target.value)}
                   >
-                    <option value="none">Không thế chấp (vay tín chấp)</option>
+                    <option value="none">Không thế chấp</option>
                     {opts.map((o) => (
                       <option key={`${o.kind}:${o.id}`} value={`${o.kind}:${o.id}`} disabled={o.encumbered}>
                         {o.kind === 'company' ? 'Công ty' : 'Bất động sản'}: {o.name} — giá trị {formatMoney(o.value.amount)} — vay tối đa {formatMoney(o.maxLoanAmount.amount)} (LTV {o.ltvPct}%){o.encumbered ? ' [đang thế chấp]' : ''}
@@ -1100,16 +1099,14 @@ export function FinancePage() {
                   />
                 </div>
 
-                <p className="text-[11px] text-slate-500">
-                  Lãi suất ước tính theo Credit Score ({overview.creditScore}) và lãi suất cơ sở {overview.baseRatePct ?? 5}%/năm. Hạn mức áp dụng: {formatMoney(effectiveMax)}.
-                </p>
+                {/* Bỏ giải thích ước tính lãi suất/hạn mức theo yêu cầu */}
               </>
             );
           })()}
 
           {loanPreview ? (
             <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Ước tính khoản vay (như thực tế)</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Ước tính khoản vay</p>
               <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <div className="text-[11px] text-slate-500">Lãi suất dự kiến</div>
@@ -1173,9 +1170,7 @@ export function FinancePage() {
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-1 text-[10px] text-slate-500">
-                  * Ước tính theo công thức trả góp đều (annuity). Lãi suất/khoản trả thực tế do server xác định tại thời điểm giải ngân.
-                </p>
+                {/* Bỏ chú thích lịch trả nợ ước tính theo yêu cầu */}
               </div>
             </div>
           ) : (

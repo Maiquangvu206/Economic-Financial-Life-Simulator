@@ -131,10 +131,7 @@ export function RecruitmentPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Tuyển dụng"
-        description="Bảng tin tuyển dụng từ các công ty. Chủ công ty có thể đăng/đóng/xóa đợt tuyển (mở → đóng → chờ ≥ 1 ngày game → xóa). Nhân vật có thể ứng tuyển nếu đáp ứng yêu cầu và đợt tuyển đang mở."
-      />
+      <PageHeader title="Tuyển dụng" />
 
       <div className="grid gap-4 xl:grid-cols-[1.35fr_0.95fr]">
         <div className="space-y-4">
