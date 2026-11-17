@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@efls/ui';
 import { Panel } from '../shared/ui/Panel';
@@ -149,10 +149,7 @@ export function LawPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Pháp lý, Gia đình & Thuế"
-        description="Tòa án với AI Thẩm phán, hôn nhân, di chúc và kiểm toán thuế. AI chỉ đề xuất; core kiểm tra bằng chứng và luật."
-      />
+      <PageHeader title="Pháp lý, Gia đình & Thuế" />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -182,11 +179,10 @@ export function LawPage() {
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
-              activeTab === tab.key
-                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-                : 'bg-white text-slate-600 hover:bg-slate-50'
-            }`}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${activeTab === tab.key
+              ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+              : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
           >
             {tab.label}
           </button>
@@ -195,16 +191,8 @@ export function LawPage() {
 
       {activeTab === 'court' && (
         <div className="grid gap-4">
-          <Panel title="Cách hoạt động (Tòa án & Bằng chứng)" borderColor="emerald">
-            <div className="space-y-1.5 text-xs text-slate-700 leading-relaxed">
-              <p><b>1. Vụ án được mở</b> khi có cáo buộc/tố giác hoặc vi phạm liên quan đến bạn (bạn có thể là bị cáo hoặc bên liên quan).</p>
-              <p><b>2. Nộp bằng chứng</b>: mỗi lần nộp sẽ <b>cộng dồn</b> độ mạnh vào vụ án (tối đa 100). Mô tả rõ ràng để dễ theo dõi.</p>
-              <p><b>3. Xét xử</b>: <b>chỉ bị cáo</b> mới yêu cầu xét xử. Hệ thống (core) kết luận dựa trên bằng chứng: <b>≥ 60/100</b> → <b>Có tội</b> (tính phạt tiền/tù và ghi án tích, tăng heat), ngược lại → <b>Vô tội</b>. AI chỉ đưa gợi ý, không tự phán quyết.</p>
-            </div>
-          </Panel>
-
           <Panel title="Vụ án của bạn" borderColor="rose">
-            <div className="space-y-3">
+            <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
               {courtCases.length > 0 ? (
                 courtCases.map((c) => {
                   const strength = Number(c.evidenceStrength ?? 0);
@@ -295,7 +283,7 @@ export function LawPage() {
           </Panel>
 
           <Panel title="Án tích hình sự">
-            <div className="space-y-2">
+            <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
               {records.length > 0 ? (
                 records.map((r) => (
                   <div
@@ -316,7 +304,7 @@ export function LawPage() {
             </div>
           </Panel>
 
-          <Panel title="Hợp đồng tống tiền (blackmail)">
+          <Panel title="Hợp đồng tống tiền">
             <div className="space-y-2">
               {blackmails.length > 0 ? (
                 blackmails.map((b) => (
@@ -342,12 +330,12 @@ export function LawPage() {
 
       {activeTab === 'family' && (
         <div className="grid gap-4">
-          <Panel title="Hôn nhân (cần đồng thuận 2 bên)" borderColor="amber">
+          <Panel title="Hôn nhân" borderColor="amber">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-600">Tình trạng hôn nhân</span>
                 <span className="font-semibold">
-                  {social?.maritalStatus ?? 'single'}
+                  {(social?.maritalStatus ?? 'single') === 'married' ? 'Đã kết hôn' : (social?.maritalStatus ?? 'single')}
                   {social?.spouse?.characterName ? ` · Vợ/chồng: ${social.spouse.characterName}` : ''}
                 </span>
               </div>
@@ -361,7 +349,7 @@ export function LawPage() {
                       <div key={p.id} className="flex items-center justify-between gap-2 p-3 rounded-xl border border-amber-200 bg-amber-50/50">
                         <div className="min-w-0">
                           <div className="font-semibold text-slate-800">{p.proposerName} → {p.targetName}</div>
-                          <div className="text-xs text-slate-500">{p.prenupEnabled ? 'Có prenup' : 'Không prenup'} · {incoming ? 'Bạn được cầu hôn' : 'Đang chờ đối phương đồng ý'}</div>
+                          <div className="text-xs text-slate-500">{p.prenupEnabled ? 'Có thỏa thuận tiền hôn nhân' : 'Không thỏa thuận tiền hôn nhân'} · {incoming ? 'Bạn được cầu hôn' : 'Đang chờ đối phương đồng ý'}</div>
                         </div>
                         {incoming ? (
                           <div className="flex gap-2 shrink-0">
@@ -377,40 +365,42 @@ export function LawPage() {
                 </div>
               )}
 
-              {(social?.marriages ?? []).map((m) => (
-                <div key={m.id} className="space-y-2 p-3 rounded-xl border border-slate-200 bg-white/50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-semibold text-slate-800">{m.characterName ?? '—'} ❤ {m.spouseName ?? '—'}</div>
-                      <div className="text-xs text-slate-500">{m.prenupEnabled ? 'Prenup (không tự chia tài sản khi ly hôn)' : 'Không prenup (chia 50/50 tiền mặt + bất động sản khi ly hôn)'} · {m.status ?? '—'}</div>
-                    </div>
-                    {m.status === 'active' && !(social?.divorceProposals ?? []).some((d) => d.marriageId === m.id) && (
-                      <GameButton variant="danger" size="sm" disabled={actionBusy === `divorce-${m.id}`} onClick={() => void handleAction(`divorce-${m.id}`, () => apiRequest('/api/v1/social/marriage/divorce/propose', { method: 'POST', body: JSON.stringify({ marriageId: m.id }) }))}>
-                        Gửi yêu cầu ly hôn
-                      </GameButton>
-                    )}
-                  </div>
-                  {(social?.divorceProposals ?? []).filter((d) => d.marriageId === m.id).map((d) => {
-                    const incoming = myCharId != null && d.otherCharacterId === myCharId;
-                    return (
-                      <div key={d.id} className="flex items-center justify-between gap-2 p-2 rounded-lg border border-rose-200 bg-rose-50/60">
-                        <div className="min-w-0 text-xs">
-                          <div className="font-semibold text-slate-800">Yêu cầu ly hôn: {d.requesterName} → {d.otherName}</div>
-                          <div className="text-slate-500">{incoming ? 'Bạn cần xác nhận đồng ý ly hôn' : 'Đang chờ đối phương đồng ý ly hôn'}</div>
-                        </div>
-                        {incoming ? (
-                          <div className="flex gap-2 shrink-0">
-                            <GameButton variant="danger" size="sm" disabled={actionBusy === `dp-accept-${d.id}`} onClick={() => void handleAction(`dp-accept-${d.id}`, () => apiRequest('/api/v1/social/marriage/divorce/respond', { method: 'POST', body: JSON.stringify({ proposalId: d.id, accept: true }) }))}>Đồng ý ly hôn</GameButton>
-                            <GameButton variant="outline" size="sm" disabled={actionBusy === `dp-reject-${d.id}`} onClick={() => void handleAction(`dp-reject-${d.id}`, () => apiRequest('/api/v1/social/marriage/divorce/respond', { method: 'POST', body: JSON.stringify({ proposalId: d.id, accept: false }) }))}>Từ chối</GameButton>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-rose-700">Chờ phản hồi</span>
-                        )}
+              <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
+                {(social?.marriages ?? []).map((m) => (
+                  <div key={m.id} className="space-y-2 p-3 rounded-xl border border-slate-200 bg-white/50">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-slate-800">{m.characterName ?? '—'} ❤ {m.spouseName ?? '—'}</div>
+                        <div className="text-xs text-slate-500">{m.prenupEnabled ? 'Có thỏa thuận tiền hôn nhân' : 'Không thỏa thuận tiền hôn nhân (chia 50/50 tiền mặt + bất động sản khi ly hôn)'} · {(m.status ?? '') === 'active' ? 'Đang hôn nhân' : (m.status ?? '') === 'divorced' ? 'Đã ly hôn' : (m.status ?? '—')}</div>
                       </div>
-                    );
-                  })}
-                </div>
-              ))}
+                      {m.status === 'active' && !(social?.divorceProposals ?? []).some((d) => d.marriageId === m.id) && (
+                        <GameButton variant="danger" size="sm" disabled={actionBusy === `divorce-${m.id}`} onClick={() => void handleAction(`divorce-${m.id}`, () => apiRequest('/api/v1/social/marriage/divorce/propose', { method: 'POST', body: JSON.stringify({ marriageId: m.id }) }))}>
+                          Gửi yêu cầu ly hôn
+                        </GameButton>
+                      )}
+                    </div>
+                    {(social?.divorceProposals ?? []).filter((d) => d.marriageId === m.id).map((d) => {
+                      const incoming = myCharId != null && d.otherCharacterId === myCharId;
+                      return (
+                        <div key={d.id} className="flex items-center justify-between gap-2 p-2 rounded-lg border border-rose-200 bg-rose-50/60">
+                          <div className="min-w-0 text-xs">
+                            <div className="font-semibold text-slate-800">Yêu cầu ly hôn: {d.requesterName} → {d.otherName}</div>
+                            <div className="text-slate-500">{incoming ? 'Bạn cần xác nhận đồng ý ly hôn' : 'Đang chờ đối phương đồng ý ly hôn'}</div>
+                          </div>
+                          {incoming ? (
+                            <div className="flex gap-2 shrink-0">
+                              <GameButton variant="danger" size="sm" disabled={actionBusy === `dp-accept-${d.id}`} onClick={() => void handleAction(`dp-accept-${d.id}`, () => apiRequest('/api/v1/social/marriage/divorce/respond', { method: 'POST', body: JSON.stringify({ proposalId: d.id, accept: true }) }))}>Đồng ý ly hôn</GameButton>
+                              <GameButton variant="outline" size="sm" disabled={actionBusy === `dp-reject-${d.id}`} onClick={() => void handleAction(`dp-reject-${d.id}`, () => apiRequest('/api/v1/social/marriage/divorce/respond', { method: 'POST', body: JSON.stringify({ proposalId: d.id, accept: false }) }))}>Từ chối</GameButton>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-rose-700">Chờ phản hồi</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
 
               {social?.maritalStatus !== 'married' && (
                 <GameButton variant="primary" onClick={() => setMarryOpen(true)}>
@@ -486,16 +476,12 @@ export function LawPage() {
         <div className="grid gap-4">
           <Panel title="Thuế cá nhân & Kiểm toán" borderColor="emerald">
             <div className="space-y-3">
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-xs text-slate-700">
-                Thuế cá nhân được <b>tự động quyết toán 1 lần/năm</b> dựa trên <b>tổng thu nhập năm từ các công việc đang giữ</b> (lương các việc làm hiện tại, quy ước 12 tháng/năm, thuế suất 10%). <b>Không gộp</b> thuế/kê khai doanh nghiệp. Nếu đủ số dư hệ thống sẽ tự trừ; nếu không đủ sẽ ghi nợ để nộp.
-              </div>
               <div className="grid gap-2 sm:grid-cols-3">
-                <StatCard label="Năm hiện tại" value={tax?.currentYear ?? 0} hint="Quyết toán theo năm" />
-                <StatCard label="Rủi ro audit" value={tax?.auditRisk ?? 0} hint="Trên 60 bị phạt" />
+                <StatCard label="Năm hiện tại" value={tax?.currentYear ?? 0} />
+                <StatCard label="Rủi ro audit" value={tax?.auditRisk ?? 0} />
                 <StatCard
                   label="Tổng nợ thuế"
                   value={formatMoney(tax?.totalDue?.amount ?? 0)}
-                  hint="Chưa nộp"
                 />
               </div>
               <div className="flex gap-2">
@@ -536,127 +522,131 @@ export function LawPage() {
                 </GameButton>
               </div>
 
-              {(tax?.assessments ?? []).map((a) => (
-                <div
-                  key={a.id}
-                  className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-800">Thuế năm {a.taxYear ?? '—'}</div>
-                    <div className="text-xs text-slate-500">
-                      Thu nhập {formatMoney(a.taxableIncome?.amount ?? 0)} · Nợ{' '}
-                      {formatMoney(a.taxDue?.amount ?? 0)} · {a.status ?? '—'}
+              <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
+                {(tax?.assessments ?? []).map((a) => (
+                  <div
+                    key={a.id}
+                    className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
+                  >
+                    <div>
+                      <div className="font-semibold text-slate-800">Thuế năm {a.taxYear ?? '—'}</div>
+                      <div className="text-xs text-slate-500">
+                        Thu nhập {formatMoney(a.taxableIncome?.amount ?? 0)} · Nợ{' '}
+                        {formatMoney(a.taxDue?.amount ?? 0)} · {a.status === 'paid' ? 'Đã nộp' : a.status === 'due' || String(a.status) === 'unpaid' ? 'Chưa nộp' : (a.status ?? '—')}
+                      </div>
                     </div>
+                    {(a.status === 'due' || String(a.status) === 'unpaid') && (
+                      <GameButton
+                        variant="primary"
+                        size="sm"
+                        disabled={actionBusy === `pay-${a.id}`}
+                        onClick={() =>
+                          void handleAction(`pay-${a.id}`, () =>
+                            apiRequest('/api/v1/tax/pay', {
+                              method: 'POST',
+                              body: JSON.stringify({ assessmentId: a.id }),
+                            }),
+                          )
+                        }
+                      >
+                        Nộp thuế
+                      </GameButton>
+                    )}
                   </div>
-                  {a.status === 'due' && (
-                    <GameButton
-                      variant="primary"
-                      size="sm"
-                      disabled={actionBusy === `pay-${a.id}`}
-                      onClick={() =>
-                        void handleAction(`pay-${a.id}`, () =>
-                          apiRequest('/api/v1/tax/pay', {
-                            method: 'POST',
-                            body: JSON.stringify({ assessmentId: a.id }),
-                          }),
-                        )
-                      }
-                    >
-                      Nộp thuế
-                    </GameButton>
-                  )}
-                </div>
-              ))}
-              {(tax?.assessments ?? []).length === 0 && (
-                <div className="text-center py-4 text-xs text-slate-500">
-                  Chưa có khoản thuế nào.
-                </div>
-              )}
+                ))}
+                {(tax?.assessments ?? []).length === 0 && (
+                  <div className="text-center py-4 text-xs text-slate-500">
+                    Chưa có khoản thuế nào.
+                  </div>
+                )}
+              </div>
             </div>
           </Panel>
 
           <Panel title="Giấy phép kinh doanh (của tôi)" borderColor="emerald">
             <div className="space-y-3">
-              <p className="text-xs text-slate-600">Chủ doanh nghiệp tự cấp/xin cấp giấy phép cho công ty mình (lệ phí {formatMoney(5000000)} trừ từ ví cá nhân). Công ty cần có giấy phép hoạt động để vận hành hợp lệ.</p>
               {(tax?.ownedCompanyLicenses ?? []).length > 0 ? (
-                (tax?.ownedCompanyLicenses ?? []).map((c) => (
-                  <div key={c.companyId} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-slate-800">{c.companyName}</div>
-                      <div className="text-xs text-slate-500">
-                        {c.hasActiveLicense ? `Đang hoạt động · ${c.licenseType ?? 'Giấy phép'}${c.issuedAt ? ` · cấp ${new Date(c.issuedAt).toLocaleDateString('vi-VN')}` : ''}` : 'Chưa có giấy phép hoạt động'}
+                <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
+                  {(tax?.ownedCompanyLicenses ?? []).map((c) => (
+                    <div key={c.companyId} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-800">{c.companyName}</div>
+                        <div className="text-xs text-slate-500">
+                          {c.hasActiveLicense ? `Đang hoạt động · ${c.licenseType ?? 'Giấy phép kinh doanh'}` : 'Chưa có giấy phép hoạt động'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {c.hasActiveLicense && c.licenseId ? (
+                          <GameButton
+                            variant="danger"
+                            size="sm"
+                            disabled={actionBusy === `revoke-${c.licenseId}`}
+                            onClick={() =>
+                              void handleAction(`revoke-${c.licenseId}`, () =>
+                                apiRequest('/api/v1/tax/licenses/revoke', {
+                                  method: 'POST',
+                                  body: JSON.stringify({ licenseId: c.licenseId }),
+                                }),
+                              )
+                            }
+                          >
+                            Hủy giấy phép
+                          </GameButton>
+                        ) : (
+                          <GameButton
+                            variant="primary"
+                            size="sm"
+                            disabled={actionBusy === `issue-${c.companyId}`}
+                            onClick={() =>
+                              void handleAction(`issue-${c.companyId}`, () =>
+                                apiRequest('/api/v1/tax/licenses/issue', {
+                                  method: 'POST',
+                                  body: JSON.stringify({ companyId: c.companyId }),
+                                }),
+                              )
+                            }
+                          >
+                            Cấp giấy phép
+                          </GameButton>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {c.hasActiveLicense && c.licenseId ? (
-                        <GameButton
-                          variant="danger"
-                          size="sm"
-                          disabled={actionBusy === `revoke-${c.licenseId}`}
-                          onClick={() =>
-                            void handleAction(`revoke-${c.licenseId}`, () =>
-                              apiRequest('/api/v1/tax/licenses/revoke', {
-                                method: 'POST',
-                                body: JSON.stringify({ licenseId: c.licenseId }),
-                              }),
-                            )
-                          }
-                        >
-                          Hủy giấy phép
-                        </GameButton>
-                      ) : (
-                        <GameButton
-                          variant="primary"
-                          size="sm"
-                          disabled={actionBusy === `issue-${c.companyId}`}
-                          onClick={() =>
-                            void handleAction(`issue-${c.companyId}`, () =>
-                              apiRequest('/api/v1/tax/licenses/issue', {
-                                method: 'POST',
-                                body: JSON.stringify({ companyId: c.companyId }),
-                              }),
-                            )
-                          }
-                        >
-                          Cấp giấy phép
-                        </GameButton>
-                      )}
-                    </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               ) : (
                 <div className="text-center py-4 text-xs text-slate-500">Bạn chưa sở hữu công ty nào.</div>
               )}
             </div>
           </Panel>
 
-          <Panel title="Công ty chưa có giấy phép (phát hiện & tố cáo)" borderColor="amber">
+          <Panel title="Công ty chưa có giấy phép" borderColor="amber">
             <div className="space-y-3">
-              <p className="text-xs text-slate-600">Danh sách công ty đang hoạt động nhưng chưa có giấy phép. Người chơi có thể tố cáo: hệ thống sẽ mở vụ án "Kinh doanh không giấy phép" đối với chủ công ty, tăng heat và xử phạt từ quỹ công ty (nếu có).</p>
               {(tax?.unlicensedCompanies ?? []).length > 0 ? (
-                (tax?.unlicensedCompanies ?? []).map((c) => (
-                  <div key={c.companyId} className="flex items-center justify-between p-3 rounded-xl border border-amber-200 bg-amber-50/50">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-slate-800">{c.companyName}</div>
-                      <div className="text-xs text-slate-500">Chủ: {c.ownerName} · Chưa có giấy phép hoạt động</div>
+                <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
+                  {(tax?.unlicensedCompanies ?? []).map((c) => (
+                    <div key={c.companyId} className="flex items-center justify-between p-3 rounded-xl border border-amber-200 bg-amber-50/50">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-800">{c.companyName}</div>
+                        <div className="text-xs text-slate-500">Chủ: {c.ownerName} · Chưa có giấy phép hoạt động</div>
+                      </div>
+                      <GameButton
+                        variant="outline"
+                        size="sm"
+                        disabled={actionBusy === `report-co-${c.companyId}`}
+                        onClick={() =>
+                          void handleAction(`report-co-${c.companyId}`, () =>
+                            apiRequest('/api/v1/tax/licenses/report-unlicensed', {
+                              method: 'POST',
+                              body: JSON.stringify({ companyId: c.companyId, reason: `Kinh doanh không có giấy phép (${c.companyName})` }),
+                            }),
+                          )
+                        }
+                      >
+                        Tố cáo
+                      </GameButton>
                     </div>
-                    <GameButton
-                      variant="outline"
-                      size="sm"
-                      disabled={actionBusy === `report-co-${c.companyId}`}
-                      onClick={() =>
-                        void handleAction(`report-co-${c.companyId}`, () =>
-                          apiRequest('/api/v1/tax/licenses/report-unlicensed', {
-                            method: 'POST',
-                            body: JSON.stringify({ companyId: c.companyId, reason: `Kinh doanh không có giấy phép (${c.companyName})` }),
-                          }),
-                        )
-                      }
-                    >
-                      Tố cáo
-                    </GameButton>
-                  </div>
-                ))
+                  ))}
+                </div>
               ) : (
                 <div className="text-center py-4 text-xs text-slate-500">Không phát hiện công ty thiếu giấy phép.</div>
               )}
@@ -734,14 +724,14 @@ export function LawPage() {
           </label>
           <GameButton
             variant="primary"
-            disabled={actionBusy === 'marry' || spouseCccd.replace(/\s+/g,'').length !== 12}
+            disabled={actionBusy === 'marry' || spouseCccd.replace(/\s+/g, '').length !== 12}
             onClick={() =>
               void handleAction(
                 'marry',
                 () =>
                   apiRequest('/api/v1/social/marriage/propose', {
                     method: 'POST',
-                    body: JSON.stringify({ spouseCccd: spouseCccd.replace(/\s+/g,''), prenupEnabled: prenup }),
+                    body: JSON.stringify({ spouseCccd: spouseCccd.replace(/\s+/g, ''), prenupEnabled: prenup }),
                   }),
                 () => { setMarryOpen(false); setSpouseCccd(''); setPrenup(false); },
               )
@@ -798,9 +788,9 @@ export function LawPage() {
                     method: 'POST',
                     body: JSON.stringify({
                       heirs: willHeirs
-                        .filter((h) => h.beneficiaryCccd.replace(/\s+/g,'') !== '')
+                        .filter((h) => h.beneficiaryCccd.replace(/\s+/g, '') !== '')
                         .map((h) => ({
-                          beneficiaryCccd: h.beneficiaryCccd.replace(/\s+/g,''),
+                          beneficiaryCccd: h.beneficiaryCccd.replace(/\s+/g, ''),
                           sharePct: Number(h.sharePct) || 0,
                           relationship: h.relationship || 'Người thừa kế',
                           note: h.note?.trim() ? h.note.trim() : null,
@@ -872,7 +862,7 @@ export function LawPage() {
                 () =>
                   apiRequest('/api/v1/tax/report', {
                     method: 'POST',
-                    body: JSON.stringify({ targetCccd: reportTargetCccd.replace(/\s+/g,''), reason: reportReason }),
+                    body: JSON.stringify({ targetCccd: reportTargetCccd.replace(/\s+/g, ''), reason: reportReason }),
                   }),
                 () => setReportOpen(false),
               )

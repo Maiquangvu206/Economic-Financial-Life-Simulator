@@ -796,20 +796,37 @@ export function FinancePage() {
             {accountHistory.map((h) => {
               const delta = Number(h.delta?.amount ?? 0);
               const incoming = delta >= 0;
+              const desc = String(h.description || '').trim();
+              const historyTitle = (() => {
+                if (/^Savings withdrawal/i.test(desc)) return 'Rút tiền tiết kiệm';
+                if (/^Savings deposit/i.test(desc)) {
+                  const m = desc.match(/\bterm\s+(\d+)m\b/i);
+                  const term = m ? Number(m[1] || 0) : NaN;
+                  if (!Number.isNaN(term)) return `Gửi tiết kiệm (${term > 0 ? `Kỳ hạn ${term} tháng` : 'Không kỳ hạn'})`;
+                  return 'Gửi tiết kiệm';
+                }
+                if (h.kind === 'auction_bid') return 'Đấu giá đất';
+                if (h.kind === 'mayor_salary') return 'Phụ cấp Thị trưởng';
+                // fallback: strip UUID-like tokens from raw description
+                return desc.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '').replace(/\s{2,}/g, ' ').trim() || (h.kind === 'savings_deposit' ? 'Gửi tiết kiệm' : h.kind === 'savings_withdrawal' ? 'Rút tiền tiết kiệm' : 'Biến động tài khoản');
+              })();
+              const kindRefLabel = (() => {
+                if (h.kind === 'auction_bid' || h.referenceType === 'province_land_auction') return 'Loại: Đấu giá đất · Nguồn: Đấu giá đất tỉnh/thành';
+                if (h.kind === 'savings_withdrawal' || h.kind === 'savings_deposit' || h.referenceType === 'savings_deposit') return h.kind === 'savings_withdrawal' ? 'Loại: Rút tiết kiệm · Nguồn: Sổ tiết kiệm' : 'Loại: Gửi tiết kiệm · Nguồn: Sổ tiết kiệm';
+                if (h.kind === 'mayor_salary' || h.referenceType === 'election') return 'Loại: Phụ cấp Thị trưởng · Nguồn: Nhiệm kỳ Thị trưởng';
+                return `Loại: ${h.kind}${h.referenceType ? ` · Nguồn: ${h.referenceType}` : ''}`;
+              })();
               return (
                 <div key={h.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 text-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-slate-800 truncate">{h.description || h.kind}</p>
+                        <p className="font-medium text-slate-800 truncate">{historyTitle}</p>
                         <Badge variant={h.accountKind === 'savings' ? 'warning' : 'default'}>
                           {h.accountKind === 'savings' ? 'Tiết kiệm' : 'Tiền mặt'}
                         </Badge>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Loại: <span className="font-mono">{h.kind}</span>
-                        {h.referenceType ? <> · Ref: <span className="font-mono">{h.referenceType}</span></> : null}
-                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{kindRefLabel}</p>
                       <p className="text-[11px] text-slate-500">{fmtDateTime(h.createdAt)}</p>
                     </div>
                     <div className="text-right shrink-0">

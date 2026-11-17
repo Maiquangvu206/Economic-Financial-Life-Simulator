@@ -321,40 +321,42 @@ export function UnderworldPage() {
               <GameButton variant="danger" onClick={() => setBlackmailOpen(true)}>
                 Mở hợp đồng tống tiền mới
               </GameButton>
-              {blackmails.map((b) => (
-                <div
-                  key={b.id}
-                  className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-800">{b.targetName ?? 'Mục tiêu'}</div>
-                    <div className="text-xs text-slate-500">
-                      {formatMoney(b.monthlyPayment?.amount ?? 0)}/tháng · {b.status ?? '—'}
+              <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
+                {blackmails.map((b) => (
+                  <div
+                    key={b.id}
+                    className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
+                  >
+                    <div>
+                      <div className="font-semibold text-slate-800">{b.targetName ?? 'Mục tiêu'}</div>
+                      <div className="text-xs text-slate-500">
+                        {formatMoney(b.monthlyPayment?.amount ?? 0)}/tháng · {b.status ?? '—'}
+                      </div>
                     </div>
+                    {b.status === 'active' && (
+                      <GameButton
+                        variant="primary"
+                        size="sm"
+                        disabled={busy === `collect-${b.id}`}
+                        onClick={() =>
+                          void handleAction(`collect-${b.id}`, () =>
+                            apiRequest(`/api/v1/underworld/blackmail/${b.id}/collect`, {
+                              method: 'POST',
+                            }),
+                          )
+                        }
+                      >
+                        Thu tiền tháng này
+                      </GameButton>
+                    )}
                   </div>
-                  {b.status === 'active' && (
-                    <GameButton
-                      variant="primary"
-                      size="sm"
-                      disabled={busy === `collect-${b.id}`}
-                      onClick={() =>
-                        void handleAction(`collect-${b.id}`, () =>
-                          apiRequest(`/api/v1/underworld/blackmail/${b.id}/collect`, {
-                            method: 'POST',
-                          }),
-                        )
-                      }
-                    >
-                      Thu tiền tháng này
-                    </GameButton>
-                  )}
-                </div>
-              ))}
-              {blackmails.length === 0 && (
-                <div className="text-center py-4 text-xs text-slate-500">
-                  Chưa có hợp đồng tống tiền nào.
-                </div>
-              )}
+                ))}
+                {blackmails.length === 0 && (
+                  <div className="text-center py-4 text-xs text-slate-500">
+                    Chưa có hợp đồng tống tiền nào.
+                  </div>
+                )}
+              </div>
             </div>
           </Panel>
 

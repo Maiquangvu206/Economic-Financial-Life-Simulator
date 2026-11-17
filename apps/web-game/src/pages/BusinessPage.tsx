@@ -693,9 +693,6 @@ export function BusinessPage() {
             <div className="flex items-start justify-between gap-2">
               <div>
                 <label className="text-[11px] uppercase tracking-wider text-slate-600">Địa điểm / cơ sở công ty (bắt buộc)</label>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Chọn <b>đất nền đang sở hữu</b> (bao gồm đất trống hoặc trụ sở đã hợp thửa ≥ 2 ô liền nhau và xây dựng “Công ty”) hoặc chọn <b>bất động sản đã xây dựng thuộc công ty khác</b> để đặt trụ sở.
-                </p>
               </div>
               <div className="flex flex-wrap justify-end gap-1.5 shrink-0">
                 <button type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ['corporations', 'premises-options'] })} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Làm mới</button>
@@ -737,9 +734,7 @@ export function BusinessPage() {
                     )}
                   </optgroup>
                 </select>
-                <div className="text-[11px] text-slate-500">
-                  Bao gồm: đất nền trống đang sở hữu và <b>ô đất hợp thửa từ 2 ô liền nhau trở lên đã xây dựng “Công ty (trụ sở)”</b> (tại Thành phố/Bản đồ) hoặc bất động sản đã xây dựng thuộc công ty khác.
-                </div>
+
                 {premisesKey && (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-[11px] text-emerald-800">
                     Đã chọn: <b>{(() => {
@@ -759,9 +754,6 @@ export function BusinessPage() {
             )}
           </div>
 
-          <p className="text-[11px] text-slate-500">
-            Vốn sẽ được trừ từ ví cá nhân của bạn khi thành lập.
-          </p>
           <div className="flex justify-end">
             <GameButton
               variant="primary"
