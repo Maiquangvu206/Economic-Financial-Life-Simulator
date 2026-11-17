@@ -168,30 +168,35 @@ export function createRealtimeServer(): {
         ackCb?.(ackOf(false, 'rate_limited', parsed.data.clientMsgId));
         return;
       }
-      const msg: ChatMessage = {
-        id: randomUUID(),
-        clientMsgId: parsed.data.clientMsgId,
-        channel: 'global',
-        senderId: actor.userId,
-        senderName: actor.displayName,
-        senderRole: actor.role,
-        receiverId: null,
-        content: parsed.data.content.trim(),
-        createdAt: new Date().toISOString(),
-      };
-      await persistMessage(msg);
-      // phát tới phòng chat tổng
-      io.to(Rooms.chat('global')).emit('chat:global', msg);
-      // legacy compatibility
-      io.to(Rooms.chat('global')).emit('chat:message', {
-        channelId: 'global',
-        characterId: actor.userId,
-        displayName: actor.displayName,
-        message: msg.content,
-        at: Date.parse(msg.createdAt),
-        clientMsgId: msg.clientMsgId,
-      });
-      ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
+      try {
+        const msg: ChatMessage = {
+          id: randomUUID(),
+          clientMsgId: parsed.data.clientMsgId,
+          channel: 'global',
+          senderId: actor.userId,
+          senderName: actor.displayName,
+          senderRole: actor.role,
+          receiverId: null,
+          content: parsed.data.content.trim(),
+          createdAt: new Date().toISOString(),
+        };
+        await persistMessage(msg);
+        // phát tới phòng chat tổng
+        io.to(Rooms.chat('global')).emit('chat:global', msg);
+        // legacy compatibility
+        io.to(Rooms.chat('global')).emit('chat:message', {
+          channelId: 'global',
+          characterId: actor.userId,
+          displayName: actor.displayName,
+          message: msg.content,
+          at: Date.parse(msg.createdAt),
+          clientMsgId: msg.clientMsgId,
+        });
+        ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
+      } catch (err) {
+        console.error('[realtime] chat:global failed', err);
+        ackCb?.(ackOf(false, 'Không gửi được tin nhắn. Vui lòng thử lại.', parsed.data.clientMsgId));
+      }
     });
 
     // New: chat:private
@@ -211,65 +216,70 @@ export function createRealtimeServer(): {
         ackCb?.(ackOf(false, 'rate_limited', clientMsgId));
         return;
       }
-      const msg: ChatMessage = {
-        id: randomUUID(),
-        clientMsgId,
-        channel: 'private',
-        senderId: actor.userId,
-        senderName: actor.displayName,
-        senderRole: actor.role,
-        receiverId,
-        content: content.trim(),
-        createdAt: new Date().toISOString(),
-      };
-      await persistMessage(msg);
-      // Chỉ emit tới room của người nhận (và tương thích room cũ)
-      io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:private', msg);
-      // legacy compatibility cho người nhận
-      io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:message', {
-        channelId: `private:${receiverId}`,
-        characterId: actor.userId,
-        displayName: actor.displayName,
-        message: msg.content,
-        at: Date.parse(msg.createdAt),
-        toCharacterId: receiverId,
-        fromPrivate: true,
-        clientMsgId: msg.clientMsgId,
-      });
-      // ACK/xác nhận lại cho người gửi (kèm clientMsgId để đối chiếu)
-      ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
+      try {
+        const msg: ChatMessage = {
+          id: randomUUID(),
+          clientMsgId,
+          channel: 'private',
+          senderId: actor.userId,
+          senderName: actor.displayName,
+          senderRole: actor.role,
+          receiverId,
+          content: content.trim(),
+          createdAt: new Date().toISOString(),
+        };
+        await persistMessage(msg);
+        // Chỉ emit tới room của người nhận (và tương thích room cũ)
+        io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:private', msg);
+        // legacy compatibility cho người nhận
+        io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:message', {
+          channelId: `private:${receiverId}`,
+          characterId: actor.userId,
+          displayName: actor.displayName,
+          message: msg.content,
+          at: Date.parse(msg.createdAt),
+          toCharacterId: receiverId,
+          fromPrivate: true,
+          clientMsgId: msg.clientMsgId,
+        });
+        // ACK/xác nhận lại cho người gửi (kèm clientMsgId để đối chiếu)
+        ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
+      } catch (err) {
+        console.error('[realtime] chat:private failed', err);
+        ackCb?.(ackOf(false, 'Không gửi được tin nhắn. Vui lòng thử lại.', clientMsgId));
+      }
     });
 
     // Legacy: chat:send
     socket.on('chat:send', async (payload, ackCb) => {
-      const { channelId, message, clientMsgId } = payload || ({} as any);
-      if (typeof channelId !== 'string' || typeof message !== 'string' || !message.trim()) {
-        ackCb?.(ackOf(false, 'invalid'));
-        return;
-      }
-      if (channelId.startsWith('private:')) {
-        const receiverId = channelId.slice('private:'.length);
-        // delegate
-        socket.emit as any; // noop
-        const fake = { receiverId, content: message, clientMsgId } as any;
-        // inline handle
-        if (!UUID_RE.test(receiverId) || receiverId === actor.userId) { ackCb?.(ackOf(false, 'invalid')); return; }
+      try {
+        const { channelId, message, clientMsgId } = payload || ({} as any);
+        if (typeof channelId !== 'string' || typeof message !== 'string' || !message.trim()) {
+          ackCb?.(ackOf(false, 'invalid'));
+          return;
+        }
+        if (channelId.startsWith('private:')) {
+          const receiverId = channelId.slice('private:'.length);
+          if (!UUID_RE.test(receiverId) || receiverId === actor.userId) { ackCb?.(ackOf(false, 'invalid')); return; }
+          if (!allowChat(socket.id)) { socket.emit('chat:rate_limited', { message: 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' }); ackCb?.(ackOf(false, 'rate_limited', clientMsgId)); return; }
+          const msg: ChatMessage = { id: randomUUID(), clientMsgId, channel: 'private', senderId: actor.userId, senderName: actor.displayName, senderRole: actor.role, receiverId, content: message.trim(), createdAt: new Date().toISOString() };
+          await persistMessage(msg);
+          io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:private', msg);
+          io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:message', { channelId, characterId: actor.userId, displayName: actor.displayName, message: msg.content, at: Date.parse(msg.createdAt), toCharacterId: receiverId, fromPrivate: true, clientMsgId });
+          ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
+          return;
+        }
+        // public/global
         if (!allowChat(socket.id)) { socket.emit('chat:rate_limited', { message: 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' }); ackCb?.(ackOf(false, 'rate_limited', clientMsgId)); return; }
-        const msg: ChatMessage = { id: randomUUID(), clientMsgId, channel: 'private', senderId: actor.userId, senderName: actor.displayName, senderRole: actor.role, receiverId, content: message.trim(), createdAt: new Date().toISOString() };
+        const msg: ChatMessage = { id: randomUUID(), clientMsgId, channel: 'global', senderId: actor.userId, senderName: actor.displayName, senderRole: actor.role, receiverId: null, content: message.trim(), createdAt: new Date().toISOString() };
         await persistMessage(msg);
-        io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:private', msg);
-        io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:message', { channelId, characterId: actor.userId, displayName: actor.displayName, message: msg.content, at: Date.parse(msg.createdAt), toCharacterId: receiverId, fromPrivate: true, clientMsgId });
+        io.to(Rooms.chat(channelId)).emit('chat:global', msg);
+        io.to(Rooms.chat(channelId)).emit('chat:message', { channelId, characterId: actor.userId, displayName: actor.displayName, message: msg.content, at: Date.parse(msg.createdAt), clientMsgId });
         ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
-        return;
+      } catch (err) {
+        console.error('[realtime] chat:send failed', err);
+        ackCb?.(ackOf(false, 'Không gửi được tin nhắn. Vui lòng thử lại.', (payload as any)?.clientMsgId));
       }
-      // public/global
-      if (!allowChat(socket.id)) { socket.emit('chat:rate_limited', { message: 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' }); ackCb?.(ackOf(false, 'rate_limited', clientMsgId)); return; }
-      const chan = channelId === 'global' || channelId === 'hcmc' ? 'global' : channelId;
-      const msg: ChatMessage = { id: randomUUID(), clientMsgId, channel: 'global', senderId: actor.userId, senderName: actor.displayName, senderRole: actor.role, receiverId: null, content: message.trim(), createdAt: new Date().toISOString() };
-      await persistMessage(msg);
-      io.to(Rooms.chat(channelId)).emit('chat:global', msg);
-      io.to(Rooms.chat(channelId)).emit('chat:message', { channelId, characterId: actor.userId, displayName: actor.displayName, message: msg.content, at: Date.parse(msg.createdAt), clientMsgId });
-      ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
     });
 
     socket.on('court:statement', (payload) => {

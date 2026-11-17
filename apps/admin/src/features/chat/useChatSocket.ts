@@ -124,7 +124,17 @@ export function useChatSocket() {
     const clientMsgId = uuid();
     const optimistic: UiChatMessage = { id: `tmp-${clientMsgId}`, clientMsgId, channel: 'global', senderId: myUserIdRef.current, senderName: '', senderRole: '', receiverId: null, content: text, createdAt: new Date().toISOString(), localStatus: 'sending' };
     upsertMessage(optimistic);
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      upsertMessage({ ...optimistic, localStatus: 'error' });
+      pushAdminToast({ variant: 'error', title: 'Chat', description: 'Gửi tin nhắn quá thời gian chờ. Vui lòng kiểm tra kết nối.' });
+    }, 10_000);
     socket.emit('chat:global', { content: text, clientMsgId } as any, (ack: ChatAck) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
       if (ack && ack.ok) upsertMessage({ ...optimistic, id: ack.id, createdAt: ack.createdAt, localStatus: 'sent' });
       else { upsertMessage({ ...optimistic, localStatus: 'error' }); pushAdminToast({ variant: 'error', title: 'Chat', description: (ack as any)?.error === 'rate_limited' ? 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' : 'Không gửi được tin nhắn.' }); }
     });
@@ -137,7 +147,17 @@ export function useChatSocket() {
     const clientMsgId = uuid();
     const optimistic: UiChatMessage = { id: `tmp-${clientMsgId}`, clientMsgId, channel: 'private', senderId: myUserIdRef.current, senderName: '', senderRole: '', receiverId, content: text, createdAt: new Date().toISOString(), localStatus: 'sending' };
     upsertMessage(optimistic);
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      upsertMessage({ ...optimistic, localStatus: 'error' });
+      pushAdminToast({ variant: 'error', title: 'Chat', description: 'Gửi tin nhắn quá thời gian chờ. Vui lòng kiểm tra kết nối.' });
+    }, 10_000);
     socket.emit('chat:private', { receiverId, content: text, clientMsgId } as any, (ack: ChatAck) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
       if (ack && ack.ok) { upsertMessage({ ...optimistic, id: ack.id, createdAt: ack.createdAt, localStatus: 'sent' }); void adminRequest('/api/v1/chat/conversations/read', { method: 'POST', body: JSON.stringify({ peerUserId: receiverId }) }).catch(() => {}); }
       else { upsertMessage({ ...optimistic, localStatus: 'error' }); pushAdminToast({ variant: 'error', title: 'Chat', description: (ack as any)?.error === 'rate_limited' ? 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' : 'Không gửi được tin nhắn.' }); }
     });

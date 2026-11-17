@@ -180,7 +180,17 @@ export function useChatSocket() {
       localStatus: 'sending',
     };
     upsertMessage(optimistic);
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      upsertMessage({ ...optimistic, localStatus: 'error' });
+      pushToast({ variant: 'error', title: 'Chat', description: 'Gửi tin nhắn quá thời gian chờ. Vui lòng kiểm tra kết nối.' });
+    }, 10_000);
     socket.emit('chat:global', { content: text, clientMsgId } as any, (ack: ChatAck) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
       if (ack && ack.ok) {
         upsertMessage({ ...optimistic, id: ack.id, createdAt: ack.createdAt, localStatus: 'sent' });
       } else {
@@ -213,7 +223,17 @@ export function useChatSocket() {
       localStatus: 'sending',
     };
     upsertMessage(optimistic);
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      upsertMessage({ ...optimistic, localStatus: 'error' });
+      pushToast({ variant: 'error', title: 'Chat', description: 'Gửi tin nhắn quá thời gian chờ. Vui lòng kiểm tra kết nối.' });
+    }, 10_000);
     socket.emit('chat:private', { receiverId, content: text, clientMsgId } as any, (ack: ChatAck) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
       if (ack && ack.ok) {
         upsertMessage({ ...optimistic, id: ack.id, createdAt: ack.createdAt, localStatus: 'sent' });
         void apiRequest('/api/v1/chat/conversations/read', { method: 'POST', body: JSON.stringify({ peerUserId: receiverId }) }).catch(() => {});
