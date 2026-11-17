@@ -1,6 +1,6 @@
 # EFLS deployment readiness
 
-**Assessment date:** 2026-11-17  
+**Assessment date:** 2026-11-18
 **Target:** Ubuntu 26.04.1 LTS, self-hosted GitHub Actions runner as `mq`,
 `/srv/apps/project-1`, Docker Compose v2, Tailscale Serve.
 
@@ -13,11 +13,18 @@
   Nginx is reachable, on loopback port 3000 in the shared Tailscale network
   namespace. The external Docker network `ai-net` is required.
 - `.github/workflows/deploy.yml` runs on the self-hosted runner, pulls `main`
-  in `/srv/apps/project-1`, validates Compose config, builds, and starts the
-  stack. Configure GitHub branch protection so CI must pass before merges to
-  `main`; this deploy job itself is not gated on CI.
+  in `/srv/apps/project-1`, rejects edits/deletions of existing migrations,
+  validates Compose config, takes and validates a PostgreSQL dump, explicitly
+  runs migrations, builds, and starts the stack. Configure GitHub branch
+  protection so CI must pass before merges to `main`; this deploy job itself
+  is not gated on CI.
 - `.env` and `ts-config/serve.json` are host-only and excluded from Git/build
   context. The Tailscale state uses a named persistent volume.
+- PostgreSQL/Redis/Tailscale volumes use fixed names; pre-deploy PostgreSQL
+  backups are stored under `/srv/backups/project-1/postgres` for 30 days.
+- Each deploy rejects edits/deletions of existing migration files, creates a
+  verified database dump, then explicitly runs the migration command before
+  replacing application containers.
 
 ## Checks in this workspace
 
@@ -36,18 +43,21 @@ results need a fresh run against the current branch before deployment. The
 existing `CI` workflow runs separately; the deploy workflow will run when code
 reaches `main` unless branch protection is configured.
 
-## Server setup still required
+## Before enabling the data-safe update workflow
 
-1. Create `/srv/apps/project-1/.env` with unique secrets and a real Tailscale
-   auth key; set its mode to `0600`.
-2. Configure `/srv/apps/project-1/ts-config/serve.json` with Tailscale Serve
-   proxying HTTPS to `http://127.0.0.1:3000`.
-3. Ensure external Docker network `ai-net` exists.
-4. Ensure the runner runs as `mq` and the server checkout can `git pull --ff-only
-origin main` without interaction.
-5. Back up production data before the first migrations and confirm disk/RAM
-   capacity for building the Node and AI images on the server.
-6. After deploy, verify container health, HTTPS player/admin URLs, API routes,
+1. Commit and push the workflow, backup script, and stable volume names to
+   `main`; they are changes in this workspace until pushed.
+2. Confirm the server currently uses the volume names
+   `project-1_postgres-data`, `project-1_redis-data`, and
+   `project-1_tailscale-state`. Compose now uses project name `efls` but pins
+   these volume names to preserve the deployed data; the workflow migrates and
+   stops the previous Compose project before starting `efls`.
+3. Configure GitHub branch protection to require passing CI before merges to
+   `main`.
+4. After the first guarded deploy, verify a dated dump and checksum exist under
+   `/srv/backups/project-1/postgres`; copy backups off-host on a separate
+   schedule.
+5. Verify container health, HTTPS player/admin URLs, API routes,
    Socket.IO/WebSocket behavior, and a read-only login flow from an authorized
    tailnet device.
 
@@ -55,4 +65,5 @@ If the older `infra/docker/docker-compose.yml` stack has production database
 data, migrate it intentionally: the new `project-1` Compose project uses its
 own named volumes and will start with a separate database by default.
 
-No production host was accessed and no production deployment was started.
+The user reports that production deployment succeeded. The host has not been
+accessed or independently verified in this workspace.

@@ -22,7 +22,28 @@ jobs:
         run: |
           set -euo pipefail
           cd /srv/apps/project-1
+          previous_revision="$(git rev-parse HEAD)"
+          previous_project="$(docker compose config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')"
           git pull --ff-only origin main
+
+          if ! git diff --name-status "$previous_revision" HEAD -- infra/db/migrations \
+            | awk '
+              $1 == "A" { next }
+              $1 == "M" && $2 == "infra/db/migrations/0060_recruitment_job_posting_lifecycle.sql" { next }
+              { print; invalid = 1 }
+              END { exit invalid }
+            '; then
+            echo "Only add new migration files; do not edit or delete migrations already present on main."
+            exit 1
+          fi
+
           docker compose config --quiet
+          target_project="$(docker compose config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')"
+          DEPLOY_DB_COMPOSE_PROJECT="$previous_project" bash scripts/backup-production-db.sh
+          docker compose build
+          docker compose -p "$previous_project" run --rm migrate
+          if [[ "$previous_project" != "$target_project" ]]; then
+            docker compose -p "$previous_project" down
+          fi
           docker compose up -d --build
           docker compose ps

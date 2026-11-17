@@ -22,9 +22,10 @@ const auctionSweep = setInterval(() => {
 }, 60_000);
 auctionSweep.unref();
 
-// AI tự động đánh giá/kích hoạt Đại án theo chu kỳ (admin vẫn có thể can thiệp thủ công).
-const AI_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+// AI tự động đánh giá Đại án mỗi 3 giờ thực tế, độc lập với thời gian trong game.
+const AI_SWEEP_INTERVAL_MS = env.AI_SWEEP_INTERVAL_MS;
 let aiSweepRunning = false;
+logger.info({ intervalMs: AI_SWEEP_INTERVAL_MS }, 'AI sweep evaluation scheduled');
 const aiSweepTimer = setInterval(() => {
   if (aiSweepRunning) return;
   aiSweepRunning = true;

@@ -1,4 +1,4 @@
-name: project-1
+name: efls
 
 x-logging: &default-logging
   driver: json-file
@@ -130,6 +130,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-efls}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-efls}
       REDIS_URL: redis://redis:6379
       REALTIME_CHANNEL: ${REALTIME_CHANNEL:-efls:realtime}
+      AI_SWEEP_INTERVAL_MS: ${AI_SWEEP_INTERVAL_MS:-10800000}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
     healthcheck:
@@ -282,8 +283,11 @@ services:
 
 volumes:
   postgres-data:
+    name: project-1_postgres-data
   redis-data:
+    name: project-1_redis-data
   tailscale-state:
+    name: project-1_tailscale-state
 
 networks:
   app-net:
