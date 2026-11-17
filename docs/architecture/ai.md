@@ -30,7 +30,9 @@ ai/
 
 `LLMProvider.complete_json(task, system_prompt, user_prompt) -> dict`
 
-- `fake`: deterministic, dùng cho dev/test/CI, không gọi mạng.
+- `fake`: deterministic, dùng cho dev/test/CI, không gọi mạng; trong cấu hình production chỉ nên đặt cuối failover chain.
+- `router`: thử provider có credential theo đúng thứ tự cấu hình (mặc định `gemini,openai,fake`); không luân phiên bắt đầu từ provider khác.
+- Nếu cấu hình cũ vẫn đặt `LLM_PROVIDER=fake` nhưng có API credential, registry ưu tiên router để tránh vô tình chạy giả lập.
 - `openai`, `gemini`: HTTP client có timeout, phân loại lỗi retryable.
 - Registry chọn theo `LLM_PROVIDER`.
 - Không để SDK vendor rò rỉ vào domain/service.

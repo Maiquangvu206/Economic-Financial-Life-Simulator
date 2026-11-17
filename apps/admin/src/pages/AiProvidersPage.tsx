@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminRequest } from '../shared/api/httpClient';
 
 type ProviderKind = 'gemini' | 'openai';
-type UiMode = 'fake' | 'rotate' | 'priority';
+type UiMode = 'fake' | 'priority';
 
 type OpenAiEndpointCfg = { name?: string; baseUrl: string; apiKey: string; model: string; enabled?: boolean };
 type GeminiKeyCfg = { key: string; name?: string; enabled?: boolean };
@@ -63,7 +63,7 @@ type AiStatus = {
 };
 
 const DEFAULT_CONFIG: AiConfig = {
-  provider: 'fake',
+  provider: 'router',
   failoverChain: 'gemini,openai,fake',
   cooldownSec: 60,
   timeoutMs: 15000,
@@ -87,7 +87,7 @@ function maskKey(key: string): string {
 
 function modeFromProvider(provider: string): UiMode {
   if (provider === 'fake') return 'fake';
-  if (provider === 'router' || provider === 'failover' || provider === 'auto') return 'rotate';
+  if (provider === 'router' || provider === 'failover' || provider === 'auto') return 'priority';
   // legacy single providers -> treat as priority-like explicit choice
   return 'priority';
 }
@@ -95,6 +95,17 @@ function modeFromProvider(provider: string): UiMode {
 function providerFromMode(mode: UiMode): string {
   if (mode === 'fake') return 'fake';
   return 'router';
+}
+
+function hasEnabledApiCredential(cfg: AiConfig): boolean {
+  const gemini = (cfg.geminiApiKeys || []).some((entry) =>
+    (typeof entry === 'string' ? entry : entry?.key)?.trim() &&
+    (typeof entry === 'string' || entry?.enabled !== false),
+  );
+  const openai = (cfg.openaiEndpoints || []).some((entry) =>
+    (entry?.apiKey?.trim() || entry?.baseUrl?.trim()) && entry?.enabled !== false,
+  );
+  return Boolean(gemini || openai || cfg.geminiApiKey?.trim() || cfg.openaiApiKey?.trim());
 }
 
 function normalizeEntriesFromConfig(cfg: AiConfig): UnifiedEntry[] {
@@ -163,7 +174,7 @@ function friendlyStatusError(status?: AiStatus, queryError?: any): string | null
 export function AiProvidersPage() {
   const qc = useQueryClient();
   const [config, setConfig] = useState<AiConfig>(DEFAULT_CONFIG);
-  const [uiMode, setUiMode] = useState<UiMode>('fake');
+  const [uiMode, setUiMode] = useState<UiMode>('priority');
   const [entries, setEntries] = useState<UnifiedEntry[]>([]);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -193,7 +204,9 @@ export function AiProvidersPage() {
     if (configQuery.data?.config && !isDirty) {
       const merged = { ...DEFAULT_CONFIG, ...configQuery.data.config };
       setConfig(merged);
-      setUiMode(modeFromProvider(merged.provider));
+      setUiMode(merged.provider === 'fake' && hasEnabledApiCredential(merged)
+        ? 'priority'
+        : modeFromProvider(merged.provider));
       setEntries(normalizeEntriesFromConfig(merged));
     }
   }, [configQuery.data, isDirty]);
@@ -235,9 +248,7 @@ export function AiProvidersPage() {
     const base = applyEntriesToConfig(config, entries);
     const provider = providerFromMode(uiMode);
     const chain = (base.failoverChain || 'gemini,openai,fake').trim() || 'gemini,openai,fake';
-    // Ensure fake fallback exists for safety
-    const normalizedChain = /(^|,)fake(,|$)/i.test(chain) ? chain : `${chain},fake`;
-    return { ...base, provider, failoverChain: normalizedChain };
+    return { ...base, provider, failoverChain: chain };
   }
 
   function handleSave() {
@@ -330,8 +341,7 @@ export function AiProvidersPage() {
           <label className="block text-xs text-slate-600">Chế độ hoạt động
             <select value={uiMode} onChange={(e) => { setUiMode(e.target.value as UiMode); setIsDirty(true); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
               <option value="fake">Giả lập an toàn (Fake)</option>
-              <option value="rotate">Tự động luân phiên</option>
-              <option value="priority">Ưu tiên theo thứ tự</option>
+              <option value="priority">Ưu tiên API key theo thứ tự, chuyển provider khi lỗi</option>
             </select>
           </label>
           <label className="block text-xs text-slate-600">Thứ tự ưu tiên

@@ -7,7 +7,7 @@ export interface AiClientResult<T> {
 }
 
 /**
- * Gọi AI service (fake provider mặc định) với timeout.
+ * Gọi AI service với provider được cấu hình (ưu tiên API key).
  * Thất bại thì trả data=null để caller fallback sang rule thuần túy.
  */
 export async function callAiService<T extends object>(

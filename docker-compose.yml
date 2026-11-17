@@ -81,8 +81,8 @@ services:
     environment:
       APP_ENV: production
       AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?set AI_SERVICE_TOKEN in .env}
-      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
-      LLM_FAILOVER_CHAIN: ${LLM_FAILOVER_CHAIN:-openai,gemini,fake}
+      LLM_PROVIDER: ${LLM_PROVIDER:-router}
+      LLM_FAILOVER_CHAIN: ${LLM_FAILOVER_CHAIN:-gemini,openai,fake}
       AI_PROVIDER_COOLDOWN_SEC: ${AI_PROVIDER_COOLDOWN_SEC:-60}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}

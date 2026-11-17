@@ -1304,8 +1304,8 @@ function normalizeAiConfig(raw: any): any {
   const endpoints = Array.isArray(c.openaiEndpoints) ? c.openaiEndpoints : [];
   const geminiKeysRaw = Array.isArray(c.geminiApiKeys) ? c.geminiApiKeys : [];
   return {
-    provider: typeof c.provider === 'string' ? c.provider : 'fake',
-    failoverChain: typeof c.failoverChain === 'string' ? c.failoverChain : 'openai,gemini,fake',
+    provider: typeof c.provider === 'string' ? c.provider : 'router',
+    failoverChain: typeof c.failoverChain === 'string' ? c.failoverChain : 'gemini,openai,fake',
     cooldownSec: Number.isFinite(Number(c.cooldownSec)) ? Number(c.cooldownSec) : 60,
     timeoutMs: Number.isFinite(Number(c.timeoutMs)) ? Number(c.timeoutMs) : 15000,
     openaiBaseUrl: typeof c.openaiBaseUrl === 'string' ? c.openaiBaseUrl : 'https://api.openai.com/v1',

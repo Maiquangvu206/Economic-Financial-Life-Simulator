@@ -50,7 +50,7 @@ export async function processGmTick(): Promise<{ action: string }> {
     const { data } = await callAi<GmProposal>(
       '/v1/gm/propose',
       'gm_economy',
-      'fake',
+      'configured-provider',
       'gm_economy@v1',
       {
         snapshot,

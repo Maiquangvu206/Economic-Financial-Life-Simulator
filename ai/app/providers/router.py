@@ -48,7 +48,7 @@ def _is_quota_or_auth_error(exc: Exception) -> bool:
 
 
 class FailoverProvider(LLMProvider):
-    """Try providers in a rotating failover chain. Useful for free-tier rotation."""
+    """Try providers in configured priority order, then fail over when needed."""
 
     name = "router"
 
@@ -57,7 +57,6 @@ class FailoverProvider(LLMProvider):
             raise ProviderError("FailoverProvider requires at least one provider")
         self._slots = slots
         self._cooldown_sec = max(5, cooldown_sec)
-        self._cursor = 0
         self._total_requests = 0
         self._total_successes = 0
         self._total_failures = 0
@@ -70,13 +69,11 @@ class FailoverProvider(LLMProvider):
         user_prompt: str,
     ) -> dict[str, Any]:
         n = len(self._slots)
-        start = self._cursor % n
-        self._cursor = (start + 1) % n
         errors: list[str] = []
         self._total_requests += 1
 
         for offset in range(n):
-            slot = self._slots[(start + offset) % n]
+            slot = self._slots[offset]
             now = time.monotonic()
             if slot.cooldown_until > now:
                 continue
@@ -182,10 +179,8 @@ def _load_gemini_keys(settings: Settings) -> list[str]:
 
 
 def build_failover_provider(settings: Settings) -> LLMProvider:
-    chain_raw = (settings.llm_failover_chain or "openai,gemini,fake").strip()
+    chain_raw = (settings.llm_failover_chain or "gemini,openai,fake").strip()
     chain = [p.strip().lower() for p in chain_raw.split(",") if p.strip()]
-    if "fake" not in chain:
-        chain.append("fake")
 
     slots: list[_Slot] = []
     openai_eps = _load_openai_endpoints(settings)
@@ -217,11 +212,9 @@ def build_failover_provider(settings: Settings) -> LLMProvider:
         else:
             logger.warning("Unknown provider in LLM_FAILOVER_CHAIN: %s", kind)
 
-    # Ensure final safety net
+    # Keep fake only when explicitly present in the configured chain. This
+    # prevents a silently simulated result when API-backed providers fail.
     if not slots:
-        slots.append(_Slot(provider=FakeProvider(), key="fake"))
-    elif slots[-1].key != "fake":
-        # keep explicit chain behavior but also guarantee availability
-        slots.append(_Slot(provider=FakeProvider(), key="fake"))
+        raise ProviderError("No configured AI provider has usable credentials")
 
     return FailoverProvider(slots, cooldown_sec=settings.ai_provider_cooldown_sec)

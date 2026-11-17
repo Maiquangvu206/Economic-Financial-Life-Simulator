@@ -30,7 +30,7 @@ export async function processAiNews(): Promise<{ applied: number }> {
     const symbols = tickers.rows.map((t) => t.symbol);
     const eventId = crypto.randomUUID();
 
-    const { data } = await callAi<NewsProposal>('/v1/news', 'news', 'fake', 'news@v1', {
+    const aiResult = await callAi<NewsProposal>('/v1/news', 'news', 'configured-provider', 'news@v1', {
       event_id: eventId,
       event_type: 'market_daily',
       actors: [],
@@ -41,15 +41,17 @@ export async function processAiNews(): Promise<{ applied: number }> {
       tone: 'neutral',
     });
 
-    const headline = data.headline ?? 'Bản tin thị trường';
-    const body = data.body ?? '';
+    if (aiResult.status !== 'ok' || !aiResult.data.headline || !aiResult.data.body) {
+      throw new Error('AI news provider did not return a valid proposal');
+    }
+    const data = aiResult.data;
+    const headline = data.headline;
+    const body = data.body;
     const rawImpact = data.stock_impact_pct ?? {};
-    // Fake provider trả {} → sinh tác động nhỏ theo ticker để demo giá có biên.
     const impact: Record<string, number> = {};
     for (const symbol of symbols) {
       const raw =
-        rawImpact[symbol] ??
-        (symbols.indexOf(symbol) % 3 === 0 ? 2 : symbols.indexOf(symbol) % 3 === 1 ? -1.5 : 0.5);
+        rawImpact[symbol] ?? 0;
       impact[symbol] = Math.max(-20, Math.min(20, raw));
     }
 

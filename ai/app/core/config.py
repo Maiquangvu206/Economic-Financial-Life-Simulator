@@ -12,9 +12,9 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     ai_service_token: str = "change-me-ai-token"
-    llm_provider: str = "fake"
-    # failover/router: comma-separated provider types in priority order, e.g. "openai,gemini,fake"
-    llm_failover_chain: str = "openai,gemini,fake"
+    llm_provider: str = "router"
+    # Providers are attempted in strict priority order. Fake is an optional final fallback.
+    llm_failover_chain: str = "gemini,openai,fake"
     # Optional JSON array for multiple OpenAI-compatible endpoints (rotation/failover), e.g.
     # [{"base_url":"https://api.groq.com/openai/v1","api_key":"...","model":"llama-3.1-8b-instant"}]
     openai_endpoints: str = ""
@@ -37,8 +37,8 @@ class Settings(BaseSettings):
 
         base = base or get_settings()
         c = cfg or {}
-        provider = str(c.get("provider") or base.llm_provider or "fake")
-        failover_chain = str(c.get("failoverChain") or base.llm_failover_chain or "openai,gemini,fake")
+        provider = str(c.get("provider") or base.llm_provider or "router")
+        failover_chain = str(c.get("failoverChain") or base.llm_failover_chain or "gemini,openai,fake")
         try:
             cooldown_sec = int(c.get("cooldownSec", base.ai_provider_cooldown_sec))
         except Exception:
