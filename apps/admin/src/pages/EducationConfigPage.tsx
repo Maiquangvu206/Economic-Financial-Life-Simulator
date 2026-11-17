@@ -142,7 +142,7 @@ export function EducationConfigPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Cấu hình Giáo dục & Đại học" description="Thiết lập trường đào tạo, học phí hàng tháng và mức lương khởi điểm sau tốt nghiệp." />
+      <PageHeader title="Cấu hình Giáo dục & Đại học" />
 
       {msg && (
         <div className={`rounded-xl border p-3 text-xs font-semibold ${msg.type === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}>
@@ -232,9 +232,6 @@ export function EducationConfigPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600">
-        <span className="font-semibold">Lưu ý:</span> Học phí tính theo <b>tháng</b>; tổng học phí = học phí/tháng × thời gian học. “Mức lương sau tốt nghiệp” là mức tham khảo theo bằng cấp yêu cầu của công việc. Có thể xét tốt nghiệp sớm khi học đủ thời gian quy định và hoàn thành bài kiểm tra ngắn.
-      </div>
-    </div>
+</div>
   );
 }

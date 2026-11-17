@@ -72,7 +72,7 @@ export function OfflinePolicyPage() {
           Bật xử lý offline toàn hệ thống
         </label>
         <label className="block text-sm text-slate-700">
-          Giới hạn thời gian bù tối đa (phút thực)
+          Giới hạn thời gian bù tối đa
           <input
             type="number"
             min={0}
@@ -89,7 +89,7 @@ export function OfflinePolicyPage() {
         <h2 className="text-sm font-semibold text-slate-900">Cho phép tác vụ tự động</h2>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={!!form.allowCatchup} onChange={(e) => setForm((f) => ({ ...f, allowCatchup: e.target.checked }))} />
-          Cho phép bù tiến trình/mô phỏng thời gian offline (có giới hạn)
+          Cho phép bù tiến trình/mô phỏng thời gian offline
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={!!form.allowAutoClaimWelfare} onChange={(e) => setForm((f) => ({ ...f, allowAutoClaimWelfare: e.target.checked }))} />
@@ -97,7 +97,7 @@ export function OfflinePolicyPage() {
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={!!form.allowAutoPay} onChange={(e) => setForm((f) => ({ ...f, allowAutoPay: e.target.checked }))} />
-          Cho phép tự động trả hóa đơn/thuế/khoản vay đến hạn (khi đủ tiền)
+          Cho phép tự động trả hóa đơn/thuế/khoản vay đến hạn
         </label>
       </section>
 

@@ -85,9 +85,6 @@ export function StockMarketControlPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-slate-900">Điều chỉnh giá thị trường chứng khoán</h1>
-        <p className="mt-1 text-xs text-slate-600">
-          Admin-only: <b>INSTANT_SHOCK</b> thay đổi giá tức thời (có sàn giá), <b>TREND_BIAS</b> cộng thêm bias trong mỗi tick giờ trong thời gian hiệu lực. Mọi thao tác được ghi log để audit.
-        </p>
       </div>
 
       {status && (
@@ -103,28 +100,28 @@ export function StockMarketControlPage() {
             <label className="block text-xs text-slate-700">
               Chế độ
               <select className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2" value={mode} onChange={(e) => setMode(e.target.value as any)}>
-                <option value="INSTANT_SHOCK">INSTANT_SHOCK (tức thời)</option>
-                <option value="TREND_BIAS">TREND_BIAS (xu hướng theo giờ)</option>
+                <option value="INSTANT_SHOCK">Điều chỉnh tức thời</option>
+                <option value="TREND_BIAS">Xu hướng kéo dài</option>
               </select>
             </label>
             <label className="block text-xs text-slate-700">
               Phạm vi
               <select className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2" value={scope} onChange={(e) => setScope(e.target.value as any)}>
-                <option value="ALL_MARKET">ALL_MARKET (toàn thị trường)</option>
+                <option value="ALL_MARKET">Toàn thị trường</option>
                 <option value="SPECIFIC_COMPANIES">SPECIFIC_COMPANIES (mã cụ thể)</option>
               </select>
             </label>
             <label className="block text-xs text-slate-700">
-              Delta % (-50 đến +50)
+              Mức điều chỉnh (%)
               <input type="number" step="0.1" min={-50} max={50} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2" value={deltaPct} onChange={(e) => setDeltaPct(e.target.value)} />
             </label>
             <label className="block text-xs text-slate-700">
-              Thời lượng (giờ, cho TREND_BIAS)
+              Thời lượng (giờ — áp dụng cho Xu hướng kéo dài)
               <input type="number" min={1} step={1} disabled={mode !== 'TREND_BIAS'} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-100" value={durationHours} onChange={(e) => setDurationHours(e.target.value)} />
             </label>
           </div>
           <label className="block text-xs text-slate-700">
-            Lý do (bắt buộc, lưu audit)
+            Lý do
             <textarea className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 min-h-[80px]" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="VD: Điều chỉnh do sự kiện vĩ mô..." />
           </label>
 
@@ -155,14 +152,14 @@ export function StockMarketControlPage() {
 
           <div className="flex justify-end">
             <button type="submit" disabled={mutation.isPending} className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-slate-900 hover:bg-amber-400 disabled:opacity-60">
-              {mutation.isPending ? 'Đang thực thi...' : mode === 'INSTANT_SHOCK' ? 'Áp dụng shock tức thời' : 'Tạo trend bias'}
+              {mutation.isPending ? 'Đang thực thi...' : mode === 'INSTANT_SHOCK' ? 'Áp dụng điều chỉnh tức thời' : 'Tạo trend bias'}
             </button>
           </div>
         </form>
 
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Nhật ký điều chỉnh (admin_market_logs)</h2>
+            <h2 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">NHẬT KÝ ĐIỀU CHỈNH</h2>
             <button type="button" onClick={() => qc.invalidateQueries({ queryKey: ['admin', 'stock-market-logs'] })} className="text-xs text-slate-600 hover:text-slate-900">Tải lại</button>
           </div>
           {loadingLogs ? (
@@ -175,15 +172,15 @@ export function StockMarketControlPage() {
                 <div key={l.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs space-y-1">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className={`rounded px-2 py-0.5 font-semibold ${l.mode === 'INSTANT_SHOCK' ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'}`}>{l.mode}</span>
-                      <span className="rounded bg-slate-200 px-2 py-0.5 text-slate-700">{l.scope}</span>
+                      <span className={`rounded px-2 py-0.5 font-semibold ${l.mode === 'INSTANT_SHOCK' ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'}`}>{l.mode === 'INSTANT_SHOCK' ? 'Điều chỉnh tức thời' : 'Xu hướng kéo dài'}</span>
+                      <span className="rounded bg-slate-200 px-2 py-0.5 text-slate-700">{l.scope === 'ALL_MARKET' ? 'Toàn thị trường' : 'Mã cụ thể'}</span>
                       <span className={`font-mono font-bold ${l.deltaPct >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{l.deltaPct >= 0 ? '+' : ''}{l.deltaPct}%</span>
                       {l.durationHours != null && <span className="text-slate-600">{l.durationHours}h</span>}
                     </div>
                     <span className="text-slate-500">{new Date(l.createdAt).toLocaleString('vi-VN')}</span>
                   </div>
-                  <div className="text-slate-700"><b>Lý do:</b> {l.reason}</div>
-                  <div className="text-slate-500">Targets: {l.scope === 'ALL_MARKET' ? 'Toàn thị trường' : `${l.targetIds?.length ?? 0} công ty`} · Admin: {l.adminId || '—'}</div>
+                  <div className="text-slate-700"><b>Lý do:</b> {l.reason.replace('?i?u ch?nh th? nghi?m', 'Điều chỉnh thử nghiệm')}</div>
+                  <div className="text-slate-500">Phạm vi: {l.scope === 'ALL_MARKET' ? 'Toàn thị trường' : `${l.targetIds?.length ?? 0} công ty`} · Quản trị viên</div>
                 </div>
               ))}
             </div>

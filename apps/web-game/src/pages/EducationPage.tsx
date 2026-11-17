@@ -18,6 +18,18 @@ const UNLOCK_LABEL: Record<UnlockedFeature, string> = {
   board_seat: 'Ghế HĐQT doanh nghiệp',
 };
 
+const DEGREE_CODE_LABEL: Record<string, string> = {
+  law: 'Luật',
+  computer_science: 'Khoa học máy tính',
+  business: 'Kinh tế / Kinh doanh',
+  education: 'Giáo dục',
+};
+function degreeCodeLabel(code?: string | null) {
+  if (!code) return '—';
+  const key = code.trim().toLowerCase();
+  return DEGREE_CODE_LABEL[key] ?? code;
+}
+
 export function EducationPage() {
   const { toast } = useToast();
   const { confirm } = useDialog();
@@ -141,15 +153,12 @@ export function EducationPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Giáo dục & Bằng cấp"
-        description="Ghi danh đại học, học tập và tốt nghiệp. Đạt 2/3 thời gian khóa học có thể làm bài kiểm tra (5 câu trắc nghiệm cơ bản do AI sinh theo ngành/lĩnh vực) để ra trường sớm."
-      />
+      <PageHeader title="Giáo dục & Bằng cấp" />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard label="Bằng cấp" value={degrees.length} hint="Bằng đang theo học / đã tốt nghiệp" tone="positive" />
-        <StatCard label="Học phí đã đóng" value={formatMoney(overview?.tuitionPaidTotal ?? 0)} hint="Tổng học phí đã nộp (học phí/tháng × thời gian học)" />
-        <StatCard label="Tính năng đã mở" value={unlocked.length} hint={unlocked.length > 0 ? unlocked.map((f) => UNLOCK_LABEL[f]).join(', ') : 'Tốt nghiệp để mở khóa'} />
+        <StatCard label="Bằng cấp" value={degrees.length} tone="positive" />
+        <StatCard label="Học phí đã đóng" value={formatMoney(overview?.tuitionPaidTotal ?? 0)} />
+        <StatCard label="Tính năng đã mở" value={unlocked.length} />
       </div>
 
       {activeTest && (
@@ -209,7 +218,7 @@ export function EducationPage() {
                   <div key={d.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white/50">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-slate-800">{d.degreeCode ?? '—'}</span>
+                        <span className="font-semibold text-slate-800">{degreeCodeLabel(d.degreeCode)}</span>
                         {d.universityName && <span className="text-xs text-slate-600">{d.universityName}</span>}
                         <Badge variant={d.status === 'graduated' ? 'success' : d.status === 'enrolled' ? 'warning' : 'default'}>
                           {d.status === 'graduated' ? 'Đã tốt nghiệp' : d.status === 'enrolled' ? 'Đang theo học' : 'Đã bỏ học'}
@@ -265,7 +274,7 @@ export function EducationPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-slate-800">{u.name ?? '—'}</span>
-                    <Badge variant="default">{u.degreeCode ?? ''}</Badge>
+                    <Badge variant="default">{degreeCodeLabel(u.degreeCode)}</Badge>
                     {u.field && <span className="text-[11px] text-slate-500">Ngành/Lĩnh vực: {u.field}</span>}
                   </div>
                   <div className="mt-1 text-xs text-slate-500">

@@ -219,7 +219,7 @@ export function RecruitmentPage() {
                               >
                                 {closeJob.isPending && closeJob.variables === job.id ? 'Đang đóng...' : 'Đóng đợt tuyển'}
                               </GameButton>
-                              <div className="text-[11px] text-slate-500 text-center">Mở → Đóng → chờ ≥ 1 ngày game → Xóa</div>
+                              <div className="text-[11px] text-slate-500 text-center"></div>
                             </>
                           ) : null}
 
@@ -301,9 +301,9 @@ export function RecruitmentPage() {
                 <div className="grid grid-cols-3 gap-2">
                   <GameInput label="Số lượng tuyển" type="number" min={1} value={openings} onChange={(e) => setOpenings(e.target.value)} />
                   <GameInput label="Tín dụng tối thiểu" type="number" min={0} value={minCreditScore} onChange={(e) => setMinCreditScore(e.target.value)} />
-                  <GameInput label="Năng lượng/ca" type="number" min={0} value={energyCost} onChange={(e) => setEnergyCost(e.target.value)} />
+                  <GameInput label="Năng lượng" type="number" min={0} value={energyCost} onChange={(e) => setEnergyCost(e.target.value)} />
                 </div>
-                <GameInput label="Yêu cầu bằng cấp/chứng chỉ (mã degree, tuỳ chọn)" value={requiredDegree} onChange={(e) => setRequiredDegree(e.target.value)} placeholder="VD: uni_bachelor_tech hoặc để trống" />
+                <GameInput label="Yêu cầu bằng cấp/chứng chỉ" value={requiredDegree} onChange={(e) => setRequiredDegree(e.target.value)} placeholder="VD: uni_bachelor_tech hoặc để trống" />
 
                 <GameButton
                   variant="primary"
@@ -317,19 +317,9 @@ export function RecruitmentPage() {
                 >
                   {createJob.isPending ? 'Đang đăng...' : 'Đăng tin tuyển dụng'}
                 </GameButton>
-                <p className="text-[11px] text-slate-500">Tin đang mở sẽ hiển thị cho người chơi khác. Chủ công ty có thể đóng đợt tuyển và xóa sau khi chờ ít nhất 1 ngày game.</p>
+                
               </div>
             )}
-          </Panel>
-
-          <Panel title="Quy tắc đợt tuyển" borderColor="amber">
-            <ul className="text-xs text-slate-700 space-y-1.5 list-disc pl-4">
-              <li><b>Mở</b>: nhận hồ sơ/ứng tuyển (đủ điều kiện).</li>
-              <li><b>Đóng</b>: ngừng nhận ứng viên (chỉ chủ công ty).</li>
-              <li><b>Xóa</b>: chỉ sau khi đã đóng và chờ <b>ít nhất 1 ngày game</b>.</li>
-              <li>Nhân vật đang có việc làm sẽ không thể ứng tuyển vị trí mới.</li>
-              <li>Một số vị trí yêu cầu bằng cấp/chứng chỉ (degree) và/hoặc điểm tín dụng tối thiểu.</li>
-            </ul>
           </Panel>
         </div>
       </div>

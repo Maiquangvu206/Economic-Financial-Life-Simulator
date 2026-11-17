@@ -309,7 +309,7 @@ export function InterestRatesConfigPage() {
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs font-semibold text-slate-700 mb-2">Xem nhanh (ước tính lãi đơn cho 100.000.000 ₫ theo kỳ hạn)</div>
+            <div className="text-xs font-semibold text-slate-700 mb-2">Xem nhanh</div>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {savingsPreview.map((t, i) => (
                 <div key={`${t.termMonths}-${i}`} className="rounded-lg border border-slate-200 bg-white p-2.5 text-xs">

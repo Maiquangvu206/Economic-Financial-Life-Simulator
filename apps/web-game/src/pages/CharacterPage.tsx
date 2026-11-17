@@ -175,10 +175,7 @@ export function CharacterPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={`Tổng quan: ${character.fullName ?? '—'}`}
-        description="Thẻ căn cước công dân, thông tin tài khoản và bảo mật. Tên nhân vật là định danh cố định, không thể thay đổi."
-      />
+      <PageHeader title={`Tổng quan: ${character.fullName ?? '—'}`} />
 
       {/* Thẻ CCCD */}
       <div className="overflow-hidden rounded-3xl border-2 border-slate-200 bg-gradient-to-br from-emerald-50 via-white to-sky-50 shadow-sm">
@@ -240,24 +237,20 @@ export function CharacterPage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Tài sản ròng" value={formatMoney(character.netWorth?.amount ?? 0)} hint="Tổng tài sản − tổng nợ" tone="positive" />
-        <StatCard label="Ngày sống (nhân vật)" value={`${getActiveDays(character.createdAt)} ngày`} hint="Số ngày sống của nhân vật hiện tại (tính từ khi nhân vật được tạo/kế thừa)" />
-        <StatCard label="Điểm tín dụng" value={character.creditScore ?? 0} hint="Ảnh hưởng đến khả năng vay và ưu đãi" />
-        <StatCard label="Mức chú ý" value={`${character.heatLevel ?? 0} / 100`} hint="Mức bị chú ý do hoạt động rủi ro" />
-        <StatCard label="Sức khỏe / Năng lượng" value={`${character.healthEnergy ?? 0} / 100`} hint="Càng thấp càng cần nghỉ" />
+        <StatCard label="Tài sản ròng" value={formatMoney(character.netWorth?.amount ?? 0)} tone="positive" />
+        <StatCard label="Ngày sống (nhân vật)" value={`${getActiveDays(character.createdAt)} ngày`} />
+        <StatCard label="Điểm tín dụng" value={character.creditScore ?? 0} />
+        <StatCard label="Mức chú ý" value={`${character.heatLevel ?? 0} / 100`} />
+        <StatCard label="Sức khỏe / Năng lượng" value={`${character.healthEnergy ?? 0} / 100`} />
       </div>
 
       {/* Cài đặt tài khoản */}
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-3xl border border-slate-200 bg-white/80 p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-900">Thông tin tài khoản</h2>
-          <p className="mt-1 text-[11px] text-slate-600">
-            Bạn có thể đổi <b>tên đăng nhập (username)</b>. <b>Email tài khoản không thể thay đổi</b>. Họ tên nhân vật, CCCD và nơi sinh là định danh cố định; tên nhân vật chỉ được
-            xác định khi nhân vật được sinh ra/tạo mới hoặc khi bạn chọn/kế thừa sang nhân vật tiếp theo (cuộc đời mới).
-          </p>
           <form onSubmit={onSubmitProfile} className="mt-4 space-y-3 text-sm">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-700">Họ và tên nhân vật (cố định)</label>
+              <label className="mb-1 block text-xs font-medium text-slate-700">Họ và tên nhân vật</label>
               <input
                 value={character.fullName ?? ''}
                 disabled
@@ -266,7 +259,7 @@ export function CharacterPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-700">Tên đăng nhập (username)</label>
+              <label className="mb-1 block text-xs font-medium text-slate-700">Tên đăng nhập</label>
               <input
                 value={profileForm.username}
                 onChange={(e) => setProfileForm({ username: e.target.value })}
@@ -277,7 +270,7 @@ export function CharacterPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-700">Email (cố định, không thể thay đổi)</label>
+              <label className="mb-1 block text-xs font-medium text-slate-700">Email</label>
               <input
                 type="email"
                 value={sessionUser?.email ?? ''}
@@ -288,7 +281,6 @@ export function CharacterPage() {
               />
             </div>
             <div className="flex items-center justify-between gap-3 pt-1">
-              <span className="text-[11px] text-slate-500">Tài khoản: <b>{sessionUser?.email}</b> · vai trò <b>{sessionUser?.role}</b></span>
               <button
                 type="submit"
                 disabled={updateProfile.isPending || !profileChanged}

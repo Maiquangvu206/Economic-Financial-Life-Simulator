@@ -256,8 +256,8 @@ export function PlayersPage() {
             <input required value={createForm.fullName} onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })} placeholder="Họ tên (nhân vật)" className="rounded-lg border border-slate-300 bg-white px-3 py-2" />
             <input required minLength={8} value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} type="password" placeholder="Mật khẩu (>=8 ký tự)" className="rounded-lg border border-slate-300 bg-white px-3 py-2" />
             <select value={createForm.role} onChange={(e) => setCreateForm({ ...createForm, role: e.target.value as 'admin' | 'moderator' })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-medium">
-              <option value="moderator">Điều hành viên (Moderator)</option>
-              <option value="admin">Quản trị viên (Admin)</option>
+              <option value="moderator">Điều hành viên</option>
+              <option value="admin">Quản trị viên</option>
             </select>
             <button disabled={busy === 'create-admin'} type="submit" className="rounded-lg bg-amber-600 px-3 py-2 font-semibold text-white hover:bg-amber-500 disabled:opacity-50">
               {busy === 'create-admin' ? 'Đang tạo...' : 'Tạo tài khoản'}

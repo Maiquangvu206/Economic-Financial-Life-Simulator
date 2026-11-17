@@ -123,7 +123,7 @@ export function RestrictionSettingsPage() {
           </label>
           <div />
           <label className="block text-sm text-slate-700 md:col-span-2">
-            Nội dung thông báo (hiển thị cho người chơi)
+            Nội dung thông báo
             <textarea
               value={maintenanceForm.message}
               onChange={(e) => setMaintenanceForm((f) => ({ ...f, message: e.target.value }))}
@@ -170,7 +170,7 @@ export function RestrictionSettingsPage() {
           </label>
           <div />
           <label className="block text-sm text-slate-700 md:col-span-2">
-            Thông điệp (hiển thị cho người dùng)
+            Thông điệp
             <textarea
               value={restrictionForm.message}
               onChange={(e) => setRestrictionForm((f) => ({ ...f, message: e.target.value }))}

@@ -107,6 +107,20 @@ function fmtMoney(amount: number) {
   return `${(amount ?? 0).toLocaleString('vi-VN')} ₫`;
 }
 
+function fixMojibake(s: string) {
+  const map: Record<string, string> = {
+    'T?t D??ng L?ch': 'Tết Dương Lịch',
+    'T?t Nguy?n ??n': 'Tết Nguyên Đán',
+    'Th?ng ph?c l?i d?p T?t D??ng L?ch': 'Thưởng phúc lợi dịp Tết Dương Lịch',
+    'Lì xì/ph?c l?i d?p T?t Nguy?n ??n': 'Lì xì/phúc lợi dịp Tết Nguyên Đán',
+  };
+  if (map[s]) return map[s];
+  for (const [k, v] of Object.entries(map)) {
+    if (s.includes(k)) s = s.split(k).join(v);
+  }
+  return s;
+}
+
 export function SeasonCalendarPage() {
   const { confirm } = useDialog();
   const [seasonRanges, setSeasonRanges] = useState<SeasonRangeDto[]>(DEFAULT_SEASON_RANGES);
@@ -408,7 +422,7 @@ export function SeasonCalendarPage() {
               <span className="font-mono font-bold text-emerald-600">{otRatePercent}% (x{(otRatePercent / 100).toFixed(1)})</span>
             </div>
             <input type="range" min="150" max="400" step="10" value={otRatePercent} onChange={(e) => setOtRatePercent(Number(e.target.value))} className="w-full accent-emerald-500 cursor-pointer" />
-            <p className="text-[11px] text-slate-500">OT hiển thị tham chiếu; phúc lợi/lì xì được cấu hình và phát qua API (server-side) bên dưới.</p>
+            
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 text-xs space-y-2">
             <p className="font-semibold text-slate-800">Phúc lợi đang cấu hình:</p>
@@ -475,7 +489,7 @@ export function SeasonCalendarPage() {
                 <div key={b.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 gap-3">
                   <div className="space-y-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-sm text-slate-900">{b.name}</span>
+                      <span className="font-semibold text-sm text-slate-900">{fixMojibake(b.name)}</span>
                       <span className="text-[11px] font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">{b.code}</span>
                       <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">{fmtMoney(b.bonus?.amount ?? 0)}</span>
                       {(b.month != null || b.day != null) && (
@@ -484,7 +498,7 @@ export function SeasonCalendarPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600 truncate">{b.description || b.sender}</p>
+                    <p className="text-xs text-slate-600 truncate">{fixMojibake(b.description || b.sender)}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button type="button" onClick={() => toggleActive(b)} disabled={busy === `toggle-${b.id}`} className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${b.isActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>

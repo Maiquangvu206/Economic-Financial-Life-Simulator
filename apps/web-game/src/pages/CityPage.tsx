@@ -649,21 +649,18 @@ export function CityPage() {
                 <StatCard
                   label="Tiền mặt"
                   value={formatMoney(character.cash?.amount ?? character.netWorth.amount)}
-                  hint="Ví cá nhân"
                   tone="positive"
                 />
                 <StatCard
                   label="Tài sản ròng"
                   value={formatMoney(character.netWorth.amount)}
-                  hint="Tổng tài sản − tổng nợ"
                 />
                 <StatCard
-                  label="Credit Score"
+                  label="ĐIỂM TÍN DỤNG"
                   value={character.creditScore}
-                  hint={character.creditScore >= 700 ? 'Tín nhiệm cao' : 'Cần cải thiện'}
                 />
                 <StatCard
-                  label="Heat Level"
+                  label="MỨC TRUY NÃ NGẦM"
                   value={`${character.heatLevel} / 100`}
                   hint="Mức truy nã ngầm"
                 />
@@ -1052,7 +1049,7 @@ export function CityPage() {
                                                                     {/* Cột tiện ích bên phải: Đấu giá & Danh sách Tỉnh thành */}
                                                                     <aside className="w-full xl:w-[360px] flex-shrink-0 flex flex-col gap-4">
                                                                       {/* Widget 1: Phiên Đấu Giá Đất */}
-                                                                      <Panel title="Phiên Đấu Giá Đất (AI Game Master)" borderColor="rose">
+                                                                      <Panel title="Phiên Đấu Giá Đất" borderColor="rose">
                                                                         <div className="flex items-center justify-between pb-2 border-b border-rose-100">
                                                                           <span className="flex items-center gap-1.5 text-xs font-bold text-rose-600">
                                                                             <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
@@ -1152,7 +1149,7 @@ export function CityPage() {
               </div>
                                                                           ) : (
                                                                           <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-                                                                            Hiện chưa có phiên đấu giá nào đang mở cho tỉnh/thành này. Hãy cấu hình giá đất (admin) và thử tải lại sau ít phút.
+                                                                            Hiện chưa có phiên đấu giá nào đang mở cho tỉnh/thành này.
                                                                           </p>
             )}
                                                                         </Panel>

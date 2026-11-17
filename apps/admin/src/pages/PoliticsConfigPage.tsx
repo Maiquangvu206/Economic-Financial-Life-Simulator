@@ -320,7 +320,7 @@ export function PoliticsConfigPage() {
             <form onSubmit={saveMayorConfig} className="space-y-3 text-xs">
               <label className="flex items-center gap-2 text-slate-700">
                 <input type="checkbox" checked={draft.enabled ?? mayorConfig.enabled} onChange={(e) => setMayorCfgDraft((s) => ({ ...s, enabled: e.target.checked }))} />
-                Bật hệ thống Thị trưởng (nhiệm kỳ/quyền lợi/chính sách)
+                Bật hệ thống Thị trưởng
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-slate-700">Nhiệm kỳ mặc định (ngày)
@@ -344,10 +344,6 @@ export function PoliticsConfigPage() {
                     <input type="number" className="w-full rounded-lg border border-slate-200 px-2 py-1.5" value={draft.otRateAdjustMaxPct ?? mayorConfig.otRateAdjustMaxPct} onChange={(e) => setMayorCfgDraft((s) => ({ ...s, otRateAdjustMaxPct: Number(e.target.value) }))} />
                   </div>
                 </label>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600 space-y-0.5">
-                <div><b>Phí tranh cử:</b> {fmtMoney(config?.campaignFeeMinor)} · <b>Quyên góp tối thiểu:</b> {fmtMoney(config?.minDonationMinor)}</div>
-                <div><b>Luật thắng:</b> {config?.winnerRule}</div>
               </div>
               <button type="submit" disabled={busy === 'cfg'} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50">
                 {busy === 'cfg' ? 'Đang lưu...' : 'Lưu cấu hình Thị trưởng'}

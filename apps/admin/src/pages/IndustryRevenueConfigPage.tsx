@@ -110,10 +110,7 @@ export function IndustryRevenueConfigPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">Doanh thu công ty (chu kỳ 30 ngày)</h1>
-        <p className="mt-1 text-xs text-slate-600">
-          Cấu hình <b>tỉ lệ % doanh thu thực tế</b> theo ngành. Hệ thống tự động chốt mỗi 30 ngày game cho công ty <b>ACTIVE</b> có giấy phép hoạt động: <code>DT = clamp(baseCapital * monthly_rate_pct * seasonMultiplier, min, max)</code>. Doanh thu thực tế được chuyển 100% vào ví chủ sở hữu (không cộng vào quỹ công ty). Chủ sở hữu chỉ thực hiện chi OPEX và nạp vốn.
-        </p>
+        <h1 className="text-xl font-bold text-slate-900">Doanh thu công ty</h1>
       </div>
 
       {status && (
