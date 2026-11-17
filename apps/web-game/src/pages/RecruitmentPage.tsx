@@ -15,16 +15,16 @@ function moneyText(m: { amount: number }) {
 }
 
 const INDUSTRIES: Array<{ value: IndustryType; label: string }> = [
-  { value: 'real_estate', label: 'Bất động sản' },
-  { value: 'finance_banking', label: 'Tài chính - Ngân hàng' },
-  { value: 'technology_ai', label: 'Công nghệ - AI' },
-  { value: 'agritech', label: 'Nông nghiệp công nghệ' },
-  { value: 'healthcare_pharma', label: 'Y tế - Dược phẩm' },
-  { value: 'entertainment_media', label: 'Giải trí - Truyền thông' },
-  { value: 'logistics', label: 'Logistics' },
-  { value: 'energy_mining', label: 'Năng lượng - Khai khoáng' },
-  { value: 'education', label: 'Giáo dục' },
-  { value: 'underworld_services', label: 'Dịch vụ ngầm' },
+  { value: 'Bất động sản', label: 'Bất động sản' },
+  { value: 'Tài chính - Ngân hàng', label: 'Tài chính - Ngân hàng' },
+  { value: 'Công nghệ - Trí tuệ nhân tạo', label: 'Công nghệ - Trí tuệ nhân tạo' },
+  { value: 'Công nghệ nông nghiệp', label: 'Công nghệ nông nghiệp' },
+  { value: 'Y tế - Dược phẩm', label: 'Y tế - Dược phẩm' },
+  { value: 'Giải trí - Truyền thông', label: 'Giải trí - Truyền thông' },
+  { value: 'Hậu cần', label: 'Hậu cần' },
+  { value: 'Năng lượng - Khoáng sản', label: 'Năng lượng - Khoáng sản' },
+  { value: 'Giáo dục', label: 'Giáo dục' },
+  { value: 'Dịch vụ thế giới ngầm', label: 'Dịch vụ thế giới ngầm' },
 ];
 
 function statusLabel(job: RecruitmentJobDto) {
@@ -44,7 +44,7 @@ export function RecruitmentPage() {
 
   const [companyId, setCompanyId] = useState('');
   const [title, setTitle] = useState('');
-  const [industry, setIndustry] = useState<IndustryType>('technology_ai');
+  const [industry, setIndustry] = useState<IndustryType>('Công nghệ - Trí tuệ nhân tạo');
   const [salary, setSalary] = useState('12000000');
   const [openings, setOpenings] = useState('1');
   const [requiredDegree, setRequiredDegree] = useState('');

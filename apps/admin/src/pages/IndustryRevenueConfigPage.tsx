@@ -11,16 +11,16 @@ type IndustryRevenueConfig = {
 };
 
 const INDUSTRY_LABELS: Record<string, string> = {
-  real_estate: 'Bất động sản',
-  finance_banking: 'Tài chính - Ngân hàng',
-  technology_ai: 'Công nghệ & AI',
-  agritech: 'Nông nghiệp công nghệ cao',
-  healthcare_pharma: 'Y tế & Dược phẩm',
-  entertainment_media: 'Giải trí & Truyền thông',
-  logistics: 'Logistics & Vận tải',
-  energy_mining: 'Năng lượng & Khai khoáng',
-  education: 'Giáo dục',
-  underworld_services: 'Dịch vụ thế giới ngầm',
+  'Bất động sản': 'Bất động sản',
+  'Tài chính - Ngân hàng': 'Tài chính - Ngân hàng',
+  'Công nghệ - Trí tuệ nhân tạo': 'Công nghệ - Trí tuệ nhân tạo',
+  'Công nghệ nông nghiệp': 'Công nghệ nông nghiệp',
+  'Y tế - Dược phẩm': 'Y tế - Dược phẩm',
+  'Giải trí - Truyền thông': 'Giải trí - Truyền thông',
+  'Hậu cần': 'Hậu cần',
+  'Năng lượng - Khoáng sản': 'Năng lượng - Khoáng sản',
+  'Giáo dục': 'Giáo dục',
+  'Dịch vụ thế giới ngầm': 'Dịch vụ thế giới ngầm',
 };
 
 function toNum(v: string, fallback = 0) {

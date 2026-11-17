@@ -76,12 +76,12 @@ CREATE INDEX IF NOT EXISTS business_licenses_company_idx
 -- Seed: 6 trường đại học VN (tuition in VNĐ minor units).
 INSERT INTO universities (id, name, degree_code, field, tuition_minor, duration_months, stat_bonus)
 VALUES
-  (gen_random_uuid(), 'Đại học Bách Khoa Hà Nội', 'BK_HUST', 'technology_ai', 500000000, 48, '{"intelligence": 15}'::jsonb),
-  (gen_random_uuid(), 'Đại học Kinh tế Quốc dân', 'NEU', 'finance_banking', 400000000, 48, '{"finance": 15}'::jsonb),
-  (gen_random_uuid(), 'Đại học Ngoại thương', 'FTU', 'finance_banking', 450000000, 48, '{"business": 15}'::jsonb),
-  (gen_random_uuid(), 'Đại học Luật Hà Nội', 'HLU', 'education', 350000000, 48, '{"law": 20}'::jsonb),
-  (gen_random_uuid(), 'Đại học Y Dược TP.HCM', 'UMP', 'healthcare_pharma', 600000000, 60, '{"health": 15}'::jsonb),
-  (gen_random_uuid(), 'Đại học Nông Lâm TP.HCM', 'NLU', 'agritech', 300000000, 48, '{"agriculture": 15}'::jsonb)
+  (gen_random_uuid(), 'Đại học Bách Khoa Hà Nội', 'BK_HUST', 'Công nghệ - Trí tuệ nhân tạo', 500000000, 48, '{"intelligence": 15}'::jsonb),
+  (gen_random_uuid(), 'Đại học Kinh tế Quốc dân', 'NEU', 'Tài chính - Ngân hàng', 400000000, 48, '{"finance": 15}'::jsonb),
+  (gen_random_uuid(), 'Đại học Ngoại thương', 'FTU', 'Tài chính - Ngân hàng', 450000000, 48, '{"business": 15}'::jsonb),
+  (gen_random_uuid(), 'Đại học Luật Hà Nội', 'HLU', 'Giáo dục', 350000000, 48, '{"law": 20}'::jsonb),
+  (gen_random_uuid(), 'Đại học Y Dược TP.HCM', 'UMP', 'Y tế - Dược phẩm', 600000000, 60, '{"health": 15}'::jsonb),
+  (gen_random_uuid(), 'Đại học Nông Lâm TP.HCM', 'NLU', 'Công nghệ nông nghiệp', 300000000, 48, '{"agriculture": 15}'::jsonb)
 ON CONFLICT (degree_code) DO NOTHING;
 
 COMMIT;

@@ -41,15 +41,15 @@ export const AiTaskSchema = z.enum(['judge', 'news', 'npc_negotiation', 'gm_econ
 export type AiTask = z.infer<typeof AiTaskSchema>;
 
 export const IndustryTypeSchema = z.enum([
-  'real_estate',
-  'finance_banking',
-  'technology_ai',
-  'agritech',
-  'healthcare_pharma',
-  'entertainment_media',
-  'logistics',
-  'energy_mining',
-  'education',
-  'underworld_services',
+  'Bất động sản',
+  'Tài chính - Ngân hàng',
+  'Công nghệ - Trí tuệ nhân tạo',
+  'Công nghệ nông nghiệp',
+  'Y tế - Dược phẩm',
+  'Giải trí - Truyền thông',
+  'Hậu cần',
+  'Năng lượng - Khoáng sản',
+  'Giáo dục',
+  'Dịch vụ thế giới ngầm',
 ]);
 export type IndustryType = z.infer<typeof IndustryTypeSchema>;

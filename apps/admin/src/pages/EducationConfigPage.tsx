@@ -10,24 +10,30 @@ type AdminJobDto = { id: string; title: string; industry: string; baseSalary: Mo
 type AdminEducationConfigDto = { universities: AdminUniversityDto[]; jobs: AdminJobDto[] };
 
 const INDUSTRY_LABEL: Record<string, string> = {
-  finance_banking: 'Tài chính - Ngân hàng',
-  technology_ai: 'Công nghệ & AI',
-  real_estate: 'Bất động sản',
-  logistics: 'Logistics',
-  healthcare: 'Y tế',
-  education: 'Giáo dục',
-  agriculture: 'Nông nghiệp',
-  manufacturing: 'Sản xuất',
-  energy: 'Năng lượng',
-  energy_mining: 'Năng lượng & Khai khoáng',
-  entertainment: 'Giải trí',
-  hospitality: 'Du lịch - Khách sạn',
-  retail: 'Bán lẻ',
+  'Bất động sản': 'Bất động sản',
+  'Tài chính - Ngân hàng': 'Tài chính - Ngân hàng',
+  'Công nghệ - Trí tuệ nhân tạo': 'Công nghệ - Trí tuệ nhân tạo',
+  'Công nghệ nông nghiệp': 'Công nghệ nông nghiệp',
+  'Y tế - Dược phẩm': 'Y tế - Dược phẩm',
+  'Giải trí - Truyền thông': 'Giải trí - Truyền thông',
+  'Hậu cần': 'Hậu cần',
+  'Năng lượng - Khoáng sản': 'Năng lượng - Khoáng sản',
+  'Giáo dục': 'Giáo dục',
+  'Dịch vụ thế giới ngầm': 'Dịch vụ thế giới ngầm',
 };
 function industryLabel(v: string) { return INDUSTRY_LABEL[v] ?? v; }
 
 const INDUSTRIES = [
-  'finance_banking','technology_ai','real_estate','logistics','healthcare','education','agriculture','manufacturing','energy','entertainment','hospitality','retail'
+  'Bất động sản',
+  'Tài chính - Ngân hàng',
+  'Công nghệ - Trí tuệ nhân tạo',
+  'Công nghệ nông nghiệp',
+  'Y tế - Dược phẩm',
+  'Giải trí - Truyền thông',
+  'Hậu cần',
+  'Năng lượng - Khoáng sản',
+  'Giáo dục',
+  'Dịch vụ thế giới ngầm',
 ];
 
 const UNIVERSITY_NAME_LABEL: Record<string, string> = {
@@ -53,8 +59,8 @@ function degreeCodeLabel(code: string) {
 type UniForm = { name: string; degreeCode: string; field: string; tuitionMinor: string; durationMonths: string; postGradSalaryMinor: string };
 type JobForm = { title: string; industry: string; baseSalaryMinor: string; requiredDegree: string; minCreditScore: string; energyCost: string; openings: string };
 
-const emptyUni: UniForm = { name: '', degreeCode: '', field: 'education', tuitionMinor: '0', durationMonths: '12', postGradSalaryMinor: '' };
-const emptyJob: JobForm = { title: '', industry: 'education', baseSalaryMinor: '0', requiredDegree: '', minCreditScore: '0', energyCost: '10', openings: '1' };
+const emptyUni: UniForm = { name: '', degreeCode: '', field: 'Giáo dục', tuitionMinor: '0', durationMonths: '12', postGradSalaryMinor: '' };
+const emptyJob: JobForm = { title: '', industry: 'Giáo dục', baseSalaryMinor: '0', requiredDegree: '', minCreditScore: '0', energyCost: '10', openings: '1' };
 
 function fmtMoney(amount: number) {
   return `${(amount ?? 0).toLocaleString('vi-VN')} ₫`;

@@ -85,14 +85,14 @@ CREATE INDEX IF NOT EXISTS stock_market_biases_active_idx ON stock_market_biases
 -- Seed default industry revenue configs (idempotent)
 INSERT INTO industry_revenue_configs (industry_type, monthly_rate_pct, min_revenue_minor, max_revenue_minor)
 VALUES
-  ('real_estate', 2.5, 0, 0),
-  ('finance_banking', 2.0, 0, 0),
-  ('technology_ai', 3.0, 0, 0),
-  ('agritech', 1.8, 0, 0),
-  ('healthcare_pharma', 2.2, 0, 0),
-  ('entertainment_media', 2.4, 0, 0),
-  ('logistics', 2.0, 0, 0),
-  ('energy_mining', 2.3, 0, 0),
-  ('education', 1.6, 0, 0),
-  ('underworld_services', 3.5, 0, 0)
+  ('Bất động sản', 2.5, 0, 0),
+  ('Tài chính - Ngân hàng', 2.0, 0, 0),
+  ('Công nghệ - Trí tuệ nhân tạo', 3.0, 0, 0),
+  ('Công nghệ nông nghiệp', 1.8, 0, 0),
+  ('Y tế - Dược phẩm', 2.2, 0, 0),
+  ('Giải trí - Truyền thông', 2.4, 0, 0),
+  ('Hậu cần', 2.0, 0, 0),
+  ('Năng lượng - Khoáng sản', 2.3, 0, 0),
+  ('Giáo dục', 1.6, 0, 0),
+  ('Dịch vụ thế giới ngầm', 3.5, 0, 0)
 ON CONFLICT (industry_type) DO NOTHING;

@@ -33,11 +33,11 @@ ON CONFLICT (owner_type, owner_id, kind, currency) DO NOTHING;
 INSERT INTO universities (id, name, degree_code, field, tuition_minor, duration_months, stat_bonus)
 VALUES
   ('11111111-1111-4111-8111-000000000001', 'Metro Business School', 'business',
-   'finance_banking', 1200000, 24, '{"creditScore": 20, "salaryBonusPct": 15}'::jsonb),
+   'Tài chính - Ngân hàng', 1200000, 24, '{"creditScore": 20, "salaryBonusPct": 15}'::jsonb),
   ('11111111-1111-4111-8111-000000000002', 'Institute of Technology', 'computer_science',
-   'technology_ai', 1500000, 24, '{"creditScore": 10, "salaryBonusPct": 25}'::jsonb),
+   'Công nghệ - Trí tuệ nhân tạo', 1500000, 24, '{"creditScore": 10, "salaryBonusPct": 25}'::jsonb),
   ('11111111-1111-4111-8111-000000000003', 'City Law Academy', 'law',
-   'education', 1800000, 36, '{"creditScore": 15, "salaryBonusPct": 20}'::jsonb)
+   'Giáo dục', 1800000, 36, '{"creditScore": 15, "salaryBonusPct": 20}'::jsonb)
 ON CONFLICT (degree_code) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -46,14 +46,14 @@ ON CONFLICT (degree_code) DO NOTHING;
 
 INSERT INTO jobs (id, title, industry, base_salary_minor, required_degree, min_credit_score, energy_cost, openings)
 VALUES
-  ('22222222-2222-4222-8222-000000000001', 'Junior Analyst', 'finance_banking', 350000, 'business', 620, 10, 3),
-  ('22222222-2222-4222-8222-000000000002', 'Software Engineer', 'technology_ai', 420000, 'computer_science', 650, 12, 3),
-  ('22222222-2222-4222-8222-000000000003', 'Real Estate Agent', 'real_estate', 300000, NULL, 600, 10, 2),
-  ('22222222-2222-4222-8222-000000000004', 'Logistics Coordinator', 'logistics', 280000, NULL, 580, 9, 3),
-  ('22222222-2222-4222-8222-000000000005', 'Corporate Lawyer', 'education', 550000, 'law', 700, 12, 1),
-  ('22222222-2222-4222-8222-000000000006', 'Factory Supervisor', 'energy_mining', 260000, NULL, 560, 14, 2),
-  ('22222222-2222-4222-8222-000000000007', 'Port Operations Manager', 'logistics', 380000, 'business', 640, 11, 1),
-  ('22222222-2222-4222-8222-000000000008', 'Financial Advisor', 'finance_banking', 500000, 'business', 680, 10, 1)
+  ('22222222-2222-4222-8222-000000000001', 'Junior Analyst', 'Tài chính - Ngân hàng', 350000, 'business', 620, 10, 3),
+  ('22222222-2222-4222-8222-000000000002', 'Software Engineer', 'Công nghệ - Trí tuệ nhân tạo', 420000, 'computer_science', 650, 12, 3),
+  ('22222222-2222-4222-8222-000000000003', 'Real Estate Agent', 'Bất động sản', 300000, NULL, 600, 10, 2),
+  ('22222222-2222-4222-8222-000000000004', 'Logistics Coordinator', 'Hậu cần', 280000, NULL, 580, 9, 3),
+  ('22222222-2222-4222-8222-000000000005', 'Corporate Lawyer', 'Giáo dục', 550000, 'law', 700, 12, 1),
+  ('22222222-2222-4222-8222-000000000006', 'Factory Supervisor', 'Năng lượng - Khoáng sản', 260000, NULL, 560, 14, 2),
+  ('22222222-2222-4222-8222-000000000007', 'Port Operations Manager', 'Hậu cần', 380000, 'business', 640, 11, 1),
+  ('22222222-2222-4222-8222-000000000008', 'Financial Advisor', 'Tài chính - Ngân hàng', 500000, 'business', 680, 10, 1)
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -92,15 +92,15 @@ ON CONFLICT DO NOTHING;
 INSERT INTO companies
   (id, name, industry, owner_character_id, cash_minor, valuation_minor, status, ticker_symbol)
 VALUES
-  ('55555555-5555-4555-8555-000000000001', 'Vertex Systems', 'technology_ai',
+  ('55555555-5555-4555-8555-000000000001', 'Vertex Systems', 'Công nghệ - Trí tuệ nhân tạo',
    '00000000-0000-4000-8000-0000000000c1', 50000000, 900000000, 'ipo', 'VTX'),
-  ('55555555-5555-4555-8555-000000000002', 'Meridian Bank', 'finance_banking',
+  ('55555555-5555-4555-8555-000000000002', 'Meridian Bank', 'Tài chính - Ngân hàng',
    '00000000-0000-4000-8000-0000000000c1', 120000000, 1500000000, 'ipo', 'MDB'),
-  ('55555555-5555-4555-8555-000000000003', 'Atlas Freight', 'logistics',
+  ('55555555-5555-4555-8555-000000000003', 'Atlas Freight', 'Hậu cần',
    '00000000-0000-4000-8000-0000000000c1', 40000000, 600000000, 'ipo', 'ATF'),
-  ('55555555-5555-4555-8555-000000000004', 'Helios Energy', 'energy_mining',
+  ('55555555-5555-4555-8555-000000000004', 'Helios Energy', 'Năng lượng - Khoáng sản',
    '00000000-0000-4000-8000-0000000000c1', 70000000, 1100000000, 'ipo', 'HLE'),
-  ('55555555-5555-4555-8555-000000000005', 'Nimbus Realty', 'real_estate',
+  ('55555555-5555-4555-8555-000000000005', 'Nimbus Realty', 'Bất động sản',
    '00000000-0000-4000-8000-0000000000c1', 30000000, 500000000, 'ipo', 'NMR')
 ON CONFLICT (name) DO NOTHING;
 
