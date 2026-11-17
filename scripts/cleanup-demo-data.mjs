@@ -6,10 +6,13 @@ import pg from 'pg';
 const { Client } = pg;
 
 function resolveDatabaseUrl() {
-  const direct = process.env.DATABASE_URL || process.env.PGDATABASE_URL;
+  const direct =
+    process.env.TEST_DATABASE_URL ||
+    process.env.DATABASE_URL ||
+    process.env.PGDATABASE_URL;
   if (direct) return direct;
   const host = process.env.POSTGRES_HOST || 'localhost';
-  const port = process.env.POSTGRES_PORT || '5433';
+  const port = process.env.POSTGRES_PORT || '5432';
   const user = process.env.POSTGRES_USER || 'efls';
   const password = process.env.POSTGRES_PASSWORD || 'efls';
   const db = process.env.POSTGRES_DB || 'efls';

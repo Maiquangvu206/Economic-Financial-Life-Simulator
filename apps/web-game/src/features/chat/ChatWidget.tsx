@@ -122,8 +122,8 @@ export function ChatWidget() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-3 text-white shadow-lg shadow-emerald-500/30 transition hover:brightness-105"
-        aria-label="Mở chat"
+        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-50 flex min-h-[44px] min-w-[44px] items-center gap-2 rounded-full bg-emerald-500 px-4 py-3 text-white shadow-lg shadow-emerald-500/30 transition hover:brightness-105"
+        aria-label={open ? 'Đóng chat' : 'Mở chat'}
       >
         <span aria-hidden className="text-lg">💬</span>
         <span className="text-sm font-semibold">Chat</span>
@@ -135,7 +135,7 @@ export function ChatWidget() {
       </button>
 
       {open && (
-        <div className="fixed bottom-20 right-5 z-50 flex h-[500px] max-h-[80vh] w-[380px] max-w-[92vw] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+        <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 z-50 flex h-[min(500px,calc(100dvh-7rem-env(safe-area-inset-bottom)))] w-[380px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
           <div className="border-b border-slate-200 bg-white/95 px-4 py-3">
             <div className="flex items-center gap-2">
               {tab === 'private' && privateView === 'thread' ? (
@@ -165,10 +165,10 @@ export function ChatWidget() {
           {tab === 'public' && (
             <>
               <MessageList messages={chat.globalMessages} myUserId={chat.myUserId} />
-              <div className="border-t border-slate-200 bg-white p-2">
+              <div className="border-t border-slate-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
                 <div className="flex gap-2">
-                  <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendCurrent(); }} placeholder="Nhắn tới Chat tổng..." className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
-                  <button type="button" onClick={sendCurrent} disabled={!draft.trim()} className="rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white transition disabled:opacity-50 hover:brightness-105">Gửi</button>
+                  <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendCurrent(); }} placeholder="Nhắn tới Chat tổng..." className="min-h-[44px] flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
+                  <button type="button" onClick={sendCurrent} disabled={!draft.trim()} className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white transition disabled:opacity-50 hover:brightness-105">Gửi</button>
                 </div>
               </div>
             </>
@@ -222,10 +222,10 @@ export function ChatWidget() {
           {tab === 'private' && privateView === 'thread' && (
             <>
               <MessageList messages={activeMessages} myUserId={chat.myUserId} />
-              <div className="border-t border-slate-200 bg-white p-2">
+              <div className="border-t border-slate-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
                 <div className="flex gap-2">
-                  <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendCurrent(); }} placeholder="Nhắn riêng..." className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
-                  <button type="button" onClick={sendCurrent} disabled={!draft.trim() || !chat.activePeerId} className="rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white transition disabled:opacity-50 hover:brightness-105">Gửi</button>
+                  <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendCurrent(); }} placeholder="Nhắn riêng..." className="min-h-[44px] flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
+                  <button type="button" onClick={sendCurrent} disabled={!draft.trim() || !chat.activePeerId} className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white transition disabled:opacity-50 hover:brightness-105">Gửi</button>
                 </div>
               </div>
             </>

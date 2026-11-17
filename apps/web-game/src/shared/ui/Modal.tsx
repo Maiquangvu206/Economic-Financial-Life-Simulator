@@ -27,12 +27,12 @@ export function Modal({ open, onClose, title, children, size = 'md', className }
   return (
     <>
       <div className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div
           role="dialog"
           aria-modal="true"
           className={cn(
-            'flex w-full max-h-[92vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-soft',
+            'flex w-full max-h-[92dvh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-soft',
             'animate-[fade-in_0.2s_ease-out]',
             SIZE_CLASS[size],
             className,

@@ -519,7 +519,7 @@ export function AppLayout() {
 
         <div className="mb-2 flex items-center justify-between lg:hidden">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Menu</span>
-          <button type="button" onClick={() => setMenuOpen(false)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">Đóng</button>
+          <button type="button" onClick={() => setMenuOpen(false)} className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50">Đóng</button>
         </div>
         <nav className="mt-2 flex flex-1 min-h-0 flex-col gap-1 overflow-y-auto [scrollbar-width:thin] lg:mt-6">
           {NAV_ITEMS.map((item) => (
@@ -565,7 +565,7 @@ export function AppLayout() {
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 lg:hidden"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 lg:hidden"
               aria-label="Mở menu"
             >
               <span className="text-lg leading-none">☰</span>
@@ -608,8 +608,9 @@ export function AppLayout() {
               <button
                 type="button"
                 onClick={() => setNotifOpen((v) => !v)}
-                className="relative rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-sm hover:bg-slate-50"
+                className="relative inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-sm hover:bg-slate-50"
                 title="Thông báo"
+                aria-label="Thông báo"
               >
                 🔔
                 {unreadCount > 0 && (
@@ -701,7 +702,7 @@ export function AppLayout() {
         )}
 
         {/* Main */}
-        <main className="w-full flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6">
+        <main className="w-full flex-1 overflow-y-auto overflow-x-hidden p-3 pb-24 sm:p-4 sm:pb-24 md:p-6 md:pb-6">
           {isMaintenance ? (
             <div className="flex h-full items-center justify-center text-slate-500 text-sm">Hệ thống đang bảo trì. Vui lòng quay lại sau.</div>
           ) : isAccountBlocked ? (

@@ -197,46 +197,48 @@ export function EducationConfigPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">{editingJob ? 'Sửa công việc / mức lương' : 'Thêm công việc / mức lương sau tốt nghiệp'}</h2>
-          <form onSubmit={saveJob} className="space-y-3 text-sm">
-            <label className="block text-xs text-slate-700">Tên công việc<input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.title} onChange={e=>setJobForm({...jobForm,title:e.target.value})} /></label>
-            <label className="block text-xs text-slate-700">Ngành / Lĩnh vực<select className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.industry} onChange={e=>setJobForm({...jobForm,industry:e.target.value})}>{INDUSTRIES.map(i=><option key={i} value={i}>{industryLabel(i)}</option>)}</select></label>
-            <label className="block text-xs text-slate-700">Mức lương cơ bản (VNĐ)<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.baseSalaryMinor} onChange={e=>setJobForm({...jobForm,baseSalaryMinor:e.target.value})} /></label>
-            <label className="block text-xs text-slate-700">Bằng cấp yêu cầu (không bắt buộc)<input list="degree-codes-admin" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.requiredDegree} onChange={e=>setJobForm({...jobForm,requiredDegree:e.target.value})} placeholder="Chọn hoặc nhập mã bằng cấp" /><datalist id="degree-codes-admin">{degreeOptions.map(d=><option key={d} value={d} />)}</datalist></label>
-            <div className="grid grid-cols-3 gap-2">
-              <label className="block text-xs text-slate-700">Điểm tín dụng<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.minCreditScore} onChange={e=>setJobForm({...jobForm,minCreditScore:e.target.value})} /></label>
-              <label className="block text-xs text-slate-700">Năng lượng<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.energyCost} onChange={e=>setJobForm({...jobForm,energyCost:e.target.value})} /></label>
-              <label className="block text-xs text-slate-700">Số vị trí<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.openings} onChange={e=>setJobForm({...jobForm,openings:e.target.value})} /></label>
-            </div>
-            <div className="flex gap-2 justify-end pt-1">
-              {editingJob && <button type="button" onClick={resetJob} className="rounded-xl px-4 py-2 text-xs text-slate-600 hover:bg-slate-100">Hủy</button>}
-              <button disabled={busy==='job'} className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-900 hover:bg-amber-400 disabled:opacity-60">{busy==='job'?'Đang lưu...':(editingJob?'Cập nhật':'Thêm công việc')}</button>
-            </div>
-          </form>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white/80 p-5">
-          <h2 className="text-sm font-semibold text-slate-800 mb-3">Danh sách công việc & mức lương sau tốt nghiệp ({jobs.length})</h2>
-          <div className="space-y-2 max-h-[460px] overflow-auto pr-1">
-            {jobs.map(j => (
-              <div key={j.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-start justify-between gap-2 text-sm">
-                <div>
-                  <div className="font-semibold text-slate-800">{j.title}</div>
-                  <div className="text-xs text-slate-600 mt-0.5">Ngành: {industryLabel(j.industry)} · Lương: {fmtMoney(j.baseSalary.amount)} · Yêu cầu bằng: {j.requiredDegree ? degreeCodeLabel(j.requiredDegree) : '—'}</div>
-                  <div className="text-xs text-slate-600">Tín dụng ≥ {j.minCreditScore} · Năng lượng {j.energyCost} · Vị trí {j.openings}</div>
-                </div>
-                <div className="flex gap-1 shrink-0">
-                  <button onClick={()=>startEditJob(j)} className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs hover:bg-white">Sửa</button>
-                  <button disabled={busy===`del-job-${j.id}`} onClick={()=>void removeJob(j.id)} className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-60">Xóa</button>
-                </div>
+      {false && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-3">
+            <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">{editingJob ? 'Sửa công việc / mức lương' : 'Thêm công việc / mức lương sau tốt nghiệp'}</h2>
+            <form onSubmit={saveJob} className="space-y-3 text-sm">
+              <label className="block text-xs text-slate-700">Tên công việc<input className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.title} onChange={e=>setJobForm({...jobForm,title:e.target.value})} /></label>
+              <label className="block text-xs text-slate-700">Ngành / Lĩnh vực<select className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.industry} onChange={e=>setJobForm({...jobForm,industry:e.target.value})}>{INDUSTRIES.map(i=><option key={i} value={i}>{industryLabel(i)}</option>)}</select></label>
+              <label className="block text-xs text-slate-700">Mức lương cơ bản (VNĐ)<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.baseSalaryMinor} onChange={e=>setJobForm({...jobForm,baseSalaryMinor:e.target.value})} /></label>
+              <label className="block text-xs text-slate-700">Bằng cấp yêu cầu (không bắt buộc)<input list="degree-codes-admin" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.requiredDegree} onChange={e=>setJobForm({...jobForm,requiredDegree:e.target.value})} placeholder="Chọn hoặc nhập mã bằng cấp" /><datalist id="degree-codes-admin">{degreeOptions.map(d=><option key={d} value={d} />)}</datalist></label>
+              <div className="grid grid-cols-3 gap-2">
+                <label className="block text-xs text-slate-700">Điểm tín dụng<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.minCreditScore} onChange={e=>setJobForm({...jobForm,minCreditScore:e.target.value})} /></label>
+                <label className="block text-xs text-slate-700">Năng lượng<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.energyCost} onChange={e=>setJobForm({...jobForm,energyCost:e.target.value})} /></label>
+                <label className="block text-xs text-slate-700">Số vị trí<input type="number" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" value={jobForm.openings} onChange={e=>setJobForm({...jobForm,openings:e.target.value})} /></label>
               </div>
-            ))}
-            {jobs.length===0 && !isLoading && <div className="text-xs text-slate-500 text-center py-4">Chưa có công việc.</div>}
+              <div className="flex gap-2 justify-end pt-1">
+                {editingJob && <button type="button" onClick={resetJob} className="rounded-xl px-4 py-2 text-xs text-slate-600 hover:bg-slate-100">Hủy</button>}
+                <button disabled={busy==='job'} className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-900 hover:bg-amber-400 disabled:opacity-60">{busy==='job'?'Đang lưu...':(editingJob?'Cập nhật':'Thêm công việc')}</button>
+              </div>
+            </form>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white/80 p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-3">Danh sách công việc & mức lương sau tốt nghiệp ({jobs.length})</h2>
+            <div className="space-y-2 max-h-[460px] overflow-auto pr-1">
+              {jobs.map(j => (
+                <div key={j.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-start justify-between gap-2 text-sm">
+                  <div>
+                    <div className="font-semibold text-slate-800">{j.title}</div>
+                    <div className="text-xs text-slate-600 mt-0.5">Ngành: {industryLabel(j.industry)} · Lương: {fmtMoney(j.baseSalary.amount)} · Yêu cầu bằng: {j.requiredDegree ? degreeCodeLabel(j.requiredDegree) : '—'}</div>
+                    <div className="text-xs text-slate-600">Tín dụng ≥ {j.minCreditScore} · Năng lượng {j.energyCost} · Vị trí {j.openings}</div>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={()=>startEditJob(j)} className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs hover:bg-white">Sửa</button>
+                    <button disabled={busy===`del-job-${j.id}`} onClick={()=>void removeJob(j.id)} className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-60">Xóa</button>
+                  </div>
+                </div>
+              ))}
+              {jobs.length===0 && !isLoading && <div className="text-xs text-slate-500 text-center py-4">Chưa có công việc.</div>}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
 </div>
   );

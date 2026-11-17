@@ -449,7 +449,7 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
               const dx = (e.clientX - drag.startX) * scaleX;
               const dy = (e.clientY - drag.startY) * scaleY;
 
-              if (Math.abs(dx) + Math.abs(dy) > 4) {
+              if (Math.abs(dx) + Math.abs(dy) > 8) {
                 drag.moved = true;
               }
 
@@ -493,12 +493,12 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
           return (
             <div className="relative w-full overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
               {/* Thanh toolbar điều khiển nổi trên bản đồ */}
-              <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white/95 px-2 py-1.5 shadow-md backdrop-blur-sm">
+              <div className="pointer-events-auto absolute right-2 top-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-1 rounded-xl border border-slate-200/80 bg-white/95 p-1.5 shadow-md backdrop-blur-sm">
                 <button
                   type="button"
                   onClick={handleZoomIn}
                   title="Phóng to (+)"
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-700 transition hover:bg-slate-100 font-bold text-sm"
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-slate-700 transition hover:bg-slate-100 font-bold text-base"
                 >
                   +
                 </button>
@@ -506,24 +506,23 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
                   type="button"
                   onClick={handleZoomOut}
                   title="Thu nhỏ (−)"
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-700 transition hover:bg-slate-100 font-bold text-sm"
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-slate-700 transition hover:bg-slate-100 font-bold text-base"
                 >
                   −
                 </button>
-                <div className="h-4 w-px bg-slate-200" />
                 <button
                   type="button"
                   onClick={handleReset}
-                  title="Vừa khung nhìn (100%)"
-                  className="rounded-lg px-2 py-1 font-mono text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                  title="Vừa khung nhìn (100%) / Đặt lại"
+                  className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 font-mono text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
                 >
-                  {Math.round(view.zoom * 100)}%
+                  Đặt lại {Math.round(view.zoom * 100)}%
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowGridLines((v) => !v)}
                   title="Bật/Tắt đường lưới ô"
-                  className={`rounded-lg px-2 py-1 text-[11px] font-medium transition ${showGridLines
+                  className={`inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 py-2 text-[11px] font-medium transition ${showGridLines
                       ? 'bg-indigo-50 text-indigo-700 font-semibold'
                       : 'text-slate-500 hover:bg-slate-100'
                     }`}
@@ -541,7 +540,8 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
                   ref={canvasRef}
                   width={canvasWidth}
                   height={canvasHeight}
-                  className="block aspect-[16/10] w-full max-h-[640px] cursor-grab touch-none select-none active:cursor-grabbing"
+                  className="block aspect-[16/10] w-full max-h-[640px] cursor-grab touch-manipulation select-none active:cursor-grabbing"
+                  style={{ touchAction: 'manipulation' }}
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
@@ -551,7 +551,7 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
 
               {/* Footer bar thông tin trạng thái */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-white px-4 py-2.5 text-xs text-slate-600">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold text-slate-800">
                     {mapData?.provinceName ?? 'Đô thị'}
                   </span>
@@ -559,21 +559,21 @@ export function getTileStyle(zoneType: ZoneType): { bg: string; border: string }
                     {cols} × {rows} ô ({cols * rows} lô đất)
                   </span>
                   {hoveredPlot && (
-                    <span className="text-[11px] font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
-                      Trỏ chuột: [{hoveredPlot.col}, {hoveredPlot.row}]
+                    <span className="rounded-md border border-indigo-100 bg-indigo-50 px-2 py-0.5 font-mono text-[11px] text-indigo-600">
+                      Trỏ: [{hoveredPlot.col}, {hoveredPlot.row}]
                     </span>
                   )}
                 </div>
 
-                  <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                    <span>Kéo chuột để di chuyển · Dùng nút +/- để phóng to</span>
-                    {auctioningTile && (
-                      <span className="flex items-center gap-1 font-bold text-rose-600">
-                        <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
-                        Đang có phiên đấu giá
-                      </span>
-                    )}
-                  </div>
+                <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+                  <span>Chạm/kéo nhẹ để chọn ô · Kéo &gt; 8px để di chuyển · Dùng nút +/- để phóng to</span>
+                  {auctioningTile && (
+                    <span className="flex items-center gap-1 font-bold text-rose-600">
+                      <span className="h-2 w-2 animate-ping rounded-full bg-rose-500" />
+                      Đang có phiên đấu giá
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           );

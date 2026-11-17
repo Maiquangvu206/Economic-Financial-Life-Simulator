@@ -123,7 +123,7 @@ export function IndustryRevenueConfigPage() {
 
       <form onSubmit={onSave} className="space-y-4">
         <section className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
-          <div className="overflow-auto rounded-xl border border-slate-200">
+          <div className="overflow-x-auto [-webkit-overflow-scrolling:touch] rounded-xl border border-slate-200">
             <table className="min-w-full text-xs">
               <thead className="bg-slate-50 text-slate-700">
                 <tr>

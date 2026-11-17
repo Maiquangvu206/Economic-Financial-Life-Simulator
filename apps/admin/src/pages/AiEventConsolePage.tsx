@@ -282,7 +282,7 @@ export function AiEventConsolePage() {
 
       <section className="panel">
         <h2 className="panel-title">Thống kê hiệu suất AI — Chi phí & Độ trễ</h2>
-        <div className="overflow-auto max-h-[60vh]">
+        <div className="overflow-x-auto overflow-y-auto max-h-[60vh] [-webkit-overflow-scrolling:touch]">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500">

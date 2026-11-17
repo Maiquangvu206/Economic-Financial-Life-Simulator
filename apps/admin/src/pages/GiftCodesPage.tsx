@@ -253,7 +253,7 @@ export function GiftCodesPage() {
             ) : codes.length === 0 ? (
               <div className="text-sm text-slate-500">Chưa có mã quà tặng nào.</div>
             ) : (
-              <div className="overflow-auto max-h-[60vh]">
+              <div className="overflow-x-auto overflow-y-auto max-h-[60vh] [-webkit-overflow-scrolling:touch]">
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 z-10 bg-white">
                     <tr className="text-left text-slate-500 border-b border-slate-200">
@@ -300,7 +300,7 @@ export function GiftCodesPage() {
                               ) : redemptions.length === 0 ? (
                                 <div className="text-slate-500">Chưa có tài khoản nào sử dụng mã này.</div>
                               ) : (
-                                <div className="overflow-auto max-h-60">
+                                <div className="overflow-x-auto overflow-y-auto max-h-60 [-webkit-overflow-scrolling:touch]">
                                   <table className="w-full text-[11px]">
                                     <thead className="sticky top-0 z-10 bg-slate-50">
                                       <tr className="text-left text-slate-500">

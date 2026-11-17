@@ -239,8 +239,8 @@ export function StockMarketPage() {
             <GameButton variant="outline" size="sm" onClick={() => void refreshAll()}>Làm mới</GameButton>
           </div>
         ) : (
-          <div className="overflow-auto max-h-[60vh]">
-            <table className="w-full text-sm border-collapse">
+          <div className="overflow-x-auto overflow-y-auto max-h-[60vh] [-webkit-overflow-scrolling:touch]">
+            <table className="w-full min-w-[640px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] uppercase text-slate-500">
                   <th className="text-left pb-2">Mã</th>
@@ -260,7 +260,7 @@ export function StockMarketPage() {
                     <td className="pb-2 text-right font-mono"><span className={`${changeColor(ticker.change24hPct)} font-semibold`}>{ticker.change24hPct >= 0 ? '+' : ''}{Number(ticker.change24hPct).toFixed(2)}%</span></td>
                     <td className="pb-2 text-right font-mono text-slate-500">{formatCompact(ticker.totalVolume)}</td>
                     <td className="pb-2 text-right">
-                      <div className="flex gap-1 justify-end">
+                      <div className="flex justify-end gap-1">
                         <GameButton variant="primary" size="sm" onClick={() => setPlaceModal(ticker)}>Mua/Bán ngay</GameButton>
                       </div>
                     </td>
@@ -290,8 +290,8 @@ export function StockMarketPage() {
       </Panel>
 
       <Panel title="Lịch sử giao dịch" borderColor="default">
-        <div className="overflow-auto max-h-[60vh]">
-          <table className="w-full text-sm border-collapse">
+        <div className="overflow-x-auto overflow-y-auto max-h-[60vh] [-webkit-overflow-scrolling:touch]">
+          <table className="w-full min-w-[560px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-[10px] uppercase text-slate-500">
                 <th className="text-left pb-2">Loại</th>
