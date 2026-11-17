@@ -8,10 +8,11 @@ export const JoinRoomPayloadSchema = z.object({
 });
 export type JoinRoomPayload = z.infer<typeof JoinRoomPayloadSchema>;
 
-/** Channel: public ("global", "hcmc") hoặc "private:<characterUuid>" cho DM 1-1. */
+/** Channel: public (ví dụ "global") hoặc "private:<characterUuid>" cho DM 1-1. */
 export const ChatSendPayloadSchema = z.object({
   channelId: z.string().min(1).max(120),
   message: z.string().min(1).max(1000),
+  displayName: z.string().trim().min(1).max(80).optional(),
 });
 export type ChatSendPayload = z.infer<typeof ChatSendPayloadSchema>;
 
@@ -94,7 +95,7 @@ export interface ClientToServerEvents {
   'room:join': (payload: { room: string }) => void;
   'room:leave': (payload: { room: string }) => void;
   'player:move': (payload: { x: number; y: number }) => void;
-  'chat:send': (payload: { channelId: string; message: string }) => void;
+  'chat:send': (payload: { channelId: string; message: string; displayName?: string }) => void;
   'court:statement': (payload: { caseId: string; statement: string }) => void;
   'market:subscribe': (payload: { tickerId: string }) => void;
   'market:unsubscribe': (payload: { tickerId: string }) => void;

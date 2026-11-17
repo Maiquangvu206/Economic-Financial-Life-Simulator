@@ -33,6 +33,8 @@ export const CharacterDtoSchema = z.object({
 export type CharacterDto = z.infer<typeof CharacterDtoSchema>;
 
 export const ResolveCccdResponseSchema = z.object({
+  id: IdSchema.optional(),
+  userId: IdSchema.optional(),
   cccd_masked: z.string(),
   full_name: z.string(),
   is_alive: z.boolean(),

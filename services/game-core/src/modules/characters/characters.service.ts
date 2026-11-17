@@ -76,6 +76,8 @@ export class CharactersService {
     const row = await this.repository.findByCccd(normalized);
     if (!row) throw AppError.notFound('Character');
     return {
+      id: row.id,
+      userId: row.user_id ?? undefined,
       cccd_masked: maskCccd(normalized),
       full_name: row.full_name,
       is_alive: row.is_alive,

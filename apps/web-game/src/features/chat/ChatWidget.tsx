@@ -18,7 +18,6 @@ export interface ChatMessage {
 
 const PUBLIC_CHANNELS: { id: string; label: string }[] = [
   { id: 'global', label: 'Chat tổng' },
-  { id: 'hcmc', label: 'Thành phố' },
 ];
 
 let msgSeq = 0;
@@ -48,11 +47,16 @@ export function ChatWidget() {
 
   const myUserId = useSessionStore((s) => s.user?.id ?? '');
   const myName = useSessionStore((s) => s.user?.username ?? 'Bạn');
+  const myUserIdRef = useRef(myUserId);
+  useEffect(() => {
+    myUserIdRef.current = myUserId;
+  }, [myUserId]);
 
-  const { data: me } = useQuery<{ id: string }>({
+  const { data: me } = useQuery<{ id: string; fullName?: string }>({
     queryKey: ['characters', 'me-id'],
-    queryFn: () => apiRequest<{ id: string }>('/api/v1/characters/me'),
+    queryFn: () => apiRequest<{ id: string; fullName?: string }>('/api/v1/characters/me'),
   });
+  const myDisplayName = me?.fullName?.trim() || myName;
 
   // Server định tuyến DM qua character_room=<userId>, nên channel dùng userId,
   // còn UI hiển thị thread theo Character ID.
@@ -80,9 +84,19 @@ export function ChatWidget() {
 
     const onMessage = (msg: ChatMessage) => {
       const id = `${msg.at}-${msg.characterId}-${++msgSeq}`;
+      let threadKey = msg.channelId;
+      const meId = myUserIdRef.current;
+      // Tin nhắn riêng gửi tới mình đến từ người khác: server gửi channelId = private:<myUserId>.
+      // Gom vào thread theo người gửi (userId của người gửi) để hiển thị đúng cuộc trò chuyện.
+      if (msg.fromPrivate && meId && msg.toCharacterId === meId && msg.characterId !== meId) {
+        const sender = msg.characterId;
+        threadKey = `private:${sender}`;
+        setDmChannelByChar((prev) => (prev[sender] ? prev : { ...prev, [sender]: `private:${sender}` }));
+      }
+      // Echo tin nhắn mình gửi: server trả channelId = private:<targetUserId> (đúng thread đích).
       setThreads((prev) => ({
         ...prev,
-        [msg.channelId]: [...(prev[msg.channelId] ?? []), { ...msg, id }],
+        [threadKey]: [...(prev[threadKey] ?? []), { ...msg, id }],
       }));
       setUnread((n) => n + 1);
     };
@@ -114,19 +128,21 @@ export function ChatWidget() {
       socket.connect();
       return;
     }
-    socket.emit('chat:send', { channelId: currentChannelId, message: trimmed });
+    socket.emit('chat:send', { channelId: currentChannelId, message: trimmed, displayName: myDisplayName });
     setDraft('');
   }
 
   async function openDm(targetCharId: string) {
     const raw = targetCharId.trim();
     if (!raw) return;
-    // CCCD 12 chữ số: resolve qua API thành Character ID trước.
+    // CCCD 12 chữ số: resolve qua API thành Character ID/User ID trước.
     let charId = raw;
+    let directUserId: string | undefined;
     if (/^\d{12}$/.test(raw)) {
       try {
-        const resolved = await apiRequest<{ id: string }>(`/api/v1/characters/by-cccd/${raw}`);
-        charId = resolved.id;
+        const resolved = await apiRequest<{ id?: string; userId?: string; full_name?: string }>(`/api/v1/characters/by-cccd/${raw}`);
+        charId = resolved.id ?? raw;
+        directUserId = resolved.userId ?? undefined;
       } catch {
         return;
       }
@@ -138,6 +154,11 @@ export function ChatWidget() {
       return;
     }
     // Resolve Character ID -> User ID (server định tuyến DM qua room của user).
+    if (directUserId) {
+      setDmChannelByChar((prev) => ({ ...prev, [charId]: `private:${directUserId}` }));
+      setActivePrivateCharId(charId);
+      return;
+    }
     try {
       const resolved = await apiRequest<{ userId: string }>(`/api/v1/characters/${charId}`);
       setDmChannelByChar((prev) => ({
@@ -222,25 +243,7 @@ export function ChatWidget() {
               </button>
             </div>
 
-            {activeTab === 'public' && (
-              <div className="mt-2 flex gap-1">
-                {PUBLIC_CHANNELS.map((ch) => (
-                  <button
-                    key={ch.id}
-                    type="button"
-                    onClick={() => setActiveChannel(ch.id)}
-                    className={clsx(
-                      'rounded-lg px-2 py-1 text-[11px] font-medium transition',
-                      activeChannel === ch.id
-                        ? 'bg-slate-800 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
-                    )}
-                  >
-                    {ch.label}
-                  </button>
-                ))}
-              </div>
-            )}
+
 
             {activeTab === 'private' && (
               <div className="mt-2 space-y-2">

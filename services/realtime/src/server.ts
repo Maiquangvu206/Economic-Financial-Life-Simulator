@@ -120,8 +120,13 @@ export function createRealtimeServer(): {
       const parsed = ChatSendPayloadSchema.safeParse(payload);
       if (!parsed.success || !allowChat(socket.id)) return;
 
-      const { channelId, message } = parsed.data;
+      const { channelId, message, displayName: providedName } = parsed.data;
       const at = Date.now();
+      const cleanName = providedName?.trim().slice(0, 80);
+      const roleLabel = actor.role === 'admin' ? 'Quản trị viên' : actor.role === 'moderator' ? 'Điều hành viên' : null;
+      const senderName = roleLabel
+        ? (cleanName ? `${cleanName} (${roleLabel})` : roleLabel)
+        : (cleanName || 'Người chơi');
 
       // Chat riêng tư: channelId dạng "private:<targetCharacterId>".
       // Chỉ gửi cho người gửi và người nhận (room cá nhân), không lộ ra phòng public.
@@ -131,7 +136,7 @@ export function createRealtimeServer(): {
         io.to(Rooms.character(targetId)).emit('chat:message', {
           channelId,
           characterId: actor.id,
-          displayName: 'Người chơi',
+          displayName: senderName,
           message,
           at,
           toCharacterId: targetId,
@@ -149,13 +154,12 @@ export function createRealtimeServer(): {
         return;
       }
 
-const displayName = actor.role === 'admin' ? 'Quản trị viên' : actor.role === 'moderator' ? 'Điều hành viên' : 'Người chơi';
       // Chat tổng / kênh công khai: phát cho mọi người trong phòng.
       const room = Rooms.chat(channelId);
       io.to(room).emit('chat:message', {
         channelId,
         characterId: actor.id,
-        displayName,
+        displayName: senderName,
         message,
         at,
       });
