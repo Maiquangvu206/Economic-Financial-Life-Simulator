@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { to: '/map-editor', label: 'Bản đồ & Giá đất', icon: '🗺️' },
   { to: '/players', label: 'Người chơi', icon: '👥' },
   { to: '/ai-events', label: 'AI & Sự kiện', icon: '🤖' },
+  { to: '/chat', label: 'Chat hệ thống', icon: '💬' },
   { to: '/audit-logs', label: 'Nhật ký hệ thống', icon: '📜' },
 ];
 

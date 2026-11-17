@@ -149,12 +149,13 @@ export function createRealtimeServer(): {
         return;
       }
 
+const displayName = actor.role === 'admin' ? 'Quản trị viên' : actor.role === 'moderator' ? 'Điều hành viên' : 'Người chơi';
       // Chat tổng / kênh công khai: phát cho mọi người trong phòng.
       const room = Rooms.chat(channelId);
       io.to(room).emit('chat:message', {
         channelId,
         characterId: actor.id,
-        displayName: 'Người chơi',
+        displayName,
         message,
         at,
       });

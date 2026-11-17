@@ -6,8 +6,8 @@ import { adminRequest } from '../shared/api/httpClient';
 interface AuditLogItem {
   id: string;
   actorId: string | null;
-  actorName?: string | null;
-  actorRole?: string | null;
+  actorDisplayName?: string | null;
+  actorRoleLabel?: string | null;
   action: string;
   detail: Record<string, unknown>;
   createdAt: string;
@@ -63,6 +63,101 @@ function fmtValue(v: unknown): string {
   }
 }
 
+const DETAIL_KEY_LABEL: Record<string, string> = {
+  trigger: 'Nguồn kích hoạt',
+  scope: 'Phạm vi áp dụng',
+  action: 'Hành động xử lý',
+  affected: 'Số đối tượng bị ảnh hưởng',
+  totalFineMinor: 'Tổng tiền phạt thu hồi',
+  fineMinor: 'Tiền phạt',
+  totalFine: 'Tổng tiền phạt',
+  rationale: 'Lý do / Đánh giá',
+  reason: 'Lý do / Đánh giá',
+  note: 'Ghi chú',
+  title: 'Tiêu đề',
+  type: 'Loại',
+  severity: 'Mức độ',
+  durationInGameYears: 'Thời lượng (năm game)',
+  durationHours: 'Thời lượng (giờ)',
+  deltaPct: 'Mức điều chỉnh (%)',
+  mode: 'Chế độ',
+  targetIds: 'Mã đối tượng',
+  tickers: 'Mã chứng khoán',
+  supportedCompanies: 'Số công ty được hỗ trợ',
+  amountPerCompanyMinor: 'Số tiền mỗi công ty',
+  totalSpentMinor: 'Tổng chi',
+  balanceAfter: 'Số dư sau',
+  characterId: 'Mã nhân vật',
+  characterName: 'Tên nhân vật',
+  amountMinor: 'Số tiền',
+  username: 'Tên đăng nhập',
+  email: 'Email',
+  role: 'Vai trò',
+  fromRole: 'Quyền cũ',
+  toRole: 'Quyền mới',
+  targetUserId: 'Mã tài khoản đích',
+  broadcastId: 'Mã thông báo',
+  giftCodeId: 'Mã quà tặng',
+  code: 'Mã',
+  electionId: 'Mã bầu cử',
+  winnerCandidateId: 'Ứng viên thắng',
+  winnerCharacterId: 'Nhân vật thắng',
+  heat: 'Mức Heat',
+  triggerHeat: 'Heat tại thời điểm',
+  prisonDays: 'Số ngày tù',
+  affectedTickers: 'Số mã bị ảnh hưởng',
+  status: 'Trạng thái',
+  pinned: 'Ghim',
+  showOnLogin: 'Hiển thị trang đăng nhập',
+  showInApp: 'Hiển thị trong ứng dụng',
+};
+
+function detailKeyLabel(key: string) {
+  return DETAIL_KEY_LABEL[key] ?? key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim();
+}
+
+function formatDetailValue(key: string, value: unknown): string {
+  if (value == null) return '—';
+  if (typeof value === 'boolean') return value ? 'Có' : 'Không';
+  if (typeof value === 'number') {
+    if (key.toLowerCase().endsWith('minor') || key.toLowerCase().endsWith('amount')) {
+      return `${Number(value).toLocaleString('vi-VN')} ₫`;
+    }
+    if (key === 'affected') return `${Number(value).toLocaleString('vi-VN')} người chơi`;
+    return Number(value).toLocaleString('vi-VN');
+  }
+  if (typeof value === 'string') {
+    const k = key.toLowerCase();
+    if (k === 'trigger') {
+      if (value === 'periodic') return 'Quét định kỳ tự động';
+      if (value === 'manual') return 'Quản trị viên kích hoạt thủ công';
+      return value;
+    }
+    if (k === 'scope') {
+      if (value === 'none') return 'Không áp dụng';
+      if (value === 'all' || value === 'ALL_MARKET') return 'Toàn hệ thống';
+      if (value === 'target' || value === 'targets') return 'Mục tiêu cụ thể';
+      if (value === 'SPECIFIC_COMPANIES') return 'Mã cụ thể';
+      return value;
+    }
+    if (k === 'action') {
+      return value === 'null' || value === '' ? 'Không có hành động' : value;
+    }
+    if (k === 'rationale' || k === 'reason') {
+      return value.trim() === '' ? 'Không có ghi chú' : value;
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '—';
+    return value.map((v) => (typeof v === 'string' ? v : JSON.stringify(v))).join(', ');
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
 function summarize(action: string, detail: Record<string, unknown> | null | undefined): string {
   const d = detail ?? {};
   const pick = (...keys: string[]) => keys.map((k) => d[k]).find((v) => v != null && v !== '');
@@ -213,9 +308,9 @@ export function AuditLogsPage() {
                       </td>
                       <td className="py-2.5 px-4 text-slate-700 leading-relaxed">{summarize(log.action, log.detail)}</td>
                       <td className="py-2.5 px-4 text-slate-600">
-                        <div className="font-semibold text-slate-800">{log.actorName || actorLabel(log.actorId)}</div>
-                        {log.actorId != null && log.actorRole && (
-                          <div className="text-[10px] text-slate-500">{log.actorRole}</div>
+                        <div className="font-semibold text-slate-800">{log.actorDisplayName || actorLabel(log.actorId)}</div>
+                        {log.actorId != null && log.actorRoleLabel && (
+                          <div className="text-[10px] text-slate-500">{log.actorRoleLabel}</div>
                         )}
                       </td>
                       <td className="py-2.5 px-4 text-right">
@@ -237,9 +332,16 @@ export function AuditLogsPage() {
                         <td colSpan={5} className="px-4 pb-3 pt-0">
                           <div className="rounded-xl border border-slate-200 bg-white p-3">
                             <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Dữ liệu chi tiết</div>
-                            <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-slate-700">
-                              {JSON.stringify(log.detail, null, 2)}
-                            </pre>
+                            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                              {Object.entries(log.detail ?? {})
+                                .filter(([, v]) => v != null && v !== '' && !(Array.isArray(v) && v.length === 0))
+                                .map(([k, v]) => (
+                                  <div key={k} className="flex items-start justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1.5">
+                                    <span className="text-[11px] font-medium text-slate-600">{detailKeyLabel(k)}</span>
+                                    <span className="text-[11px] font-semibold text-slate-800 text-right break-words">{formatDetailValue(k, v)}</span>
+                                  </div>
+                                ))}
+                            </div>
                           </div>
                         </td>
                       </tr>
