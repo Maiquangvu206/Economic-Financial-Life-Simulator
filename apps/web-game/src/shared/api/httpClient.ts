@@ -72,7 +72,8 @@ async function send(path: string, init: RequestInit, token: string | null): Prom
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  return fetch(`${env.apiBaseUrl}${path}`, { ...init, headers });
+  // Tránh 304/ETag conditional GET làm fetch trả body rỗng và client coi là lỗi.
+  return fetch(`${env.apiBaseUrl}${path}`, { ...init, headers, cache: 'no-store' });
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -93,6 +94,11 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     if (!latest || latest === token) {
       useSessionStore.getState().clearSession();
     }
+  }
+
+  // 304 Not Modified: coi như cache-hit, không có body để parse.
+  if (response.status === 304) {
+    return undefined as T;
   }
 
   if (!response.ok) {

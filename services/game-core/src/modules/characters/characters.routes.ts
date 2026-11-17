@@ -17,8 +17,10 @@ charactersRouter.get('/resolve-cccd/:cccd', asyncHandler(controller.resolveByCcc
 charactersRouter.get('/by-account/:accountNumber', asyncHandler(controller.lookupByAccountNumber));
 charactersRouter.get('/me', asyncHandler(controller.getMe));
 charactersRouter.get('/me/eligible-successors', asyncHandler(controller.eligibleSuccessors));
-charactersRouter.get('/:id/eligible-successors', asyncHandler(controller.eligibleSuccessors));
-charactersRouter.get('/:id', asyncHandler(controller.getById));
+// UUID-constrained để tránh bắt nhầm path như /education và gây 500 do cast UUID.
+const UUID_RE = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+charactersRouter.get(`/:id(${UUID_RE})/eligible-successors`, asyncHandler(controller.eligibleSuccessors));
+charactersRouter.get(`/:id(${UUID_RE})`, asyncHandler(controller.getById));
 
 charactersRouter.post(
   '/me/profile',

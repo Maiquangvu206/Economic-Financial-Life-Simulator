@@ -92,6 +92,11 @@ export function createApp(): Express {
   });
 
   app.use('/api', requireInternalToken);
+  // API JSON thay đổi thường xuyên theo tick/hành động; tắt cache/ETag để tránh 304 body rỗng.
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/banking', attachActor, bankingRouter);

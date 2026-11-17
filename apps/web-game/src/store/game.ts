@@ -157,10 +157,10 @@ function computeFromAnchor(state: Pick<GameState, 'year' | 'month' | 'day' | 'da
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
-  // Mốc khởi đầu hệ thống: 01/01/2000
-  year: 2000,
-  month: 1,
-  day: 1,
+  // Mốc khởi đầu hiển thị: chờ đồng bộ server (tránh hiển thị 01/01/2000 giả)
+  year: 0,
+  month: 0,
+  day: 0,
   dayOfYear: 0,
   hour: 0,
   minute: 0,
@@ -183,9 +183,9 @@ export const useGameStore = create<GameState>((set, get) => ({
     schoolName: 'THPT Chu Văn An',
   },
 
-  // Tài chính khởi đầu bằng VNĐ
-  cash: 15_000_000, // 15 triệu VNĐ
-  netWorth: 15_000_000,
+  // Tài chính: chờ đồng bộ từ server (tránh hiển thị 15tr giả)
+  cash: 0,
+  netWorth: 0,
   creditScore: 650,
   heatLevel: 0,
   energy: 100,

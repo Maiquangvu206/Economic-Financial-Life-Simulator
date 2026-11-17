@@ -55,7 +55,7 @@ async function send(path: string, init: RequestInit, token: string | null): Prom
   headers.set('Accept', 'application/json');
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  return fetch(`${env.apiBaseUrl}${path}`, { ...init, headers });
+  return fetch(`${env.apiBaseUrl}${path}`, { ...init, headers, cache: 'no-store' });
 }
 
 export async function adminRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -75,6 +75,8 @@ export async function adminRequest<T>(path: string, init: RequestInit = {}): Pro
       window.location.replace(`${env.portalUrl}/login?next=admin`);
     }
   }
+
+  if (response.status === 304) return undefined as T;
 
   if (!response.ok) {
     throw new ApiError(response.status, await readProblem(response));

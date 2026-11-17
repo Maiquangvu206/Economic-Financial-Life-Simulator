@@ -267,6 +267,7 @@ export function LoginPage() {
                 setMode('login');
                 setError(null);
               }}
+              onMouseDown={(e) => e.preventDefault()}
               className={`flex-1 rounded-lg px-3 py-2 transition ${
                 mode === 'login'
                   ? 'bg-white text-emerald-700 shadow-sm'
@@ -281,6 +282,7 @@ export function LoginPage() {
                 setMode('register');
                 setError(null);
               }}
+              onMouseDown={(e) => e.preventDefault()}
               className={`flex-1 rounded-lg px-3 py-2 transition ${
                 mode === 'register'
                   ? 'bg-white text-emerald-700 shadow-sm'

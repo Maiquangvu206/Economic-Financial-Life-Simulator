@@ -155,10 +155,7 @@ export function InterestRatesConfigPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">Cấu hình lãi suất (Vay & Tiết kiệm)</h1>
-        <p className="mt-1 text-xs text-slate-600">
-          Thiết lập <b>lãi suất cơ sở cho vay ngân hàng</b> (áp dụng trong tính lãi vay theo điểm tín dụng) và <b>lãi suất gửi tiết kiệm</b> theo từng kỳ hạn. Thay đổi được lưu vào hệ thống dùng chung và áp dụng cho web-game.
-        </p>
+        <h1 className="text-xl font-bold text-slate-900">Cấu hình lãi suất</h1>
       </div>
 
       {status && (
@@ -172,9 +169,6 @@ export function InterestRatesConfigPage() {
       <form onSubmit={onSave} className="space-y-6">
         <section className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
           <h2 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">1. Lãi suất vay ngân hàng</h2>
-          <p className="text-xs text-slate-600">
-            Đây là <b>lãi suất cơ sở (base rate)</b> dùng để tính lãi suất khoản vay theo điểm tín dụng (credit score) của người chơi. Công thức gợi ý: lãi suất vay = f(điểm tín dụng, lãi suất cơ sở).
-          </p>
           <div className="grid gap-3 sm:grid-cols-[260px,1fr] items-end">
             <label className="block">
               <span className="text-xs font-semibold text-slate-700">Lãi suất cơ sở cho vay (%/năm)</span>
@@ -190,17 +184,14 @@ export function InterestRatesConfigPage() {
               />
             </label>
             <div className="text-xs text-slate-600">
-              Giá trị hiện hành trong hệ thống: <b>{Number(data?.loanBaseRatePct ?? 5).toLocaleString('vi-VN')}%/năm</b>. Lãi suất thực tế của từng khoản vay còn phụ thuộc điểm tín dụng.
+              Giá trị hiện hành trong hệ thống: <b>{Number(data?.loanBaseRatePct ?? 5).toLocaleString('vi-VN')}%/năm</b>.
             </div>
           </div>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
           <div>
-            <h2 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">2. Cấp bậc tài khoản (ngưỡng đánh giá)</h2>
-            <p className="text-xs text-slate-600 mt-1">
-              Cấp bậc tài khoản được tính dựa trên: <b>tài sản ròng</b> (tiền mặt + tiết kiệm − nợ vay) + <b>giá trị bất động sản hiện có</b> (bao gồm đất/công trình tỉnh) + <b>giá trị doanh nghiệp hiện có</b> (định giá công ty sở hữu, không tính công ty phá sản). Cấu hình ngưỡng tối thiểu (VND) cho từng hạng.
-            </p>
+            <h2 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">2. Cấp bậc tài khoản</h2>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {([
@@ -234,10 +225,7 @@ export function InterestRatesConfigPage() {
         <section className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <h2 className="text-sm font-semibold text-emerald-700 uppercase tracking-wider">3. Lãi suất gửi tiết kiệm (theo kỳ hạn)</h2>
-              <p className="text-xs text-slate-600 mt-1">
-                Cấu hình các kỳ hạn gửi tiết kiệm, lãi suất %/năm và mức phạt rút trước hạn (% trên lãi/giá trị theo quy tắc hệ thống). <b>Kỳ hạn 0 tháng</b> = không kỳ hạn (linh hoạt).
-              </p>
+              <h2 className="text-sm font-semibold text-emerald-700 uppercase tracking-wider">3. Lãi suất gửi tiết kiệm</h2>
             </div>
             <button type="button" onClick={addTerm} className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">
               + Thêm kỳ hạn

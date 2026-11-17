@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatMoney } from '../shared/lib/format';
 import { adminRequest } from '../shared/api/httpClient';
 import type { MapDto, ProvinceDto, PutMapResponse } from '@efls/contracts';
@@ -31,6 +31,7 @@ const ZONE_PRICE_ROWS: Array<{ id: string; label: string }> = [
 export function MapEditorPage() {
   const [provinces, setProvinces] = useState<ProvinceDto[]>([]);
   const [provinceCode, setProvinceCode] = useState('001');
+  const [provinceSearch, setProvinceSearch] = useState('');
   const [map, setMap] = useState<MapDto | null>(null);
   const [prices, setPrices] = useState<Record<string, number>>({});
 
@@ -113,6 +114,11 @@ export function MapEditorPage() {
 
   const provinceList =
     provinces.length > 0 ? provinces : ([{ code: '001', name: 'Thành phố Hà Nội', region: 'Bắc', isCity: true }] as ProvinceDto[]);
+  const filteredProvinceList = useMemo(() => {
+    const q = provinceSearch.trim().toLowerCase();
+    if (!q) return provinceList;
+    return provinceList.filter((p) => `${p.code} ${p.name}`.toLowerCase().includes(q));
+  }, [provinceList, provinceSearch]);
 
   const inputCls =
     'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500';
@@ -178,13 +184,28 @@ export function MapEditorPage() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block sm:col-span-2">
+                <span className={labelCls}>Tìm nhanh tỉnh/thành</span>
+                <input
+                  type="text"
+                  value={provinceSearch}
+                  onChange={(e) => setProvinceSearch(e.target.value)}
+                  placeholder="Nhập mã hoặc tên (vd: 092, Cần Thơ)..."
+                  className={inputCls}
+                />
+              </label>
+              <label className="block sm:col-span-2">
                 <span className={labelCls}>Khu vực</span>
                 <select value={provinceCode} onChange={(e) => setProvinceCode(e.target.value)} className={inputCls}>
-                  {provinceList.map((p) => (
+                  {filteredProvinceList.map((p) => (
                     <option key={p.code} value={p.code}>
                       {p.code} — {p.name}
                     </option>
                   ))}
+                  {filteredProvinceList.length === 0 && (
+                    <option value={provinceCode} disabled>
+                      Không tìm thấy tỉnh/thành phù hợp
+                    </option>
+                  )}
                 </select>
               </label>
             </div>

@@ -120,11 +120,13 @@ export function AuditLogsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const { data: logs = [], isLoading, error, refetch } = useQuery<AuditLogItem[]>({
+  const { data: logs = [], isLoading, isFetching, error, refetch } = useQuery<AuditLogItem[]>({
     queryKey: ['admin', 'audit-logs'],
     queryFn: () => adminRequest<AuditLogItem[]>('/api/v1/admin/audit-logs?limit=200'),
     refetchInterval: 30000,
+    staleTime: 10000,
   });
+  const showLoading = isLoading && logs.length === 0;
 
   const actions = useMemo(() => Array.from(new Set(logs.map((l) => l.action))).sort(), [logs]);
 
@@ -189,8 +191,8 @@ export function AuditLogsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {isLoading ? (
-              <tr><td className="py-8 px-4 text-center text-slate-500" colSpan={5}>Đang tải nhật ký...</td></tr>
+            {showLoading ? (
+              <tr><td className="py-8 px-4 text-center text-slate-500" colSpan={5}>{isFetching ? 'Đang tải nhật ký...' : 'Chưa có dữ liệu nhật ký.'}</td></tr>
             ) : filteredLogs.length === 0 ? (
               <tr><td className="py-10 px-4 text-center text-slate-500" colSpan={5}>Chưa có bản ghi phù hợp.</td></tr>
             ) : (

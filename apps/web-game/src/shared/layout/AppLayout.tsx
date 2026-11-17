@@ -224,7 +224,10 @@ export function AppLayout() {
         void queryClient.invalidateQueries({ queryKey: ['characters', 'me'] });
         const hasRecap = !!result.recap;
         const meaningful = !!result.processed || (result.recap?.events ?? []).some((e) => e.type !== 'info');
-        if (settings.showRecapOnLogin && hasRecap && meaningful && location.pathname !== '/recap') {
+        const recapShownKey = 'efls.recapShown';
+        const recapAlreadyShown = sessionStorage.getItem(recapShownKey) === '1';
+        if (!recapAlreadyShown && settings.showRecapOnLogin && hasRecap && meaningful && location.pathname !== '/recap') {
+          sessionStorage.setItem(recapShownKey, '1');
           toast({
             title: 'Tóm tắt khi vắng mặt',
             description: result.message || 'Đã cập nhật những thay đổi trong thời gian bạn vắng mặt.',
@@ -548,9 +551,9 @@ export function AppLayout() {
               <span className="text-lg leading-none">☰</span>
             </button>
             <div className="flex min-w-0 flex-wrap items-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm sm:px-3">
-              <span className="text-sm font-mono font-bold text-amber-600">{formatVietnamTime(hour, minute)}</span>
+              <span className="text-sm font-mono font-bold text-amber-600">{year > 0 ? formatVietnamTime(hour, minute) : '--:--'}</span>
               <span className="hidden border-l border-slate-200 pl-2 text-[11px] text-slate-500 sm:inline">{currentPeriod.icon} {currentPeriod.label}</span>
-              <span className="border-l border-slate-200 pl-2 text-[11px] font-mono font-medium text-emerald-700 sm:text-xs">{formatVietnamDate(day, month, year)}</span>
+              <span className="border-l border-slate-200 pl-2 text-[11px] font-mono font-medium text-emerald-700 sm:text-xs">{year > 0 ? formatVietnamDate(day, month, year) : 'Đang đồng bộ...'}</span>
             </div>
             <div title={seasonEffectTitle} className={clsx('hidden items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-medium sm:flex', currentSeason.badgeCls)}>
               <span>{currentSeason.icon}</span><span>{currentSeason.label}</span>
@@ -565,11 +568,11 @@ export function AppLayout() {
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs sm:gap-3 lg:gap-4">
             <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="whitespace-nowrap text-slate-500">Tiền mặt:</span>
-              <span className="font-mono text-sm font-bold text-emerald-600">{formatCompact(cash)}</span>
+              <span className="font-mono text-sm font-bold text-emerald-600">{me ? formatCompact(cash) : '—'}</span>
             </div>
             <div className="hidden items-center gap-2 md:flex">
               <span className="whitespace-nowrap text-slate-500">Tài sản ròng:</span>
-              <span className="font-mono font-semibold text-slate-800">{formatCompact(netWorth)}</span>
+              <span className="font-mono font-semibold text-slate-800">{me ? formatCompact(netWorth) : '—'}</span>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="whitespace-nowrap text-slate-500">Thể lực:</span>
