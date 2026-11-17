@@ -58,36 +58,26 @@ export function SsoPage() {
     void exchange(code);
   }, [code, navigate]);
 
+  // Keep the one-time SSO exchange, but do not show a success/confirmation
+  // screen while it runs. Successful sign-in should land directly in admin.
+  if (state.status === 'pending') return null;
+
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-soft">
-        {state.status === 'pending' ? (
-          <>
-            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-amber-300 border-t-transparent" />
-            <h1 className="mt-4 text-lg font-semibold text-slate-900">
-              Đang xác thực phiên quản trị
-            </h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Cổng đăng nhập đã xác nhận tài khoản của bạn. Vui lòng chờ trong giây lát…
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-2xl">
-              ⛔
-            </div>
-            <h1 className="mt-4 text-lg font-semibold text-slate-900">
-              Không thể mở bảng điều khiển
-            </h1>
-            <p className="mt-2 text-sm text-slate-600">{state.message}</p>
-            <a
-              href={`${env.portalUrl}/login?next=admin`}
-              className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              Quay lại cổng đăng nhập
-            </a>
-          </>
-        )}
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-2xl">
+          ⛔
+        </div>
+        <h1 className="mt-4 text-lg font-semibold text-slate-900">
+          Không thể mở bảng điều khiển
+        </h1>
+        <p className="mt-2 text-sm text-slate-600">{state.message}</p>
+        <a
+          href={`${env.portalUrl}/login?next=admin`}
+          className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+        >
+          Quay lại cổng đăng nhập
+        </a>
       </div>
     </div>
   );
