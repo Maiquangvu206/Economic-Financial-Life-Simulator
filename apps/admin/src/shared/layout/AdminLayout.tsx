@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { clearAdminSession, useAdminSession } from '../../features/auth/session';
 import { env } from '../config/env';
+import { ConnectionStatusBanner } from '../realtime/ConnectionStatusBanner';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Tổng quan vĩ mô', icon: '📊', end: true },
@@ -125,6 +126,7 @@ export function AdminLayout() {
 
       {/* Main */}
       <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        <ConnectionStatusBanner />
         <header className="flex w-full flex-shrink-0 flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2 sm:px-4 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:px-5 lg:py-0">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <button

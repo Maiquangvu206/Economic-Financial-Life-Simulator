@@ -56,8 +56,10 @@ type AiStatus = {
   totals?: { requests?: number | null; successes?: number | null; failures?: number | null };
   providers?: ProviderStatus[];
   error?: string;
+  errorCode?: string;
   detail?: any;
   fetchedAt?: string;
+  source?: string;
 };
 
 const DEFAULT_CONFIG: AiConfig = {
@@ -131,13 +133,31 @@ function applyEntriesToConfig(cfg: AiConfig, entries: UnifiedEntry[]): AiConfig 
 function friendlyStatusError(status?: AiStatus, queryError?: any): string | null {
   if (!status && !queryError) return null;
   if (status?.ready) return null;
-  const msg = status?.error || queryError?.problem?.detail || queryError?.message || '';
-  if (!msg) return 'Không thể kết nối đến dịch vụ AI. Vui lòng kiểm tra hệ thống và thử lại.';
-  if (/timeout/i.test(msg)) return 'Kết nối đến dịch vụ AI quá thời gian chờ. Vui lòng thử lại sau.';
-  if (/AI service trả về 502|ECONNREFUSED|không thể kết nối|Core service unavailable/i.test(msg)) return 'Không thể kết nối đến dịch vụ AI. Vui lòng kiểm tra kết nối và thử lại.';
+
+  const body = (queryError?.problem ?? queryError?.response?.data ?? queryError?.data ?? {}) as any;
+  const errorCode = status?.errorCode || body?.errorCode;
+  const msg = String(status?.error || body?.error || queryError?.problem?.detail || queryError?.message || '');
+
+  // Chuẩn hóa theo yêu cầu: 404 (Không tìm thấy dịch vụ AI), Timeout (AI phản hồi quá chậm), 5xx (Lỗi nội bộ AI Service)
+  if (errorCode === 'timeout' || /Timeout \(AI phản hồi quá chậm\)|timeout/i.test(msg)) {
+    return 'Timeout (AI phản hồi quá chậm)';
+  }
+  if (errorCode === 'ai_internal_error' || /5xx \(Lỗi nội bộ AI Service\)/.test(msg) || /AI service trả về 5\d\d/.test(msg)) {
+    return '5xx (Lỗi nội bộ AI Service)';
+  }
+  if (
+    errorCode === 'not_found' ||
+    errorCode === 'unreachable' ||
+    /404 \(Không tìm thấy dịch vụ AI\)/.test(msg) ||
+    /AI service trả về 404/.test(msg)
+  ) {
+    return '404 (Không tìm thấy dịch vụ AI)';
+  }
+
   if (/401|token|x-ai-token/i.test(msg)) return 'Không thể xác thực với dịch vụ AI. Vui lòng kiểm tra cấu hình hệ thống.';
-  if (/503/i.test(msg)) return 'Dịch vụ AI hiện chưa sẵn sàng. Vui lòng thử lại sau.';
-  return 'Dịch vụ AI đang gặp sự cố. Vui lòng thử làm mới hoặc kiểm tra lại sau.';
+  if (/503|AI_SERVICE_URL chưa được cấu hình/i.test(msg)) return '404 (Không tìm thấy dịch vụ AI)';
+  if (!msg) return 'Không thể kết nối đến dịch vụ AI. Vui lòng kiểm tra hệ thống và thử lại.';
+  return msg;
 }
 
 export function AiProvidersPage() {

@@ -1377,9 +1377,9 @@ export async function getAiConfigAdmin(req: Request, res: Response): Promise<voi
   });
 }
 
-async function pushAiConfigToRuntime(cfg: any): Promise<{ applied: boolean; error?: string; detail?: any }> {
+async function pushAiConfigToRuntime(cfg: any): Promise<{ applied: boolean; error?: string; errorCode?: string; detail?: any }> {
   const baseUrl = (env.AI_SERVICE_URL || '').replace(/\/$/, '');
-  if (!baseUrl) return { applied: false, error: 'AI_SERVICE_URL chưa được cấu hình' };
+  if (!baseUrl) return { applied: false, error: 'AI_SERVICE_URL chưa được cấu hình', errorCode: 'not_found' };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(2000, env.AI_REQUEST_TIMEOUT_MS || 15000));
   try {
@@ -1395,11 +1395,23 @@ async function pushAiConfigToRuntime(cfg: any): Promise<{ applied: boolean; erro
     const text = await r.text();
     let data: any = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-    if (!r.ok) return { applied: false, error: `AI service trả về ${r.status}`, detail: data };
+    if (r.status === 404) {
+      return { applied: false, error: '404 (Không tìm thấy dịch vụ AI)', errorCode: 'not_found', detail: data };
+    }
+    if (r.status >= 500) {
+      return { applied: false, error: '5xx (Lỗi nội bộ AI Service)', errorCode: 'ai_internal_error', detail: data };
+    }
+    if (!r.ok) return { applied: false, error: `AI service trả về ${r.status}`, errorCode: 'ai_error', detail: data };
     if (data && data.applied === false) return { applied: false, error: data.error || 'AI service không áp dụng được cấu hình', detail: data };
     return { applied: true, detail: data };
   } catch (e: any) {
-    return { applied: false, error: e?.name === 'AbortError' ? 'Timeout khi áp dụng cấu hình AI runtime' : 'Không thể kết nối AI service để áp dụng cấu hình', detail: String(e?.message || e) };
+    const isTimeout = e?.name === 'AbortError';
+    return {
+      applied: false,
+      error: isTimeout ? 'Timeout (AI phản hồi quá chậm)' : '404 (Không tìm thấy dịch vụ AI)',
+      errorCode: isTimeout ? 'timeout' : 'unreachable',
+      detail: String(e?.message || e),
+    };
   } finally {
     clearTimeout(timeout);
   }
@@ -1458,28 +1470,70 @@ export async function getAiStatusProxy(req: Request, res: Response): Promise<voi
   ensureAdmin(req);
   const baseUrl = (env.AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!baseUrl) {
-    res.status(503).json({ ready: false, error: 'AI_SERVICE_URL chưa được cấu hình' });
+    res.status(503).json({ ready: false, error: '404 (Không tìm thấy dịch vụ AI)', errorCode: 'not_found', detail: 'AI_SERVICE_URL chưa được cấu hình' });
     return;
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.max(2000, env.AI_REQUEST_TIMEOUT_MS || 15000));
-  try {
-    const r = await fetch(`${baseUrl}/v1/ai-admin/status`, {
-      headers: {
-        ...(env.AI_SERVICE_TOKEN ? { 'x-ai-token': env.AI_SERVICE_TOKEN } : {}),
-      },
-      signal: controller.signal,
-    });
+  const timeoutMs = Math.max(2000, env.AI_REQUEST_TIMEOUT_MS || 15000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const headers = { ...(env.AI_SERVICE_TOKEN ? { 'x-ai-token': env.AI_SERVICE_TOKEN } : {}) } as Record<string, string>;
+
+  const parseBody = async (r: globalThis.Response) => {
     const text = await r.text();
-    let data: any = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-    if (!r.ok) {
-      res.status(502).json({ ready: false, error: `AI service trả về ${r.status}`, detail: data });
+    try { return text ? JSON.parse(text) : null; } catch { return { raw: text }; }
+  };
+
+  try {
+    // 1) Ưu tiên endpoint trạng thái quản trị của AI service
+    let r = await fetch(`${baseUrl}/v1/ai-admin/status`, { headers, signal: controller.signal });
+    let data = await parseBody(r);
+
+    // 2) Fallback: nếu AI service không có endpoint admin status, dùng /health
+    if (r.status === 404) {
+      const h = await fetch(`${baseUrl}/health`, { headers, signal: controller.signal });
+      const hData = await parseBody(h);
+      if (h.ok) {
+        res.json({
+          ready: true,
+          mode: 'health',
+          provider: (hData && ((hData as any).provider || (hData as any).mode)) || 'unknown',
+          source: 'health',
+          detail: hData,
+          fetchedAt: new Date().toISOString(),
+        });
+        return;
+      }
+      if (h.status === 404) {
+        res.status(404).json({ ready: false, error: '404 (Không tìm thấy dịch vụ AI)', errorCode: 'not_found', detail: hData });
+        return;
+      }
+      if (h.status >= 500) {
+        res.status(502).json({ ready: false, error: '5xx (Lỗi nội bộ AI Service)', errorCode: 'ai_internal_error', detail: hData });
+        return;
+      }
+      r = h as any;
+      data = hData;
+    }
+
+    if (r.ok) {
+      res.json({ ready: true, ...(data as any), fetchedAt: new Date().toISOString() });
       return;
     }
-    res.json({ ready: true, ...data, fetchedAt: new Date().toISOString() });
+
+    if (r.status >= 500) {
+      res.status(502).json({ ready: false, error: '5xx (Lỗi nội bộ AI Service)', errorCode: 'ai_internal_error', detail: data });
+      return;
+    }
+
+    res.status(502).json({ ready: false, error: `AI service trả về ${r.status}`, errorCode: 'ai_error', detail: data });
   } catch (e: any) {
-    res.status(502).json({ ready: false, error: e?.name === 'AbortError' ? 'Timeout khi gọi AI service' : 'Không thể kết nối AI service', detail: String(e?.message || e) });
+    const isTimeout = e?.name === 'AbortError';
+    res.status(502).json({
+      ready: false,
+      error: isTimeout ? 'Timeout (AI phản hồi quá chậm)' : '404 (Không tìm thấy dịch vụ AI)',
+      errorCode: isTimeout ? 'timeout' : 'unreachable',
+      detail: String(e?.message || e),
+    });
   } finally {
     clearTimeout(timeout);
   }

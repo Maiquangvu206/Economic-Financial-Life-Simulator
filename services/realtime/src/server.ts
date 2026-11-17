@@ -35,8 +35,9 @@ export type GameServer = Server<
 >;
 
 const chatWindows = new Map<string, number[]>();
-// Đếm số socket đang kết nối theo userId để xác định online/offline chính xác
-const onlineCounts = new Map<string, number>();
+// Đồng bộ presence theo Set<socketId> gắn với từng userId:
+// chỉ chuyển Offline khi socketIds.size === 0 (đóng tab/phiên cuối cùng).
+const onlineSocketsByUser = new Map<string, Set<string>>();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function allowChat(socketId: string): boolean {
@@ -52,19 +53,27 @@ function allowChat(socketId: string): boolean {
   return true;
 }
 
-function markOnline(userId: string): boolean {
-  const next = (onlineCounts.get(userId) ?? 0) + 1;
-  onlineCounts.set(userId, next);
-  return next === 1;
+function markOnline(userId: string, socketId: string): boolean {
+  let sockets = onlineSocketsByUser.get(userId);
+  if (!sockets) {
+    sockets = new Set<string>();
+    onlineSocketsByUser.set(userId, sockets);
+  }
+  sockets.add(socketId);
+  return sockets.size === 1;
 }
-function markOffline(userId: string): boolean {
-  const next = (onlineCounts.get(userId) ?? 0) - 1;
-  if (next <= 0) { onlineCounts.delete(userId); return true; }
-  onlineCounts.set(userId, next);
+function markOffline(userId: string, socketId: string): boolean {
+  const sockets = onlineSocketsByUser.get(userId);
+  if (!sockets) return false;
+  sockets.delete(socketId);
+  if (sockets.size === 0) {
+    onlineSocketsByUser.delete(userId);
+    return true;
+  }
   return false;
 }
 function getOnlineUserIds(): string[] {
-  return Array.from(onlineCounts.keys());
+  return Array.from(onlineSocketsByUser.keys());
 }
 
 async function persistMessage(msg: ChatMessage): Promise<void> {
@@ -127,7 +136,7 @@ export function createRealtimeServer(): {
     void socket.join(userRoom);
     void socket.join(Rooms.character(actor.userId));
     // Presence: chỉ broadcast online khi chuyển từ 0 -> 1 socket
-    if (markOnline(actor.userId)) {
+    if (markOnline(actor.userId, socket.id)) {
       (io.emit as any)('user:presence', { userId: actor.userId, isOnline: true });
     }
     // Gửi snapshot online hiện tại cho client vừa kết nối
@@ -335,7 +344,7 @@ export function createRealtimeServer(): {
 
     socket.on('disconnect', () => {
       chatWindows.delete(socket.id);
-      if (markOffline(actor.userId)) {
+      if (markOffline(actor.userId, socket.id)) {
         (io.emit as any)('user:presence', { userId: actor.userId, isOnline: false });
       }
       logger.debug({ userId: actor.userId }, 'socket disconnected');

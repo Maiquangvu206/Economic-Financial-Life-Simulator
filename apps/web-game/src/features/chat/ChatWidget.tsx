@@ -78,18 +78,24 @@ export function ChatWidget() {
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [searching, setSearching] = useState(false);
 
+  const { searchUsers } = chat;
   useEffect(() => {
     let alive = true;
-    if (!search.trim()) { setSearchResults([]); return; }
+    const q = search.trim();
+    if (!q) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
     setSearching(true);
     const t = setTimeout(() => {
-      void chat.searchUsers(search)
+      void searchUsers(q)
         .then((r) => { if (alive) setSearchResults(r); })
         .catch(() => { if (alive) setSearchResults([]); })
         .finally(() => { if (alive) setSearching(false); });
     }, 250);
     return () => { alive = false; clearTimeout(t); };
-  }, [search, chat]);
+  }, [search, searchUsers]);
 
   const activePeer = useMemo(() => chat.conversations.find(c => c.peerUserId === chat.activePeerId) || null, [chat.conversations, chat.activePeerId]);
   const activeMessages = chat.activePeerId ? (chat.privateMessagesByPeer[chat.activePeerId] ?? []) : [];

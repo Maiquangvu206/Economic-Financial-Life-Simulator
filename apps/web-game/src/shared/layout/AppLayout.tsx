@@ -8,6 +8,7 @@ import { ChatWidget } from '../../features/chat/ChatWidget';
 import { useGameStore } from '../../store/game';
 import { apiRequest } from '../api/httpClient';
 import { getGameSocket } from '../realtime/socket';
+import { ConnectionStatusBanner } from '../realtime/ConnectionStatusBanner';
 import { formatCompact, formatMoney, formatVietnamDate, formatVietnamTime } from '../lib/format';
 import { Badge } from '../ui/Badge';
 import { ToastContainer, toast } from '../ui/Toast';
@@ -557,6 +558,7 @@ export function AppLayout() {
 
       {/* Phía phải */}
       <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        <ConnectionStatusBanner />
         {/* Topbar */}
         <header className="flex w-full flex-shrink-0 flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2 sm:px-4 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:gap-y-2 lg:px-6 lg:py-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
