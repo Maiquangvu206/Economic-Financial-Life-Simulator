@@ -71,18 +71,9 @@ export function MacroDashboardPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Dashboard vĩ mô Việt Nam"
-        description="Dữ liệu tổng hợp từ hệ thống (game_state, ledger, công ty niêm yết, nhân vật) và quỹ đất nước."
+        title="Tổng quan hệ thống"
         actions={
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-              Đơn vị: VNĐ (₫)
-            </span>
-            <span className="rounded-full border border-slate-300 px-2.5 py-1 text-[11px] text-slate-600">
-              Tick {tick} · Năm {year}
-            </span>
-            <button type="button" onClick={() => refetch()} className="rounded-full border border-slate-300 px-2.5 py-1 text-[11px] text-slate-600 hover:bg-slate-50">Làm mới</button>
-          </div>
+          <button type="button" onClick={() => refetch()} className="rounded-full border border-slate-300 px-2.5 py-1 text-[11px] text-slate-600 hover:bg-slate-50">Làm mới</button>
         }
       />
 
@@ -93,26 +84,23 @@ export function MacroDashboardPage() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <AdminStat label="Quỹ đất nước" value={isLoading ? '…' : formatCompact(stateFund)} hint="Nguồn thu/chi phạt, thuế, đấu giá đất, phúc lợi, hỗ trợ thị trường" />
-        <AdminStat label="Tổng tiền lưu thông (ước tính)" value={isLoading ? '…' : formatCompact(moneySupply)} hint="Cộng số dư ledger (nhân vật/DN/quỹ…)" />
-        <AdminStat label="Lạm phát" value={isLoading ? '…' : `${inflation.toFixed(2)}%`} hint="Theo macro game_state" />
-        <AdminStat label="Chỉ số giá tiêu dùng (CPI)" value={isLoading ? '…' : cpi.toFixed(1)} hint="Năm gốc = 100" />
-        <AdminStat label="Nhân vật sống (có user)" value={isLoading ? '…' : String(ccu)} hint="Số nhân vật còn sống gắn tài khoản" />
-        <AdminStat label="Vốn hóa sàn (niêm yết)" value={isLoading ? '…' : formatCompact(marketCap)} hint="Tổng market cap công ty niêm yết" />
-        <AdminStat label="Vụ án đang mở" value={isLoading ? '…' : String(cases)} tone={cases > 0 ? 'warning' : 'default'} hint="Court cases (nếu có)" />
-        <AdminStat label="Tick (ngày game)" value={isLoading ? '…' : String(tick)} hint="Theo game_state.current_day" />
+        <AdminStat label="Quỹ đất nước" value={isLoading ? '…' : formatCompact(stateFund)} />
+        <AdminStat label="Tổng tiền lưu thông (ước tính)" value={isLoading ? '…' : formatCompact(moneySupply)} />
+        <AdminStat label="Lạm phát" value={isLoading ? '…' : `${inflation.toFixed(2)}%`} />
+        <AdminStat label="Chỉ số giá tiêu dùng" value={isLoading ? '…' : cpi.toFixed(1)} />
+        <AdminStat label="Nhân vật sống (có user)" value={isLoading ? '…' : String(ccu)} />
+        <AdminStat label="Vốn hóa sàn (niêm yết)" value={isLoading ? '…' : formatCompact(marketCap)} />
+        <AdminStat label="Vụ án đang mở" value={isLoading ? '…' : String(cases)} tone={cases > 0 ? 'warning' : 'default'} />
+        <AdminStat label="Tick (ngày game)" value={isLoading ? '…' : String(tick)} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="space-y-4">
         <section className="panel space-y-3">
-          <h2 className="panel-title">Quỹ đất nước (State Fund)</h2>
+          <h2 className="panel-title">Quỹ đất nước</h2>
           <div className="text-sm text-slate-700">
             Số dư hiện tại: <b className="text-emerald-700">{isLoading ? '…' : `${formatMoney(stateFund)} ₫`}</b>
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            Quỹ nhận: tiền phạt, thuế (cá nhân/kiểm toán, giấy phép), phí tranh cử & quyên góp, tiền đấu giá đất nền chưa chủ, phí/thuế xây dựng (theo các luồng đã tích hợp).
-            Quỹ chi: phúc lợi cố định và gói phúc lợi do thị trưởng ban hành, cùng các khoản hỗ trợ thị trường (khi được cấu hình).
-          </p>
+
           <form
             className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
             onSubmit={(e) => {
@@ -125,10 +113,10 @@ export function MacroDashboardPage() {
               adjustFund.mutate({ deltaMinor: v, reason: reason.trim() });
             }}
           >
-            <div className="text-xs font-semibold text-slate-700">Điều chỉnh quỹ (admin)</div>
+            <div className="text-xs font-semibold text-slate-700">Điều chỉnh quỹ</div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <label className="text-xs text-slate-700">
-                Số tiền điều chỉnh (VNĐ, âm để trừ)
+                Số tiền điều chỉnh
                 <input
                   type="number"
                   className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
@@ -183,8 +171,8 @@ export function MacroDashboardPage() {
               });
             }}
           >
-            <div className="text-xs font-semibold text-slate-700">Hỗ trợ công ty từ quỹ (tăng biến động/thanh khoản sàn)</div>
-            <p className="text-[11px] text-slate-600">Chi từ quỹ đất nước vào quỹ công ty (active/IPO) và tác động biến động/khối lượng ticker niêm yết (nếu có). Có thể chỉ định công ty theo Mã chứng khoán hoặc hỗ trợ toàn bộ.</p>
+            <div className="text-xs font-semibold text-slate-700">Hỗ trợ công ty từ quỹ</div>
+            
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <label className="text-xs text-slate-700">
                 Phạm vi
@@ -243,22 +231,6 @@ export function MacroDashboardPage() {
             {supportMsg && <div className="text-xs text-slate-700">{supportMsg}</div>}
           </form>
         </section>
-
-        <div className="space-y-4">
-          <section className="panel">
-            <h2 className="panel-title">Trạng thái dữ liệu</h2>
-            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
-              Bảng điều khiển đang đọc dữ liệu thực từ hệ thống. Một số chỉ số (lạm phát/CPI) lấy từ `game_state.macro` nếu đã được worker/GM cập nhật; nếu chưa có sẽ hiển thị mặc định.
-              {data?.generatedAt ? ` Cập nhật: ${new Date(data.generatedAt).toLocaleString('vi-VN')}.` : ''}
-            </p>
-          </section>
-          <section className="panel">
-            <h2 className="panel-title">Ghi chú vận hành</h2>
-            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
-              Các thay đổi cấu hình từ admin (phúc lợi, bầu cử, giáo dục, bản đồ, broadcast, cấu hình mùa, quỹ đất nước) được lưu vào CSDL dùng chung và ảnh hưởng/hiển thị cho người dùng qua API & giao diện web-game.
-            </p>
-          </section>
-        </div>
       </div>
     </div>
   );

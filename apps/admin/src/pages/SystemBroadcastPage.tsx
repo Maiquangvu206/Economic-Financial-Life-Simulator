@@ -114,8 +114,7 @@ export function SystemBroadcastPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Trung tâm Thông báo Hệ thống (System Broadcast)"
-        description="Phát sóng thông báo tới người chơi. Thông báo được lưu trên hệ thống, hiển thị cho người dùng (HUD ghim/banner & hộp thông báo) và ghi nhận để kiểm toán."
+        title="Trung tâm Thông báo Hệ thống"
       />
 
       {successMsg && (
@@ -185,7 +184,7 @@ export function SystemBroadcastPage() {
             </div>
 
             <div className="space-y-2 pt-1 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-              <div className="text-slate-700 font-medium">Vị trí hiển thị (chọn một hoặc cả hai):</div>
+              <div className="text-slate-700 font-medium">Vị trí hiển thị:</div>
               <label className="flex items-start gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -195,7 +194,6 @@ export function SystemBroadcastPage() {
                 />
                 <span>
                   <b>Trang đăng nhập / Trang chủ</b>
-                  <span className="block text-[11px] text-slate-500">Hiển thị công khai trước khi người dùng đăng nhập (thông báo hệ thống).</span>
                 </span>
               </label>
               <label className="flex items-start gap-2 cursor-pointer">
@@ -206,8 +204,7 @@ export function SystemBroadcastPage() {
                   className="mt-0.5 rounded border-slate-300 bg-white text-amber-500 focus:ring-0"
                 />
                 <span>
-                  <b>Trang người dùng (trong ứng dụng)</b>
-                  <span className="block text-[11px] text-slate-500">Hiển thị trong HUD/hộp thông báo sau khi đăng nhập (và tạo thông báo cho người dùng nếu bật).</span>
+                  <b>Trang người dùng</b>
                 </span>
               </label>
             </div>

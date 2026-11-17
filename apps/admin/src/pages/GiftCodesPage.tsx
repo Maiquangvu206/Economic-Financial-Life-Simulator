@@ -183,8 +183,7 @@ export function GiftCodesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Mã quà tặng (Giftcode)"
-        description="Tạo và quản lý mã quà tặng cho người chơi. Cấu hình lượt sử dụng và xem tài khoản đã sử dụng. (Không phát thông báo hệ thống/broadcast khi tạo mã.)"
+        title="Mã quà tặng"
       />
 
       {notice && (
@@ -206,7 +205,6 @@ export function GiftCodesPage() {
             <div>
               <label className="block text-slate-700 font-medium mb-1">Mã code *</label>
               <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 font-mono" placeholder="VD: WELCOME2026" required />
-              <p className="text-[10px] text-slate-500 mt-0.5">Tự động viết hoa, duy nhất trong hệ thống.</p>
             </div>
             <div>
               <label className="block text-slate-700 font-medium mb-1">Tiêu đề *</label>

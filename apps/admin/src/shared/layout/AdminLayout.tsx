@@ -5,21 +5,21 @@ import { clearAdminSession, useAdminSession } from '../../features/auth/session'
 import { env } from '../config/env';
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard vĩ mô', icon: '📊', end: true },
+  { to: '/', label: 'Tổng quan vĩ mô', icon: '📊', end: true },
   { to: '/broadcast', label: 'Thông báo hệ thống', icon: '📢' },
   { to: '/gift-codes', label: 'Mã quà tặng', icon: '🎁' },
   { to: '/calendar-seasons', label: 'Mùa & Lịch nghỉ Công nhân', icon: '🗓️' },
   { to: '/education-config', label: 'Giáo dục & Đại học', icon: '🎓' },
   { to: '/politics', label: 'Chính trị & Bầu cử', icon: '🗳️' },
   { to: '/interest-rates', label: 'Lãi suất vay & Tiết kiệm', icon: '💹' },
-  { to: '/industry-revenue', label: 'Doanh thu công ty (30 ngày)', icon: '🏭' },
+  { to: '/industry-revenue', label: 'Doanh thu công ty', icon: '🏭' },
   { to: '/stock-market-control', label: 'Điều chỉnh chứng khoán', icon: '📈' },
   { to: '/offline', label: 'Cấu hình Offline', icon: '🌙' },
   { to: '/restriction', label: 'Bảo trì & Hạn chế', icon: '🛠️' },
-  { to: '/map-editor', label: 'Map Editor', icon: '🗺️' },
+  { to: '/map-editor', label: 'Bản đồ & Giá đất', icon: '🗺️' },
   { to: '/players', label: 'Người chơi', icon: '👥' },
   { to: '/ai-events', label: 'AI & Sự kiện', icon: '🤖' },
-  { to: '/audit-logs', label: 'Nhật ký Audit Log', icon: '📜' },
+  { to: '/audit-logs', label: 'Nhật ký hệ thống', icon: '📜' },
 ];
 
 const ROLE_LABEL: Record<string, string> = {

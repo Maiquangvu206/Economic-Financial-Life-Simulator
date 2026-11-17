@@ -270,9 +270,6 @@ export function SeasonCalendarPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Quản trị Mùa & Phúc lợi công dân</h1>
-          <p className="mt-1 text-xs text-slate-600">
-            Cấu hình <b>khoảng thời gian mùa</b> (tháng bắt đầu - kết thúc) được lưu vào hệ thống dùng chung; phúc lợi/lì xì do hệ thống phát (server-side). Thời gian game cố định: <b>1 ngày = 1 phút thực tế</b>.
-          </p>
         </div>
         <button type="button" onClick={handleApplyChanges} className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20">
           Áp dụng & lưu mùa + hiệu ứng
@@ -288,10 +285,7 @@ export function SeasonCalendarPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">1. Khoảng thời gian mùa (hệ thống)</h2>
-          <p className="text-[11px] text-slate-600">
-            Thiết lập tháng bắt đầu - tháng kết thúc cho từng mùa. Mùa vắt qua năm mới: tháng bắt đầu lớn hơn tháng kết thúc (ví dụ Đông: 11 → 1). Toàn bộ 12 tháng phải được gán đủ 4 mùa, không trùng nhau.
-          </p>
+          <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">1. Khoảng thời gian mùa</h2>
           <div className="space-y-2">
             {seasonRanges.map((r, idx) => {
               const meta = SEASON_META[r.season];
@@ -340,20 +334,17 @@ export function SeasonCalendarPage() {
             })}
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1">
-            <p><b>Thời gian game:</b> cố định <b>1 ngày = 1 phút thực tế</b> (không cấu hình tốc độ).</p>
+            
             <p>
               Mùa hiện tại trên hệ thống: <b>{gameConfig?.season ? SEASON_META[gameConfig.season].label : '—'}</b>{' '}
               (năm {gameConfig?.currentYear ?? 2000}, ngày {gameConfig?.currentDayOfMonth ?? '—'} tháng {gameConfig?.currentMonth ?? '—'}).
             </p>
-            <p className="text-amber-700"><b>Lưu ý:</b> mùa tự chuyển theo các khoảng tháng ở trên; không còn cơ chế chọn mùa thủ công theo từng ngày.</p>
+            
           </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 space-y-4">
           <h2 className="text-sm font-semibold text-amber-600 uppercase tracking-wider">2. Hiệu ứng theo mùa</h2>
-          <p className="text-[11px] text-slate-600">
-            Hiệu chỉnh tác động kinh tế/xã hội của từng mùa. Đơn vị là <b>%</b> so với mức bình thường: <b>100 = không thay đổi</b>, &gt;100 = tăng, &lt;100 = giảm (cho phép 0 – 300).
-          </p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-xs">
               <thead>
@@ -362,7 +353,6 @@ export function SeasonCalendarPage() {
                   {EFFECT_FIELDS.map((f) => (
                     <th key={f.key} className="px-2 py-2 font-semibold">
                       {f.label}
-                      <span className="block font-normal normal-case tracking-normal text-slate-400">{f.hint}</span>
                     </th>
                   ))}
                 </tr>
@@ -407,9 +397,6 @@ export function SeasonCalendarPage() {
             >
               Khôi phục mặc định
             </button>
-            <span className="text-[11px] text-slate-500">
-              Hiệu ứng áp dụng theo mùa hiện tại của lịch game: năng suất → thu nhập việc làm, tiêu hao thể lực → hao thể lực theo năm, thuế → thuế phải nộp, doanh thu → doanh thu công ty.
-            </span>
           </div>
         </div>
 
@@ -424,11 +411,11 @@ export function SeasonCalendarPage() {
             <p className="text-[11px] text-slate-500">OT hiển thị tham chiếu; phúc lợi/lì xì được cấu hình và phát qua API (server-side) bên dưới.</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 text-xs space-y-2">
-            <p className="font-semibold text-slate-800">Phúc lợi đang cấu hình (server):</p>
+            <p className="font-semibold text-slate-800">Phúc lợi đang cấu hình:</p>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
               <div>Tổng gói phúc lợi: <span className="font-bold text-slate-800">{benefits.length}</span></div>
               <div>Đang bật: <span className="font-bold text-emerald-600">{activeCount}</span></div>
-              <div className="col-span-2">Nhân vật nhận qua nút &quot;Nhận Lì Xì/Phúc lợi&quot; → cộng tiền vào tài khoản thật (ledger/cash).</div>
+              
             </div>
           </div>
         </div>
