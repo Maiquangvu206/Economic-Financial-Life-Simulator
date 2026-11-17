@@ -91,29 +91,16 @@ export function UnderworldPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Chợ đen & Thám tử"
-        description="Cân bằng kinh tế ngầm: rủi ro càng cao, tiền càng nhiều. Mọi hành vi phi pháp đều tăng Heat và có thể kích hoạt Đại án Công an."
-      />
-
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
-        Cảnh báo: Heat ≥ 80 sẽ kích hoạt <strong>Đại án Công an</strong> (phạt 10% tiền mặt, hạ heat
-        xuống 40). Vệ sĩ giúp giảm heat, bảo hiểm đền bù khi bị bắt.
-      </div>
+      <PageHeader title="Chợ đen & Thám tử" />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Heat Level" value={heat} hint={HEAT_LABEL(heat)} tone="negative" />
         <StatCard
-          label="Thu nhập ngầm (30 ngày)"
+          label="Thu nhập ngầm"
           value={formatMoney(overview?.undergroundEarned?.amount ?? 0)}
-          hint="Tổng tiền kiếm từ chợ đen"
         />
-        <StatCard label="Bằng chứng" value={evidences.length} hint="Đang giữ / đã bán / đã nộp" />
-        <StatCard
-          label="Giấy tờ giả"
-          value={overview?.credentials?.length ?? 0}
-          hint="Chứng minh thư giả, giấy phép giả"
-        />
+        <StatCard label="Bằng chứng" value={evidences.length} />
+        <StatCard label="Giấy tờ giả" value={overview?.credentials?.length ?? 0} />
       </div>
 
       <div className="flex gap-2">
@@ -191,7 +178,7 @@ export function UnderworldPage() {
               {(
                 [
                   { kind: 'fake_id', label: 'CMND giả (2.000.000 ₫)' },
-                  { kind: 'business_license', label: 'Giấy phép KD giả (8.000.000 ₫)' },
+                  { kind: 'business_license', label: 'Giấy phép kinh doanh giả (8.000.000 ₫)' },
                   { kind: 'shell_company', label: 'Công ty ma (15.000.000 ₫)' },
                 ] as const
               ).map((c) => (
@@ -219,10 +206,21 @@ export function UnderworldPage() {
                   key={cred.id}
                   className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-white/50 text-sm"
                 >
-                  <span className="font-medium">{cred.kind ?? '—'}</span>
-                  <span className="text-xs text-slate-500">
-                    Chất lượng {cred.quality ?? 0}/100 · {cred.active ? 'Đang dùng' : 'Hết hạn'}
+                  <span className="font-medium">
+                    {cred.kind === 'fake_id'
+                      ? 'CMND giả'
+                      : cred.kind === 'business_license'
+                        ? 'Giấy phép kinh doanh giả'
+                        : cred.kind === 'shell_company'
+                          ? 'Công ty ma'
+                          : cred.kind ?? '—'}
                   </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Chất lượng {cred.quality ?? 0}/100</span>
+                    <Badge variant={cred.active ? 'success' : 'default'}>
+                      {cred.active ? 'Đang hiệu lực' : 'Hết hạn'}
+                    </Badge>
+                  </div>
                 </div>
               ))}
             </div>
@@ -439,42 +437,40 @@ export function UnderworldPage() {
                   Mua bảo hiểm (10.000.000 ₫)
                 </GameButton>
               </div>
-              {protections.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-800">
-                      {p.kind === 'bodyguard' ? 'Vệ sĩ' : 'Bảo hiểm'}
+              <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
+                {protections.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50"
+                  >
+                    <div>
+                      <div className="font-semibold text-slate-800">
+                        {p.kind === 'bodyguard' ? 'Vệ sĩ' : 'Bảo hiểm'}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Bảo vệ {formatMoney(p.coverage?.amount ?? 0)} · {p.status ?? '—'}
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-500">
-                      Bảo vệ {formatMoney(p.coverage?.amount ?? 0)} · {p.status ?? '—'}
-                    </div>
+                    <Badge variant={p.status === 'active' ? 'success' : 'default'}>
+                      {p.status === 'active' ? 'Đang hiệu lực' : 'Hết hạn'}
+                    </Badge>
                   </div>
-                  <Badge variant={p.status === 'active' ? 'success' : 'default'}>
-                    {p.status === 'active' ? 'Đang hiệu lực' : 'Hết hạn'}
-                  </Badge>
-                </div>
-              ))}
-              {protections.length === 0 && (
-                <div className="text-center py-4 text-xs text-slate-500">Chưa có bảo vệ nào.</div>
-              )}
+                ))}
+                {protections.length === 0 && (
+                  <div className="text-center py-4 text-xs text-slate-500">Chưa có bảo vệ nào.</div>
+                )}
+              </div>
             </div>
           </Panel>
 
           <Panel title="Đại án Công an" borderColor="rose">
-            <div className="space-y-3">
-              <div className="rounded-xl border border-rose-200/70 bg-rose-50/60 p-3 text-xs text-slate-700 leading-relaxed">
-                <p><b>Heat hiện tại:</b> <strong>{heat}</strong>. <b>AI hệ thống</b> sẽ tự động đánh giá và kích hoạt Đại án khi rủi ro cao (đặc biệt khi Heat <b>≥ 80</b>) hoặc theo chu kỳ (có thể theo mục tiêu hoặc toàn hệ thống, core áp dụng an toàn/fallback). Hậu quả: phạt 10% tiền mặt, ghi án tích, hạ Heat về 40.</p>
-                <p className="mt-1"><b>Quản trị viên</b> vẫn có thể can thiệp thủ công (kích hoạt/quét theo người hoặc toàn hệ thống) từ cổng admin. Người chơi không thể tự bấm kích hoạt.</p>
-              </div>
+            <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
               {sweeps.map((s) => (
                 <div
                   key={s.id}
                   className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-white/50 text-sm"
                 >
-                  <span className="font-medium">Đại án (heat {s.triggerHeat ?? 0})</span>
+                  <span className="font-medium">Đại án (Mức chú ý: {s.triggerHeat ?? 0})</span>
                   <span className="text-xs text-slate-500">
                     Phạt {formatMoney(s.fine?.amount ?? 0)} · Tù {s.prisonDays ?? 0} ngày
                   </span>
@@ -488,8 +484,8 @@ export function UnderworldPage() {
             </div>
           </Panel>
 
-          <Panel title="Lịch sử Heat">
-            <div className="space-y-2">
+          <Panel title="Lịch sử mức chú ý">
+            <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
               {(overview?.heatEvents ?? []).map((h) => (
                 <div
                   key={h.id}
@@ -506,7 +502,7 @@ export function UnderworldPage() {
               ))}
               {(overview?.heatEvents ?? []).length === 0 && (
                 <div className="text-center py-4 text-xs text-slate-500">
-                  Chưa có sự kiện heat nào.
+                  Chưa có sự kiện mức chú ý nào.
                 </div>
               )}
             </div>
@@ -520,28 +516,30 @@ export function UnderworldPage() {
             <GameButton variant="primary" onClick={() => setNpcOpen(true)}>
               Đàm phán với NPC mới
             </GameButton>
-            {(npcHistory ?? []).map((n) => (
-              <div key={n.id} className="p-3 rounded-xl border border-slate-200 bg-white/50">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">{n.npcId ?? 'NPC'}</span>
-                  <Badge variant="default">{n.personality ?? '—'}</Badge>
-                  <Badge variant={n.accept ? 'success' : 'warning'}>
-                    {n.accept ? 'Đã chấp nhận' : 'Đã từ chối'}
-                  </Badge>
+            <div className="max-h-[320px] overflow-y-auto pr-2 space-y-2.5">
+              {(npcHistory ?? []).map((n) => (
+                <div key={n.id} className="p-3 rounded-xl border border-slate-200 bg-white/50">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-800">{n.npcId ?? 'NPC'}</span>
+                    <Badge variant="default">{n.personality ?? '—'}</Badge>
+                    <Badge variant={n.accept ? 'success' : 'warning'}>
+                      {n.accept ? 'Đã chấp nhận' : 'Đã từ chối'}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-700">{n.dialogue ?? ''}</p>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {n.counterOffer?.amount
+                      ? `Counter: ${formatMoney(n.counterOffer.amount)}`
+                      : 'Không counter'}
+                  </div>
                 </div>
-                <p className="mt-1 text-sm text-slate-700">{n.dialogue ?? ''}</p>
-                <div className="mt-1 text-xs text-slate-500">
-                  {n.counterOffer?.amount
-                    ? `Counter: ${formatMoney(n.counterOffer.amount)}`
-                    : 'Không counter'}
+              ))}
+              {(npcHistory ?? []).length === 0 && (
+                <div className="text-center py-4 text-xs text-slate-500">
+                  Chưa đàm phán với NPC nào.
                 </div>
-              </div>
-            ))}
-            {(npcHistory ?? []).length === 0 && (
-              <div className="text-center py-4 text-xs text-slate-500">
-                Chưa đàm phán với NPC nào.
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </Panel>
       )}

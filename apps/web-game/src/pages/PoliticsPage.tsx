@@ -90,10 +90,7 @@ export function PoliticsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Chính trị & Bầu cử"
-        description="Bầu cử Thị trưởng, nhiệm kỳ & quyền lợi, chính sách trong giới hạn. Admin có quyền thu hồi tư cách nếu lạm dụng."
-      />
+      <PageHeader title="Chính trị & Bầu cử" />
 
       {/* Mayor status (Pha A/C) */}
       <Panel title="Thị trưởng đương nhiệm" borderColor={mayor?.active ? 'emerald' : 'default'}>
@@ -122,12 +119,12 @@ export function PoliticsPage() {
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                 <div className="text-slate-500">Đặc quyền/giới hạn</div>
-                <div className="font-medium">Chính sách whitelist, không giới hạn thời gian & kiểm soát ngân sách</div>
+                <div className="font-medium">Theo cấu hình hệ thống</div>
               </div>
             </div>
-            <p className="text-[11px] text-slate-500">
-              Quyền hạn và lợi ích do máy chủ kiểm soát theo cấu hình. Lạm dụng có thể bị quản trị viên thu hồi tư cách ngay lập tức.
-            </p>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-900 leading-relaxed">
+              Quyền hạn và lợi ích được hệ thống kiểm soát tự động. Lạm dụng chức vụ sẽ bị thu hồi tư cách ngay lập tức.
+            </div>
           </div>
         ) : (
           <div className="space-y-2 text-sm text-slate-600">
@@ -141,11 +138,8 @@ export function PoliticsPage() {
 
       {/* Mayor actions (Pha B) */}
       {isMayor && mayor && (
-        <Panel title="Hành động & Chính sách của Thị trưởng (Pha B)" borderColor="amber">
+        <Panel title="Hành động & Chính sách của Thị trưởng" borderColor="amber">
           <div className="space-y-4 text-sm">
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-              Mọi hành động của Thị trưởng được kiểm tra server-side (whitelist, ngưỡng, nguồn quỹ/giới hạn) nhưng <b>không giới hạn thời gian</b> — có thể gửi yêu cầu liên tục. Lạm dụng sẽ bị thu hồi tư cách.
-            </div>
 
             {policyMsg && (
               <div className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">{policyMsg}</div>
@@ -154,9 +148,6 @@ export function PoliticsPage() {
             <div className="grid gap-3 lg:grid-cols-2">
               <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
                 <div className="font-semibold text-slate-900">Điều chỉnh mức OT (%)</div>
-                <div className="text-xs text-slate-600">
-                  Phạm vi cho phép: {mayor.config.otRateAdjustMinPct}% - {mayor.config.otRateAdjustMaxPct}% (bước {mayor.config.otRateAdjustStepPct}%).
-                </div>
                 <GameInput
                   label="Mức OT mới (%)"
                   type="number"
@@ -183,10 +174,7 @@ export function PoliticsPage() {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
-                <div className="font-semibold text-slate-900">Gói hỗ trợ phúc lợi (ngân sách)</div>
-                <div className="text-xs text-slate-600">
-                  Chi từ quỹ nhà nước (có hạn mức tổng {formatMoney(mayor.config.treasurySpendLimitMinor)}). Tối đa {mayor.config.welfareBonusMaxCitizens} công dân/lần.
-                </div>
+                <div className="font-semibold text-slate-900">Gói hỗ trợ phúc lợi</div>
                 <GameInput
                   label="Số tiền mỗi công dân (VNĐ)"
                   type="number"
@@ -225,10 +213,7 @@ export function PoliticsPage() {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2 lg:col-span-2">
-                <div className="font-semibold text-slate-900">Hỗ trợ doanh nghiệp chỉ định (theo Mã chứng khoán)</div>
-                <div className="text-xs text-slate-600">
-                  Chi từ quỹ đất nước vào quỹ công ty đã niêm yết. Hạn mức tổng mỗi lần: {formatMoney(mayor.config.treasurySpendLimitMinor)}. Nhập mã CK (vd: VCB, FPT) hoặc hỗ trợ toàn bộ. <b>Không giới hạn thời gian gửi yêu cầu.</b>
-                </div>
+                <div className="font-semibold text-slate-900">Hỗ trợ doanh nghiệp chỉ định</div>
                 <label className="flex items-center gap-2 text-xs text-slate-700">
                   <input
                     type="checkbox"
