@@ -29,8 +29,8 @@ function fmtMoney(m: Money) {
 
 const ROLE_LABEL: Record<string, string> = {
   player: 'Người chơi',
-  moderator: 'Điều hành (moderator)',
-  admin: 'Quản trị (admin)',
+  moderator: 'Điều hành',
+  admin: 'Quản trị',
 };
 
 export function PlayersPage() {
@@ -327,7 +327,6 @@ export function PlayersPage() {
                             <option value="admin">Quản trị viên</option>
                           </select>
                           <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-500">Hiện tại: {ROLE_LABEL[currentRole] || currentRole}</span>
                             {roleChanged && isSuperAdmin && (
                               <button
                                 type="button"
@@ -379,6 +378,8 @@ export function PlayersPage() {
                           )}
                           {p.accountStatus === 'banned' ? (
                             <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">Tài khoản đã bị khóa</span>
+                          ) : p.accountStatus === 'active' ? (
+                            <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Đang hoạt động</span>
                           ) : (
                             <div className="text-[10px] font-semibold text-rose-700">TK: {p.accountStatus}</div>
                           )}
@@ -411,6 +412,8 @@ export function PlayersPage() {
                           <div className="font-medium text-slate-700">Tài khoản {ROLE_LABEL[currentRole] || currentRole}</div>
                           {p.accountStatus === 'banned' ? (
                             <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">Tài khoản đã bị khóa</span>
+                          ) : p.accountStatus === 'active' ? (
+                            <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Đang hoạt động</span>
                           ) : (
                             <div className="text-[10px] font-semibold text-rose-700 mt-1">TK: {p.accountStatus}</div>
                           )}

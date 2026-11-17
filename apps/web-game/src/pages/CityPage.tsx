@@ -349,8 +349,8 @@ export function CityPage() {
     const gHours = Math.floor((totalGameMinutes % (24 * 60)) / 60);
     const gMinutes = Math.floor(totalGameMinutes % 60);
     if (auctionCountdown <= 0) return 'Đang chốt phiên';
-    if (gDays > 0) return `${gDays} ngày ${gHours} giờ ${gMinutes} phút (game)`;
-    return `${gHours} giờ ${gMinutes} phút (game)`;
+    if (gDays > 0) return `${gDays} ngày ${gHours} giờ ${gMinutes} phút`;
+    return `${gHours} giờ ${gMinutes} phút`;
   })();
   const [bidInput, setBidInput] = useState('');
   const [bidding, setBidding] = useState(false);
@@ -662,7 +662,6 @@ export function CityPage() {
                 <StatCard
                   label="MỨC TRUY NÃ NGẦM"
                   value={`${character.heatLevel} / 100`}
-                  hint="Mức truy nã ngầm"
                 />
               </div>
 
@@ -1006,7 +1005,7 @@ export function CityPage() {
                                                           </span>
                                                         </span>
                                                         <span className="text-[11px] font-mono text-slate-400">
-                  {mapDto?.provinceName ?? 'Đô thị'} ({mapDto?.meta.cols ?? 40} × {mapDto?.meta.rows ?? 28})
+                  {mapDto?.provinceName ?? 'Đô thị'}
                                                         </span>
                                                       </div>
             )}
@@ -1059,12 +1058,7 @@ export function CityPage() {
                                                                             {activeAuction ? `⏱ Còn ${countdownLabel}` : '—'}
                                                                           </span>
                                                                         </div>
-                                                                        {activeAuction && (
-                                                                          <div className="mt-2 text-[11px] text-slate-500">
-                                                                            Thời lượng phiên: <b>3 ngày game</b> (3 phút thực). Thời gian hiển thị theo giờ game.{' '}
-                                                                            Mốc kết thúc thực: {new Date(activeAuction.endsAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                                                          </div>
-                                                                        )}
+
 
                                                                         {activeAuction ? (
                                                                           <div className="mt-3 space-y-2.5 text-xs">

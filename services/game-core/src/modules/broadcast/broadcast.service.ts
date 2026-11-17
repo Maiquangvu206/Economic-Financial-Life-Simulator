@@ -121,8 +121,10 @@ export class BroadcastService {
   }
 
   async remove(actorId: string | null | undefined, id: string): Promise<void> {
+    const r = await pool.query(`SELECT title FROM system_broadcasts WHERE id = $1`, [id]);
+    const title = r.rows[0]?.title ?? null;
     await pool.query(`DELETE FROM system_broadcasts WHERE id = $1`, [id]);
-    await writeActionLog(pool as any, actorId ?? null, 'broadcast.delete', { broadcastId: id });
+    await writeActionLog(pool as any, actorId ?? null, 'broadcast.delete', { broadcastId: id, title });
   }
 }
 

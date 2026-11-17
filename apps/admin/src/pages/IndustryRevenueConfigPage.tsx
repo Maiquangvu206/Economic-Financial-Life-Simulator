@@ -141,7 +141,7 @@ export function IndustryRevenueConfigPage() {
                     <tr key={r.industryType} className="border-t border-slate-100">
                       <td className="px-3 py-2 font-medium text-slate-800">
                         {INDUSTRY_LABELS[r.industryType] || r.industryType}
-                        <div className="text-[10px] font-mono text-slate-500">{r.industryType}</div>
+                        
                       </td>
                       <td className="px-3 py-2">
                         <input
@@ -174,8 +174,8 @@ export function IndustryRevenueConfigPage() {
                         />
                       </td>
                       <td className="px-3 py-2 text-slate-700">
-                        <div>Raw: <b>{(p?.raw ?? 0).toLocaleString('vi-VN')} ₫</b></div>
-                        <div className="text-emerald-700">Sau clamp: <b>{(p?.clamped ?? 0).toLocaleString('vi-VN')} ₫</b></div>
+                        <div>Doanh thu gốc: <b>{(p?.raw ?? 0).toLocaleString('vi-VN')} ₫</b></div>
+                        <div className="text-emerald-700">Thực nhận (sau giới hạn): <b>{(p?.clamped ?? 0).toLocaleString('vi-VN')} ₫</b></div>
                       </td>
                     </tr>
                   );

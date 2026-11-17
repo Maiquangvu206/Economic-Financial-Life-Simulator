@@ -218,7 +218,7 @@ export function SystemBroadcastPage() {
                 className="rounded border-slate-300 bg-slate-50 text-amber-500 focus:ring-0 cursor-pointer"
               />
               <label htmlFor="pinCheckbox" className="text-slate-700 text-xs cursor-pointer">
-                Ghim thông báo (ưu tiên hiển thị nổi bật)
+                Ghim thông báo
               </label>
             </div>
 
@@ -227,7 +227,7 @@ export function SystemBroadcastPage() {
               disabled={busy}
               className="w-full rounded-xl bg-amber-500 py-2.5 text-xs font-bold text-slate-900 transition hover:bg-amber-400 shadow-md shadow-amber-500/20 disabled:opacity-50"
             >
-              {busy ? 'Đang phát sóng...' : '📢 Phát sóng ngay (Broadcast)'}
+              {busy ? 'Đang phát sóng...' : '📢 Phát sóng ngay'}
             </button>
           </form>
         </div>

@@ -266,8 +266,8 @@ export async function processGameTick(): Promise<GameTickResult> {
         // Fallback tương thích dữ liệu cũ: tăng 1 tuổi mỗi lần qua năm game.
         nextAge = Number(c.age ?? 0) + (nextDay === 0 ? 1 : 0);
       }
-      const deathAge = c.death_age != null ? Number(c.death_age) : null;
-      if (deathAge != null && nextAge >= deathAge) {
+      const deathAge = c.death_age != null ? Number(c.death_age) : 80;
+      if (nextAge >= deathAge) {
         nextAge = deathAge;
       }
       // Tiêu hao thể lực chịu hiệu ứng mùa (seasonEffects.energyPct), áp dụng theo năm game.
@@ -521,7 +521,7 @@ export async function processGameTick(): Promise<GameTickResult> {
             })
           : Number(ch.age);
       if (Number(ch.health_energy) <= 0) reason = 'Sức khỏe cạn kiệt';
-      else if (ch.death_age != null && effectiveAge >= Number(ch.death_age)) reason = 'Đạt tuổi thọ tối đa (do quản trị cấu hình)';
+      else if ((ch.death_age != null ? Number(ch.death_age) : 80) <= effectiveAge) reason = 'Đạt tuổi thọ tối đa (do quản trị cấu hình)';
       else if (effectiveAge >= 65) {
         const pDeath = Math.min(0.95, Math.pow(1.12, effectiveAge - 65) * 0.02);
         if (Math.random() < pDeath) reason = 'Tuổi cao đột tử';

@@ -189,8 +189,8 @@ export class AuthRepository {
       await client.query(
         `INSERT INTO characters
            (id, user_id, full_name, account_number, cccd, birthplace, age, health_energy, cash_minor, credit_score, heat_level,
-            marital_status, location_x, location_y, is_alive, birth_game_year, birth_game_day)
-         VALUES ($1, $2, $3, $4, $5, $6, 18, 100, $7, $8, 0, 'single', 12, 7, true, $9, $10)`,
+            marital_status, location_x, location_y, is_alive, birth_game_year, birth_game_day, death_age)
+         VALUES ($1, $2, $3, $4, $5, $6, 18, 100, $7, $8, 0, 'single', 12, 7, true, $9, $10, 80)`,
         [characterId, userId, input.fullName, accountNumber, cccd, birthplace, cashMinor, creditScore, birthYear, birthDay],
       );
 

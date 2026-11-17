@@ -6,6 +6,8 @@ import { adminRequest } from '../shared/api/httpClient';
 interface AuditLogItem {
   id: string;
   actorId: string | null;
+  actorName?: string | null;
+  actorRole?: string | null;
   action: string;
   detail: Record<string, unknown>;
   createdAt: string;
@@ -80,7 +82,7 @@ function summarize(action: string, detail: Record<string, unknown> | null | unde
     case 'broadcast.create':
       return `${pick('title') ?? 'Thông báo'}${d.type ? ` · ${fmtValue(d.type)}` : ''}${d.scope ? ` · ${fmtValue(d.scope)}` : ''}${d.pinned ? ' · ghim' : ''}`;
     case 'broadcast.delete':
-      return `Xóa bản tin ${shortId(pick('broadcastId', 'id') as string)}`;
+      return d.title ? `Đã xóa bản tin "${d.title}"` : 'Đã xóa 1 bản tin thông báo';
     case 'game.config.update': {
       const parts = [d.season, d.otRatePercent != null ? `OT ${d.otRatePercent}%` : null].filter(Boolean);
       return parts.length ? parts.map(String).join(' · ') : 'Cập nhật cấu hình hệ thống';
@@ -152,7 +154,7 @@ export function AuditLogsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Nhật ký Audit Log"
+        title="Nhật ký hệ thống"
         actions={<button type="button" onClick={() => refetch()} className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Làm mới</button>}
       />
 
@@ -210,7 +212,12 @@ export function AuditLogsPage() {
                         <div className="font-semibold text-slate-800">{actionLabel(log.action)}</div>
                       </td>
                       <td className="py-2.5 px-4 text-slate-700 leading-relaxed">{summarize(log.action, log.detail)}</td>
-                      <td className="py-2.5 px-4 text-slate-600">{actorLabel(log.actorId)}</td>
+                      <td className="py-2.5 px-4 text-slate-600">
+                        <div className="font-semibold text-slate-800">{log.actorName || actorLabel(log.actorId)}</div>
+                        {log.actorId != null && log.actorRole && (
+                          <div className="text-[10px] text-slate-500">{log.actorRole}</div>
+                        )}
+                      </td>
                       <td className="py-2.5 px-4 text-right">
                         {hasDetail ? (
                           <button

@@ -144,8 +144,8 @@ export class SuccessionService {
         const birthYear = currentYear - 18;
         const birthDay = ((Math.floor(currentDay) % 360) + 360) % 360;
         const created = await (client as any).query(
-          `INSERT INTO characters (id,user_id,full_name,account_number,cccd,birthplace,age,health_energy,cash_minor,credit_score,heat_level,is_alive,marital_status,location_x,location_y,birth_game_year,birth_game_day)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 18, 100, 500000, 650, 0, true, 'single', 0, 2, $6, $7)
+          `INSERT INTO characters (id,user_id,full_name,account_number,cccd,birthplace,age,health_energy,cash_minor,credit_score,heat_level,is_alive,marital_status,location_x,location_y,birth_game_year,birth_game_day,death_age)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 18, 100, 500000, 650, 0, true, 'single', 0, 2, $6, $7, 80)
            RETURNING id`,
           [userId, fullName, accountNumber, cccd, birthplace, birthYear, birthDay],
         );

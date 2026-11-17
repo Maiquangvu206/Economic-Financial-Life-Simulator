@@ -213,8 +213,8 @@ export class CharactersRepository {
     const result = await client.query<CharacterRow>(
       `INSERT INTO characters
          (id, user_id, full_name, account_number, cccd, birthplace, age, health_energy, cash_minor,
-          credit_score, heat_level, is_alive, marital_status, location_x, location_y, birth_game_year, birth_game_day)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $8, 100, $9, 650, 0, true, 'single', $6, $7, $10, $11)
+          credit_score, heat_level, is_alive, marital_status, location_x, location_y, birth_game_year, birth_game_day, death_age)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $8, 100, $9, 650, 0, true, 'single', $6, $7, $10, $11, 80)
        RETURNING id, user_id, full_name, account_number, cccd, birthplace, NULL::text AS birthplace_name,
                  age, health_energy, cash_minor, credit_score, heat_level, is_alive,
                  marital_status, spouse_id, location_x, location_y, created_at`,

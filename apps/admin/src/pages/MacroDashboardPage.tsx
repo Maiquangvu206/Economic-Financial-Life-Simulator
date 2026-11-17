@@ -85,13 +85,13 @@ export function MacroDashboardPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <AdminStat label="Quỹ đất nước" value={isLoading ? '…' : formatCompact(stateFund)} />
-        <AdminStat label="Tổng tiền lưu thông (ước tính)" value={isLoading ? '…' : formatCompact(moneySupply)} />
+        <AdminStat label="Tổng tiền lưu thông" value={isLoading ? '…' : formatCompact(moneySupply)} />
         <AdminStat label="Lạm phát" value={isLoading ? '…' : `${inflation.toFixed(2)}%`} />
         <AdminStat label="Chỉ số giá tiêu dùng" value={isLoading ? '…' : cpi.toFixed(1)} />
         <AdminStat label="Nhân vật sống (có user)" value={isLoading ? '…' : String(ccu)} />
-        <AdminStat label="Vốn hóa sàn (niêm yết)" value={isLoading ? '…' : formatCompact(marketCap)} />
+        <AdminStat label="Vốn hóa sàn" value={isLoading ? '…' : formatCompact(marketCap)} />
         <AdminStat label="Vụ án đang mở" value={isLoading ? '…' : String(cases)} tone={cases > 0 ? 'warning' : 'default'} />
-        <AdminStat label="Tick (ngày game)" value={isLoading ? '…' : String(tick)} />
+        <AdminStat label="NGÀY GAME HIỆN TẠI" value={isLoading ? '…' : String(tick)} />
       </div>
 
       <div className="space-y-4">

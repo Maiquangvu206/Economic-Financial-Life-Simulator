@@ -112,13 +112,24 @@ export async function getAuditLogs(req: Request, res: Response): Promise<void> {
   const offset = req.query.offset != null ? Number(req.query.offset) : 0;
   const rows = await listActionLogs(limit, offset);
   res.json(
-    rows.map((r) => ({
-      id: r.id,
-      actorId: r.actorId,
-      action: r.action,
-      detail: r.detail ?? {},
-      createdAt: new Date(r.createdAt).toISOString(),
-    })),
+    rows.map((r) => {
+      const actorName = r.actorId == null
+        ? 'Hệ thống tự động'
+        : (r.actorCharacterName || r.actorUsername || (r.actorEmail ? r.actorEmail.split('@')[0] : null) || 'Quản trị viên');
+      const roleLabel = r.actorRole === 'admin' ? 'Quản trị viên'
+        : r.actorRole === 'moderator' ? 'Điều hành viên'
+        : r.actorRole === 'player' ? 'Người chơi'
+        : (r.actorId == null ? '' : 'Quản trị viên');
+      return {
+        id: r.id,
+        actorId: r.actorId,
+        actorName,
+        actorRole: roleLabel,
+        action: r.action,
+        detail: r.detail ?? {},
+        createdAt: new Date(r.createdAt).toISOString(),
+      };
+    }),
   );
 }
 
