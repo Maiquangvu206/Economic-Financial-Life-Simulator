@@ -23,7 +23,21 @@ jobs:
           set -euo pipefail
           cd /srv/apps/project-1
           previous_revision="$(git rev-parse HEAD)"
-          previous_project="$(docker compose config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')"
+          running_postgres_projects="$(docker ps \
+            --filter label=com.docker.compose.service=postgres \
+            --filter status=running \
+            --format '{{.Label "com.docker.compose.project"}}' \
+            | sort -u)"
+          if [[ -z "$running_postgres_projects" ]]; then
+            echo "No running PostgreSQL container found; refusing deployment without a verifiable database backup."
+            exit 1
+          fi
+          if [[ "$running_postgres_projects" == *$'\n'* ]]; then
+            echo "Multiple running PostgreSQL Compose projects found; refusing ambiguous deployment."
+            printf '%s\n' "$running_postgres_projects"
+            exit 1
+          fi
+          previous_project="$running_postgres_projects"
           git pull --ff-only origin main
 
           if ! git diff --name-status "$previous_revision" HEAD -- infra/db/migrations \
