@@ -65,8 +65,12 @@ docker compose ps
 ```
 
 Each deployment creates and validates a PostgreSQL custom-format backup before
-running migrations or replacing application containers. Backups are kept under
-`/srv/backups/project-1/postgres` for 30 days; a failed backup stops deployment.
+running migrations or replacing application containers. By default, backups
+are kept in the ignored server-local directory
+`/srv/apps/project-1/.deploy-backups/postgres` for 30 days, which is writable by
+the `mq` runner that owns the checkout. Set `DEPLOY_BACKUP_DIR` in the runner's
+environment to use a separately mounted backup disk. A failed backup stops
+deployment.
 The migration step runs explicitly on every deploy so newly added SQL files are
 not skipped just because the one-shot Compose service already exited earlier.
 The workflow also blocks edits or removals of existing migration files; add a

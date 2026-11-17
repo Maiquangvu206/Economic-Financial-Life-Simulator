@@ -31,6 +31,7 @@ __pycache__/
 logs/
 tmp/
 .data/
+.deploy-backups/
 postgres-data/
 redis-data/
 

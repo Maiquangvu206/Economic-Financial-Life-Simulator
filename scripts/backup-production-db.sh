@@ -3,7 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-backup_dir=/srv/backups/project-1/postgres
+# The self-hosted runner account (mq) owns the checkout but may not be allowed
+# to create directories directly under /srv. Keep deploy snapshots in an
+# ignored, server-local directory inside the checkout by default; operators can
+# override this with DEPLOY_BACKUP_DIR for a separately mounted backup disk.
+backup_dir="${DEPLOY_BACKUP_DIR:-$PWD/.deploy-backups/postgres}"
 compose_project="${DEPLOY_DB_COMPOSE_PROJECT:-}"
 install -d -m 700 "$backup_dir"
 chmod 700 "$backup_dir"
