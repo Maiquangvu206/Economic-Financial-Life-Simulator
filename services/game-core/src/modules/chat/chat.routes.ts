@@ -10,4 +10,5 @@ export const chatRouter: Router = Router();
 chatRouter.use(attachActor);
 chatRouter.get('/search-users', asyncHandler(controller.searchUsers));
 chatRouter.get('/conversations', asyncHandler(controller.conversations));
+chatRouter.get('/private/:partnerUserId', asyncHandler(controller.getPrivateHistory));
 chatRouter.post('/conversations/read', asyncHandler(controller.markRead));

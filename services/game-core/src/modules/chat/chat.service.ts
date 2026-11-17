@@ -32,4 +32,19 @@ export class ChatService {
     await this.repo.markRead(userId, peerUserId);
     return { ok: true };
   }
+
+  async getPrivateHistory(userId: string, peerUserId: string, limit = 200) {
+    const rows = await this.repo.getPrivateHistory(userId, peerUserId, limit);
+    return rows.map((m) => ({
+      id: m.id,
+      clientMsgId: m.client_msg_id ?? undefined,
+      channel: 'private' as const,
+      senderId: m.sender_user_id,
+      senderName: m.sender_name,
+      senderRole: m.sender_role,
+      receiverId: m.receiver_user_id,
+      content: m.content,
+      createdAt: m.created_at instanceof Date ? m.created_at.toISOString() : new Date(m.created_at as any).toISOString(),
+    }));
+  }
 }

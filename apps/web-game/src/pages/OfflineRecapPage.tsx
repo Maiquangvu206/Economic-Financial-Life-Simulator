@@ -133,7 +133,7 @@ export function OfflineRecapPage() {
                 checked={!!form.catchupEnabled}
                 onChange={(e) => setForm((f) => ({ ...f, catchupEnabled: e.target.checked }))}
               />
-              Bù một phần thời gian đã vắng (trong giới hạn)
+              Bù một phần thời gian đã vắng
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -149,7 +149,7 @@ export function OfflineRecapPage() {
                 checked={!!form.autoPay}
                 onChange={(e) => setForm((f) => ({ ...f, autoPay: e.target.checked }))}
               />
-              Tự thanh toán các khoản đến hạn (khi đủ tiền)
+              Tự thanh toán các khoản đến hạn
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -162,7 +162,6 @@ export function OfflineRecapPage() {
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600 space-y-1">
               <div>Lần cập nhật gần nhất: <b>{fmtDate(settingsQ.data?.lastOfflineProcessedAt)}</b></div>
-              <div>Một số việc có thể không thực hiện được nếu chưa đủ điều kiện, không đủ tiền hoặc hệ thống chưa cho phép.</div>
             </div>
 
             <div className="flex flex-wrap gap-2 pt-1">
@@ -237,11 +236,6 @@ export function OfflineRecapPage() {
           </div>
         )}
       </Panel>
-
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
-        <div><b>Lưu ý:</b> Hệ thống chỉ hỗ trợ trong giới hạn cho phép và theo cài đặt của bạn.</div>
-        <div>Có thể nhận hỗ trợ/phúc lợi đủ điều kiện và thanh toán các khoản đến hạn khi đủ tiền. Hệ thống không tự thực hiện mọi hoạt động thay bạn trong thời gian vắng mặt.</div>
-      </div>
     </div>
   );
 }

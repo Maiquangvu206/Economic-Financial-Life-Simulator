@@ -59,6 +59,23 @@ function normIncoming(msg: any): UiChatMessage | null {
   return null;
 }
 
+function mergeHistoryMessages(prev: UiChatMessage[], incoming: UiChatMessage[]): UiChatMessage[] {
+  const map = new Map<string, UiChatMessage>();
+  const push = (m: UiChatMessage) => {
+    const key = m.id || (m.clientMsgId ? `c:${m.clientMsgId}` : `${m.createdAt}-${m.senderId}`);
+    const existing = map.get(key) || (m.clientMsgId ? Array.from(map.values()).find((x) => x.clientMsgId && x.clientMsgId === m.clientMsgId) : undefined);
+    if (existing) {
+      const k = existing.id || (existing.clientMsgId ? `c:${existing.clientMsgId}` : key);
+      map.set(k, { ...existing, ...m, localStatus: m.localStatus ?? existing.localStatus ?? 'sent' });
+    } else {
+      map.set(key, { ...m, localStatus: m.localStatus ?? 'sent' });
+    }
+  };
+  for (const m of prev) push(m);
+  for (const m of incoming) push(m);
+  return Array.from(map.values()).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+}
+
 export function useChatSocket() {
   const myUserId = useSessionStore((s) => s.user?.id ?? '');
   const [connected, setConnected] = useState(false);
@@ -67,6 +84,7 @@ export function useChatSocket() {
   const [activePeerId, setActivePeerId] = useState<string | null>(null);
   const [unreadByPeer, setUnreadByPeer] = useState<Record<string, number>>({});
   const [knownPeers, setKnownPeers] = useState<Record<string, { displayName: string; role: string }>>({});
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const myUserIdRef = useRef(myUserId);
   const activePeerIdRef = useRef<string | null>(null);
 
@@ -96,7 +114,6 @@ export function useChatSocket() {
       return;
     }
 
-    // private: determine peer id relative to me
     const me = myUserIdRef.current;
     const peerId = incoming.senderId === me ? (incoming.receiverId || '') : incoming.senderId;
     if (!peerId) return;
@@ -104,7 +121,7 @@ export function useChatSocket() {
     setPrivateMessagesByPeer((prev) => ({ ...prev, [peerId]: apply(prev[peerId] ?? []) }));
     setKnownPeers((prev) => {
       if (incoming.senderId !== me) {
-        return { ...prev, [peerId]: { displayName: incoming.senderName, role: incoming.senderRole } };
+        return { ...prev, [peerId]: { displayName: incoming.senderName || prev[peerId]?.displayName || 'Người dùng', role: incoming.senderRole || prev[peerId]?.role || 'player' } };
       }
       return prev;
     });
@@ -120,6 +137,7 @@ export function useChatSocket() {
     const onConnect = () => {
       setConnected(true);
       socket.emit('room:join', { room: 'chat_room:global' } as any);
+      socket.emit('room:join', { room: '__presence__' } as any);
     };
     const onDisconnect = () => setConnected(false);
     const onConnectError = () => setConnected(false);
@@ -136,6 +154,20 @@ export function useChatSocket() {
     const onGlobal = (msg: any) => handle(msg, false);
     const onPrivate = (msg: any) => handle(msg, true);
     const onLegacy = (msg: any) => handle(msg, true);
+    const onPresence = (p: any) => {
+      const uid = String(p?.userId || '');
+      if (!uid) return;
+      setOnlineUserIds((prev) => {
+        const next = new Set(prev);
+        if (p?.isOnline) next.add(uid); else next.delete(uid);
+        return next;
+      });
+    };
+    const onPresenceSync = (p: any) => {
+      if (p?.room === '__online_users__' && Array.isArray(p?.characterIds)) {
+        setOnlineUserIds(new Set(p.characterIds.map(String)));
+      }
+    };
 
     if (socket.connected) onConnect();
     socket.on('connect', onConnect);
@@ -145,6 +177,8 @@ export function useChatSocket() {
     socket.on('chat:private', onPrivate as any);
     socket.on('chat:message', onLegacy as any);
     socket.on('chat:rate_limited', onRateLimited as any);
+    socket.on('user:presence' as any, onPresence as any);
+    socket.on('presence:sync', onPresenceSync as any);
 
     return () => {
       socket.off('connect', onConnect);
@@ -154,6 +188,8 @@ export function useChatSocket() {
       socket.off('chat:private', onPrivate as any);
       socket.off('chat:message', onLegacy as any);
       socket.off('chat:rate_limited', onRateLimited as any);
+      socket.off('user:presence' as any, onPresence as any);
+      socket.off('presence:sync', onPresenceSync as any);
     };
   }, [upsertMessage]);
 
@@ -230,7 +266,7 @@ export function useChatSocket() {
       upsertMessage({ ...optimistic, localStatus: 'error' });
       pushToast({ variant: 'error', title: 'Chat', description: 'Gửi tin nhắn quá thời gian chờ. Vui lòng kiểm tra kết nối.' });
     }, 10_000);
-    socket.emit('chat:private', { receiverId, content: text, clientMsgId } as any, (ack: ChatAck) => {
+    socket.emit('chat:private', { receiverId, receiverUserId: receiverId, content: text, clientMsgId } as any, (ack: ChatAck) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
@@ -244,16 +280,27 @@ export function useChatSocket() {
     });
   }, [upsertMessage]);
 
+  const loadHistory = useCallback(async (peerUserId: string) => {
+    try {
+      const rows = await apiRequest<UiChatMessage[]>(`/api/v1/chat/private/${encodeURIComponent(peerUserId)}?limit=200`);
+      if (!Array.isArray(rows)) return;
+      const normalized = rows.map((m) => ({ ...m, channel: 'private' as const, localStatus: 'sent' as const }));
+      setPrivateMessagesByPeer((prev) => ({ ...prev, [peerUserId]: mergeHistoryMessages(prev[peerUserId] ?? [], normalized) }));
+    } catch {
+      // ignore history load errors; realtime can still work
+    }
+  }, []);
+
   const openConversation = useCallback((peerUserId: string) => {
     setActivePeerId(peerUserId);
     setUnreadByPeer((prev) => ({ ...prev, [peerUserId]: 0 }));
+    void loadHistory(peerUserId);
     void apiRequest('/api/v1/chat/conversations/read', { method: 'POST', body: JSON.stringify({ peerUserId }) }).catch(() => {});
-  }, []);
+  }, [loadHistory]);
 
   const conversations = useMemo(() => {
-    // merge API conversations with locally known peers/messages
     const map = new Map<string, Conversation>();
-    for (const c of conversationsApi) map.set(c.peerUserId, { ...c });
+    for (const c of conversationsApi) map.set(c.peerUserId, { ...c, isOnline: !!onlineUserIds.has(c.peerUserId) });
     for (const [peerId, msgs] of Object.entries(privateMessagesByPeer)) {
       const last = msgs[msgs.length - 1];
       const existing = map.get(peerId);
@@ -262,7 +309,7 @@ export function useChatSocket() {
         peerUserId: peerId,
         displayName: peerInfo?.displayName || peerId.slice(0, 8),
         role: peerInfo?.role || 'player',
-        isOnline: false,
+        isOnline: !!onlineUserIds.has(peerId),
         lastMessage: null,
         lastAt: null,
         unreadCount: 0,
@@ -272,19 +319,21 @@ export function useChatSocket() {
         base.lastAt = last.createdAt;
       }
       base.unreadCount = unreadByPeer[peerId] ?? base.unreadCount ?? 0;
-      if (peerInfo?.displayName && (!existing || existing.displayName === existing.peerUserId?.slice(0,8))) base.displayName = peerInfo.displayName;
+      base.isOnline = !!onlineUserIds.has(peerId);
+      if (peerInfo?.displayName) base.displayName = peerInfo.displayName;
       if (peerInfo?.role) base.role = peerInfo.role;
       map.set(peerId, base);
     }
     return Array.from(map.values()).sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));
-  }, [conversationsApi, privateMessagesByPeer, knownPeers, unreadByPeer]);
+  }, [conversationsApi, privateMessagesByPeer, knownPeers, unreadByPeer, onlineUserIds]);
 
   const totalPrivateUnread = useMemo(() => conversations.reduce((s, c) => s + (c.unreadCount || 0), 0), [conversations]);
 
   const searchUsers = useCallback(async (q: string): Promise<SearchUser[]> => {
     if (!q.trim()) return [];
-    return apiRequest<SearchUser[]>(`/api/v1/chat/search-users?q=${encodeURIComponent(q.trim())}`);
-  }, []);
+    const rows = await apiRequest<SearchUser[]>(`/api/v1/chat/search-users?q=${encodeURIComponent(q.trim())}`);
+    return rows.map((u) => ({ ...u, isOnline: !!onlineUserIds.has(u.id) }));
+  }, [onlineUserIds]);
 
   return {
     myUserId,

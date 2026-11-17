@@ -18,8 +18,16 @@ export class ChatController {
 
   markRead = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
-    const peerUserId = String((req.body as any)?.peerUserId || '');
+    const peerUserId = String((req.body as any)?.peerUserId || (req.body as any)?.partnerUserId || '');
     if (!peerUserId) { res.status(400).json({ error: 'peerUserId required' }); return; }
     res.json(await this.service.markRead(userId, peerUserId));
+  };
+
+  getPrivateHistory = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const peerUserId = String(req.params.partnerUserId || req.params.peerUserId || '');
+    if (!peerUserId) { res.status(400).json({ error: 'partnerUserId required' }); return; }
+    const limit = req.query.limit != null ? Number(req.query.limit) : 200;
+    res.json(await this.service.getPrivateHistory(userId, peerUserId, limit));
   };
 }

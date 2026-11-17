@@ -146,6 +146,7 @@ export function AiProvidersPage() {
   const [uiMode, setUiMode] = useState<UiMode>('fake');
   const [entries, setEntries] = useState<UnifiedEntry[]>([]);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
 
   // add form
   const [addKind, setAddKind] = useState<ProviderKind>('gemini');
@@ -159,6 +160,7 @@ export function AiProvidersPage() {
   const configQuery = useQuery({
     queryKey: ['admin', 'ai', 'config'],
     queryFn: () => adminRequest<{ config: AiConfig }>('/api/v1/admin/ai/config'),
+    refetchOnWindowFocus: false,
   });
 
   const statusQuery = useQuery({
@@ -168,13 +170,13 @@ export function AiProvidersPage() {
   });
 
   useEffect(() => {
-    if (configQuery.data?.config) {
+    if (configQuery.data?.config && !isDirty) {
       const merged = { ...DEFAULT_CONFIG, ...configQuery.data.config };
       setConfig(merged);
       setUiMode(modeFromProvider(merged.provider));
       setEntries(normalizeEntriesFromConfig(merged));
     }
-  }, [configQuery.data]);
+  }, [configQuery.data, isDirty]);
 
   useEffect(() => {
     if (addKind === 'gemini') {
@@ -195,6 +197,7 @@ export function AiProvidersPage() {
         const err = data?.applyError || 'Chưa thể áp dụng ngay. Cấu hình đã được lưu và sẽ được đồng bộ khi dịch vụ AI khả dụng.';
         setSaveMsg(`Đã lưu cấu hình. ${data?.applied === false ? err : ''}`.trim());
       }
+      setIsDirty(false);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['admin', 'ai', 'config'] }),
         qc.invalidateQueries({ queryKey: ['admin', 'ai', 'status'] }),
@@ -205,6 +208,7 @@ export function AiProvidersPage() {
 
   function updateConfig<K extends keyof AiConfig>(key: K, value: AiConfig[K]) {
     setConfig((c) => ({ ...c, [key]: value }));
+    setIsDirty(true);
   }
 
   function buildConfigToSave(): AiConfig {
@@ -238,24 +242,37 @@ export function AiProvidersPage() {
     setEntries((prev) => [...prev, entry]);
     setAddName('');
     setAddKey('');
+    setIsDirty(true);
     setSaveMsg('Đã thêm API vào danh sách. Bấm "Lưu cấu hình" để áp dụng.');
   }
 
   function removeEntry(id: string) {
     setEntries((prev) => prev.filter((e) => e.id !== id));
+    setIsDirty(true);
+    setTestMsg((m) => {
+      const next = { ...m };
+      delete next[id];
+      return next;
+    });
+    setSaveMsg('Đã xóa API khỏi danh sách (chưa lưu). Bấm "Lưu cấu hình" để áp dụng.');
   }
 
   function toggleEntry(id: string) {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e)));
+    setIsDirty(true);
   }
 
   function testEntry(id: string) {
     const e = entries.find((x) => x.id === id);
     if (!e) return;
-    if (!e.enabled) { setTestMsg((m) => ({ ...m, [id]: 'API đang tắt.' })); return; }
-    // Runtime-level quick check: report based on current status visibility; detailed per-key test endpoint not available.
+    if (!e.enabled) { setTestMsg((m) => ({ ...m, [id]: 'API đang tắt. Bật lại để sử dụng.' })); return; }
+    if (e.apiKey === '********' || !e.apiKey) {
+      setTestMsg((m) => ({ ...m, [id]: 'Chưa có khóa mới để kiểm tra trực tiếp. Khóa đã lưu sẽ được dùng khi gọi AI.' }));
+      return;
+    }
+    // Không có endpoint kiểm tra từng khóa; phản hồi dựa trên trạng thái runtime hiện tại.
     const st = statusQuery.data;
-    if (st?.ready) setTestMsg((m) => ({ ...m, [id]: 'Dịch vụ AI đang hoạt động. Lưu cấu hình để áp dụng và kiểm tra thực tế.' }));
+    if (st?.ready) setTestMsg((m) => ({ ...m, [id]: 'Dịch vụ AI đang hoạt động. Lưu cấu hình rồi hệ thống sẽ dùng khóa này khi tới lượt.' }));
     else setTestMsg((m) => ({ ...m, [id]: friendlyStatusError(st, statusQuery.error) || 'Chưa kiểm tra được. Hãy làm mới trạng thái.' }));
   }
 
@@ -291,7 +308,7 @@ export function AiProvidersPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
           <label className="block text-xs text-slate-600">Chế độ hoạt động
-            <select value={uiMode} onChange={(e) => setUiMode(e.target.value as UiMode)} className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+            <select value={uiMode} onChange={(e) => { setUiMode(e.target.value as UiMode); setIsDirty(true); }} className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
               <option value="fake">Giả lập an toàn (Fake)</option>
               <option value="rotate">Tự động luân phiên</option>
               <option value="priority">Ưu tiên theo thứ tự</option>
@@ -387,6 +404,7 @@ export function AiProvidersPage() {
             <h2 className="panel-title">Trạng thái hoạt động AI</h2>
             <button type="button" onClick={() => void statusQuery.refetch()} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50">Làm mới</button>
           </div>
+          {isDirty ? <div className="text-[11px] text-amber-700">Có thay đổi chưa lưu. Bấm &quot;Lưu cấu hình&quot; để áp dụng.</div> : null}
 
           {statusQuery.isLoading ? <p className="text-sm text-slate-500">Đang tải trạng thái...</p> : null}
 

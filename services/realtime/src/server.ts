@@ -1,4 +1,4 @@
-import { createServer, type Server as HttpServer } from 'node:http';
+﻿import { createServer, type Server as HttpServer } from 'node:http';
 import express from 'express';
 import { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
@@ -35,6 +35,8 @@ export type GameServer = Server<
 >;
 
 const chatWindows = new Map<string, number[]>();
+// Đếm số socket đang kết nối theo userId để xác định online/offline chính xác
+const onlineCounts = new Map<string, number>();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function allowChat(socketId: string): boolean {
@@ -48,6 +50,21 @@ function allowChat(socketId: string): boolean {
   recent.push(now);
   chatWindows.set(socketId, recent);
   return true;
+}
+
+function markOnline(userId: string): boolean {
+  const next = (onlineCounts.get(userId) ?? 0) + 1;
+  onlineCounts.set(userId, next);
+  return next === 1;
+}
+function markOffline(userId: string): boolean {
+  const next = (onlineCounts.get(userId) ?? 0) - 1;
+  if (next <= 0) { onlineCounts.delete(userId); return true; }
+  onlineCounts.set(userId, next);
+  return false;
+}
+function getOnlineUserIds(): string[] {
+  return Array.from(onlineCounts.keys());
 }
 
 async function persistMessage(msg: ChatMessage): Promise<void> {
@@ -109,6 +126,12 @@ export function createRealtimeServer(): {
     const userRoom = `user:${actor.userId}`;
     void socket.join(userRoom);
     void socket.join(Rooms.character(actor.userId));
+    // Presence: chỉ broadcast online khi chuyển từ 0 -> 1 socket
+    if (markOnline(actor.userId)) {
+      (io.emit as any)('user:presence', { userId: actor.userId, isOnline: true });
+    }
+    // Gửi snapshot online hiện tại cho client vừa kết nối
+    socket.emit('presence:sync', { room: '__online_users__', characterIds: getOnlineUserIds() });
     logger.debug({ userId: actor.userId }, 'socket connected');
 
     socket.on('room:join', (payload) => {
@@ -117,6 +140,10 @@ export function createRealtimeServer(): {
       // allow joining own user room explicitly
       if (parsed.data.room === userRoom || parsed.data.room === Rooms.character(actor.userId)) {
         void socket.join(parsed.data.room);
+        return;
+      }
+      if (parsed.data.room === '__presence__') {
+        socket.emit('presence:sync', { room: '__online_users__', characterIds: getOnlineUserIds() });
         return;
       }
       if (!canJoinRoom(actor, parsed.data.room)) {
@@ -206,7 +233,8 @@ export function createRealtimeServer(): {
         ackCb?.(ackOf(false, 'Nội dung không hợp lệ', (payload as any)?.clientMsgId));
         return;
       }
-      const { receiverId, content, clientMsgId } = parsed.data;
+      const receiverId = String((parsed.data as any).receiverUserId || parsed.data.receiverId || '').trim();
+      const { content, clientMsgId } = parsed.data;
       if (!UUID_RE.test(receiverId) || receiverId === actor.userId) {
         ackCb?.(ackOf(false, 'Người nhận không hợp lệ', clientMsgId));
         return;
@@ -229,10 +257,10 @@ export function createRealtimeServer(): {
           createdAt: new Date().toISOString(),
         };
         await persistMessage(msg);
-        // Chỉ emit tới room của người nhận (và tương thích room cũ)
-        io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:private', msg);
-        // legacy compatibility cho người nhận
-        io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:message', {
+        // Emit tới CẢ 2 room user: người nhận và người gửi (đồng bộ mọi tab/thiết bị, realtime tức thì)
+        io.to(`user:${receiverId}`).to(`user:${actor.userId}`).to(Rooms.character(receiverId)).to(Rooms.character(actor.userId)).emit('chat:private', msg);
+        // legacy compatibility
+        io.to(`user:${receiverId}`).to(`user:${actor.userId}`).to(Rooms.character(receiverId)).to(Rooms.character(actor.userId)).emit('chat:message', {
           channelId: `private:${receiverId}`,
           characterId: actor.userId,
           displayName: actor.displayName,
@@ -265,7 +293,7 @@ export function createRealtimeServer(): {
           const msg: ChatMessage = { id: randomUUID(), clientMsgId, channel: 'private', senderId: actor.userId, senderName: actor.displayName, senderRole: actor.role, receiverId, content: message.trim(), createdAt: new Date().toISOString() };
           await persistMessage(msg);
           io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:private', msg);
-          io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:message', { channelId, characterId: actor.userId, displayName: actor.displayName, message: msg.content, at: Date.parse(msg.createdAt), toCharacterId: receiverId, fromPrivate: true, clientMsgId });
+          io.to(`user:${receiverId}`).to(`user:${actor.userId}`).to(Rooms.character(receiverId)).to(Rooms.character(actor.userId)).emit('chat:message', { channelId, characterId: actor.userId, displayName: actor.displayName, message: msg.content, at: Date.parse(msg.createdAt), toCharacterId: receiverId, fromPrivate: true, clientMsgId });
           ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
           return;
         }
@@ -307,6 +335,9 @@ export function createRealtimeServer(): {
 
     socket.on('disconnect', () => {
       chatWindows.delete(socket.id);
+      if (markOffline(actor.userId)) {
+        (io.emit as any)('user:presence', { userId: actor.userId, isOnline: false });
+      }
       logger.debug({ userId: actor.userId }, 'socket disconnected');
     });
   });
@@ -318,3 +349,4 @@ export function createRealtimeServer(): {
 
   return { httpServer, io, close };
 }
+

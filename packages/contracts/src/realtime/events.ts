@@ -39,10 +39,11 @@ export const ChatGlobalSendSchema = z.object({
   clientMsgId: z.string().max(120).optional(),
 });
 export const ChatPrivateSendSchema = z.object({
-  receiverId: z.string().min(1), // userId người nhận
+  receiverId: z.string().min(1).optional(), // userId người nhận (tương thích cũ)
+  receiverUserId: z.string().min(1).optional(), // userId người nhận (chuẩn)
   content: z.string().min(1).max(1000),
   clientMsgId: z.string().max(120).optional(),
-});
+}).refine((v) => !!(v.receiverId || v.receiverUserId), { message: 'receiverId required' });
 
 export type ChatAck =
   | { ok: true; id: string; clientMsgId?: string; createdAt: string }
@@ -59,6 +60,7 @@ export type ChatSendPayload = z.infer<typeof ChatSendPayloadSchema>;
 
 export interface ServerToClientEvents {
   'presence:sync': (payload: { room: string; characterIds: string[] }) => void;
+  'user:presence': (payload: { userId: string; isOnline: boolean }) => void;
   'player:moved': (payload: { characterId: string; x: number; y: number; at: number }) => void;
   'election:votes': (payload: {
     electionId: string;

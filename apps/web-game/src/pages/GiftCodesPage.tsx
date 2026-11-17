@@ -72,8 +72,7 @@ export function GiftCodesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-heading font-black text-slate-900">Mã quà tặng (Giftcode)</h1>
-        <p className="mt-1 text-sm text-slate-600">Nhập mã quà tặng do quản trị hệ thống cung cấp để nhận thưởng. Bạn có thể xem lại các mã đã sử dụng bên dưới.</p>
+        <h1 className="text-2xl font-heading font-black text-slate-900">Mã quà tặng</h1>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -116,12 +115,6 @@ export function GiftCodesPage() {
               {lastResult.balanceAfter && <div>Số dư hiện tại: <b>{formatMoney(lastResult.balanceAfter.amount)}</b></div>}
             </div>
           )}
-
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600 leading-relaxed">
-            - Mỗi mã có thể giới hạn tổng lượt sử dụng và số lần mỗi tài khoản được dùng.<br />
-            - Phần thưởng (nếu có) sẽ được cộng trực tiếp vào số dư nhân vật của bạn.<br />
-            - Mã không phân biệt hoa/thường khi nhập.
-          </div>
         </section>
 
         <section className="lg:col-span-7 rounded-2xl border border-slate-200 bg-white/90 p-5 space-y-4 shadow-sm">

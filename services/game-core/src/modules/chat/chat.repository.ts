@@ -114,4 +114,20 @@ export class ChatRepository {
       [userId, peerUserId],
     );
   }
+
+  async getPrivateHistory(userId: string, peerUserId: string, limit = 200): Promise<Array<{
+    id: string; client_msg_id: string | null; channel: string; sender_user_id: string; sender_name: string; sender_role: string; receiver_user_id: string | null; content: string; created_at: Date;
+  }>> {
+    const lim = Math.max(1, Math.min(500, Math.trunc(limit || 200)));
+    const res = await pool.query(
+      `SELECT id, client_msg_id, channel, sender_user_id, sender_name, sender_role, receiver_user_id, content, created_at
+       FROM chat_messages
+       WHERE channel = 'private'
+         AND ((sender_user_id = $1 AND receiver_user_id = $2) OR (sender_user_id = $2 AND receiver_user_id = $1))
+       ORDER BY created_at ASC
+       LIMIT $3`,
+      [userId, peerUserId, lim],
+    );
+    return res.rows as any;
+  }
 }
