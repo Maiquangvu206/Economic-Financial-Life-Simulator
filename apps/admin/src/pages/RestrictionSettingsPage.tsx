@@ -48,6 +48,8 @@ const maintenanceDefaults: MaintenanceConfig = {
   message: 'Hệ thống đang tạm dừng để nâng cấp hoặc sửa chữa. Vui lòng quay lại sau.',
 };
 
+type Notice = { type: 'success' | 'error'; text: string } | null;
+
 export function RestrictionSettingsPage() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery<GameConfigAdmin>({
@@ -57,6 +59,7 @@ export function RestrictionSettingsPage() {
 
   const [restrictionForm, setRestrictionForm] = useState<RestrictionContactConfig>(restrictionDefaults);
   const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceConfig>(maintenanceDefaults);
+  const [notice, setNotice] = useState<Notice>(null);
 
   useEffect(() => {
     if (data?.restrictionContact) {
@@ -66,6 +69,12 @@ export function RestrictionSettingsPage() {
       setMaintenanceForm({ ...maintenanceDefaults, ...data.maintenance });
     }
   }, [data]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 3000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   const save = useMutation({
     mutationFn: (payload: { restrictionContact?: RestrictionContactConfig; maintenance?: MaintenanceConfig }) =>
@@ -79,6 +88,42 @@ export function RestrictionSettingsPage() {
     },
   });
 
+  const saveMaintenance = (enabled: boolean) => {
+    const nextMaintenance = { ...maintenanceForm, enabled };
+    save.mutate(
+      { maintenance: nextMaintenance, restrictionContact: restrictionForm },
+      {
+        onSuccess: () => {
+          setMaintenanceForm(nextMaintenance);
+          setNotice({
+            type: 'success',
+            text: enabled ? 'Đã bật bảo trì và lưu cấu hình.' : 'Đã tắt bảo trì và lưu cấu hình.',
+          });
+        },
+        onError: () => setNotice({ type: 'error', text: 'Lưu cấu hình bảo trì thất bại. Vui lòng thử lại.' }),
+      },
+    );
+  };
+
+  const saveRestriction = (enabled: boolean) => {
+    const nextRestriction = { ...restrictionForm, enabled };
+    save.mutate(
+      { maintenance: maintenanceForm, restrictionContact: nextRestriction },
+      {
+        onSuccess: () => {
+          setRestrictionForm(nextRestriction);
+          setNotice({
+            type: 'success',
+            text: enabled
+              ? 'Đã bật hiển thị thông tin liên hệ và lưu cấu hình.'
+              : 'Đã tắt hiển thị thông tin liên hệ và lưu cấu hình.',
+          });
+        },
+        onError: () => setNotice({ type: 'error', text: 'Lưu cấu hình hạn chế tài khoản thất bại. Vui lòng thử lại.' }),
+      },
+    );
+  };
+
   if (isLoading) return <div className="p-4 text-sm text-slate-600">Đang tải cấu hình...</div>;
   if (error) return <div className="p-4 text-sm text-rose-600">Không tải được cấu hình hệ thống.</div>;
 
@@ -88,29 +133,34 @@ export function RestrictionSettingsPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Bảo trì hệ thống & Hạn chế tài khoản</h1>
         </div>
-        <button
-          type="button"
-          onClick={() => save.mutate({ maintenance: maintenanceForm, restrictionContact: restrictionForm })}
-          disabled={save.isPending}
-          className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400 disabled:opacity-50"
-        >
-          {save.isPending ? 'Đang lưu...' : 'Lưu tất cả cấu hình'}
-        </button>
       </div>
 
-      {save.isError ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">Lưu thất bại. Vui lòng thử lại.</div> : null}
-      {save.isSuccess ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">Đã lưu cấu hình bảo trì/hạn chế.</div> : null}
+      {notice ? (
+        <div
+          className={`rounded-xl border p-3 text-sm ${
+            notice.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-rose-200 bg-rose-50 text-rose-700'
+          }`}
+        >
+          {notice.text}
+        </div>
+      ) : null}
 
       <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Tạm dừng hệ thống</h2>
           </div>
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${maintenanceForm.enabled ? 'bg-amber-200 text-amber-900' : 'bg-slate-200 text-slate-700'}`}>
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+              maintenanceForm.enabled ? 'bg-amber-200 text-amber-900' : 'bg-emerald-100 text-emerald-700'
+            }`}
+          >
             {maintenanceForm.enabled ? 'Đang tạm dừng' : 'Đang hoạt động'}
           </span>
         </div>
-        
+
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block text-sm text-slate-700">
             Tiêu đề thông báo bảo trì
@@ -135,7 +185,7 @@ export function RestrictionSettingsPage() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => save.mutate({ maintenance: { ...maintenanceForm, enabled: true }, restrictionContact: restrictionForm })}
+            onClick={() => saveMaintenance(true)}
             disabled={save.isPending}
             className="rounded-xl border border-amber-300 bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400 disabled:opacity-50"
           >
@@ -143,7 +193,7 @@ export function RestrictionSettingsPage() {
           </button>
           <button
             type="button"
-            onClick={() => save.mutate({ maintenance: { ...maintenanceForm, enabled: false }, restrictionContact: restrictionForm })}
+            onClick={() => saveMaintenance(false)}
             disabled={save.isPending}
             className="rounded-xl border border-emerald-300 bg-emerald-500 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-50"
           >
@@ -153,11 +203,17 @@ export function RestrictionSettingsPage() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
-        <h2 className="text-sm font-semibold text-slate-900">Thông tin liên hệ khi tài khoản bị hạn chế</h2>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" checked={!!restrictionForm.enabled} onChange={(e) => setRestrictionForm((f) => ({ ...f, enabled: e.target.checked }))} />
-          Bật hiển thị thông tin liên hệ khi tài khoản bị hạn chế
-        </label>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-900">Thông tin liên hệ khi tài khoản bị hạn chế</h2>
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+              restrictionForm.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'
+            }`}
+          >
+            {restrictionForm.enabled ? 'Đang hiển thị' : 'Đang tắt'}
+          </span>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block text-sm text-slate-700">
             Tiêu đề
@@ -182,27 +238,70 @@ export function RestrictionSettingsPage() {
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block text-sm text-slate-700">
             Email hỗ trợ
-            <input value={restrictionForm.email} onChange={(e) => setRestrictionForm((f) => ({ ...f, email: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" placeholder="support@example.com" />
+            <input
+              value={restrictionForm.email}
+              onChange={(e) => setRestrictionForm((f) => ({ ...f, email: e.target.value }))}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+              placeholder="support@example.com"
+            />
           </label>
           <label className="block text-sm text-slate-700">
             Số điện thoại / Hotline
-            <input value={restrictionForm.phone} onChange={(e) => setRestrictionForm((f) => ({ ...f, phone: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" placeholder="0123 456 789" />
+            <input
+              value={restrictionForm.phone}
+              onChange={(e) => setRestrictionForm((f) => ({ ...f, phone: e.target.value }))}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+              placeholder="0123 456 789"
+            />
           </label>
           <label className="block text-sm text-slate-700">
             Zalo / Nhắn tin
-            <input value={restrictionForm.zalo} onChange={(e) => setRestrictionForm((f) => ({ ...f, zalo: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" placeholder="Link hoặc số Zalo" />
+            <input
+              value={restrictionForm.zalo}
+              onChange={(e) => setRestrictionForm((f) => ({ ...f, zalo: e.target.value }))}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+              placeholder="Link hoặc số Zalo"
+            />
           </label>
           <label className="block text-sm text-slate-700">
             Discord / Cộng đồng
-            <input value={restrictionForm.discord} onChange={(e) => setRestrictionForm((f) => ({ ...f, discord: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" placeholder="Link Discord / tên kênh" />
+            <input
+              value={restrictionForm.discord}
+              onChange={(e) => setRestrictionForm((f) => ({ ...f, discord: e.target.value }))}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+              placeholder="Link Discord / tên kênh"
+            />
           </label>
           <label className="block text-sm text-slate-700 md:col-span-2">
             Kênh/ghi chú khác
-            <input value={restrictionForm.other} onChange={(e) => setRestrictionForm((f) => ({ ...f, other: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" placeholder="Fanpage, website, hướng dẫn thêm..." />
+            <input
+              value={restrictionForm.other}
+              onChange={(e) => setRestrictionForm((f) => ({ ...f, other: e.target.value }))}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+              placeholder="Fanpage, website, hướng dẫn thêm..."
+            />
           </label>
         </div>
-      </section>
 
-</div>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => saveRestriction(true)}
+            disabled={save.isPending}
+            className="rounded-xl border border-amber-300 bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400 disabled:opacity-50"
+          >
+            Bật hiển thị ngay
+          </button>
+          <button
+            type="button"
+            onClick={() => saveRestriction(false)}
+            disabled={save.isPending}
+            className="rounded-xl border border-slate-300 bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-300 disabled:opacity-50"
+          >
+            Tắt hiển thị
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
