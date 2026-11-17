@@ -2,7 +2,7 @@ import type { ExtendedError, Socket } from 'socket.io';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import type { UserRole } from '@efls/contracts';
 import { env } from './config/env.js';
-import type { SocketActor } from './types.js';
+import { resolveSocketActor } from './identity.js';
 
 interface AccessPayload extends JwtPayload {
   sub: string;
@@ -10,7 +10,7 @@ interface AccessPayload extends JwtPayload {
   type: 'access';
 }
 
-export function authenticateSocket(socket: Socket, next: (err?: ExtendedError) => void): void {
+export async function authenticateSocket(socket: Socket, next: (err?: ExtendedError) => void): Promise<void> {
   const token = socket.handshake.auth?.token as string | undefined;
   if (!token) {
     next(new Error('unauthorized'));
@@ -22,10 +22,11 @@ export function authenticateSocket(socket: Socket, next: (err?: ExtendedError) =
     if (payload.type !== 'access' || !payload.sub) {
       throw new Error('invalid token');
     }
-    const actor: SocketActor = { id: payload.sub, role: payload.role };
+    const actor = await resolveSocketActor(payload.sub, payload.role);
     socket.data.actor = actor;
     next();
   } catch {
     next(new Error('unauthorized'));
   }
 }
+

@@ -2,6 +2,7 @@ import { env } from './config/env.js';
 import { logger } from './logger.js';
 import { createRealtimeServer } from './server.js';
 import { attachRedis } from './redis.js';
+import { closePool } from './db.js';
 
 const { httpServer, io, close } = createRealtimeServer();
 const redis = await attachRedis(io);
@@ -14,6 +15,7 @@ async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down realtime');
   await redis.close();
   await close();
+  await closePool();
   process.exit(0);
 }
 

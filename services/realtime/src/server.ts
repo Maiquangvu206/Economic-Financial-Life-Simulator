@@ -1,22 +1,26 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 import express from 'express';
 import { Server } from 'socket.io';
+import { randomUUID } from 'node:crypto';
 import {
-  ChatSendPayloadSchema,
+  ChatGlobalSendSchema,
+  ChatPrivateSendSchema,
   CourtStatementPayloadSchema,
   JoinRoomPayloadSchema,
   PlayerMovePayloadSchema,
   Rooms,
+  type ChatAck,
+  type ChatMessage,
   type ClientToServerEvents,
   type ServerToClientEvents,
 } from '@efls/contracts';
 import { authenticateSocket } from './auth.js';
 import { env } from './config/env.js';
+import { pool } from './db.js';
 import { logger } from './logger.js';
 import { canJoinRoom } from './rooms.js';
 import type { SocketActor } from './types.js';
 
-// socket.io does not export DefaultEventsMap from its public entry point.
 type DefaultEventsMap = Record<string, (...args: never[]) => void>;
 
 interface SocketData {
@@ -31,6 +35,7 @@ export type GameServer = Server<
 >;
 
 const chatWindows = new Map<string, number[]>();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function allowChat(socketId: string): boolean {
   const now = Date.now();
@@ -45,7 +50,36 @@ function allowChat(socketId: string): boolean {
   return true;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+async function persistMessage(msg: ChatMessage): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO chat_messages (id, client_msg_id, channel, sender_user_id, sender_character_id, sender_name, sender_role, receiver_user_id, content, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        msg.id,
+        msg.clientMsgId ?? null,
+        msg.channel,
+        msg.senderId,
+        null,
+        msg.senderName,
+        msg.senderRole,
+        msg.receiverId ?? null,
+        msg.content,
+        msg.createdAt,
+      ],
+    );
+  } catch (err) {
+    logger.warn({ err }, 'Failed to persist chat message');
+  }
+}
+
+function ackOf(ok: true, data: { id: string; clientMsgId?: string; createdAt: string }): ChatAck;
+function ackOf(ok: false, error: string, clientMsgId?: string): ChatAck;
+function ackOf(ok: boolean, b: any, c?: any): ChatAck {
+  if (ok) return { ok: true, ...(b as object) } as ChatAck;
+  return { ok: false, error: b as string, ...(c ? { clientMsgId: c } : {}) };
+}
 
 export function createRealtimeServer(): {
   httpServer: HttpServer;
@@ -72,12 +106,19 @@ export function createRealtimeServer(): {
 
   io.on('connection', (socket) => {
     const actor = socket.data.actor;
-    void socket.join(Rooms.character(actor.id));
-    logger.debug({ characterId: actor.id }, 'socket connected');
+    const userRoom = `user:${actor.userId}`;
+    void socket.join(userRoom);
+    void socket.join(Rooms.character(actor.userId));
+    logger.debug({ userId: actor.userId }, 'socket connected');
 
     socket.on('room:join', (payload) => {
       const parsed = JoinRoomPayloadSchema.safeParse(payload);
       if (!parsed.success) return;
+      // allow joining own user room explicitly
+      if (parsed.data.room === userRoom || parsed.data.room === Rooms.character(actor.userId)) {
+        void socket.join(parsed.data.room);
+        return;
+      }
       if (!canJoinRoom(actor, parsed.data.room)) {
         socket.emit('notification', {
           kind: 'danger',
@@ -90,7 +131,7 @@ export function createRealtimeServer(): {
       void socket.join(parsed.data.room);
       socket.emit('presence:sync', {
         room: parsed.data.room,
-        characterIds: [actor.id],
+        characterIds: [actor.userId],
       });
     });
 
@@ -103,11 +144,10 @@ export function createRealtimeServer(): {
     socket.on('player:move', (payload) => {
       const parsed = PlayerMovePayloadSchema.safeParse(payload);
       if (!parsed.success) return;
-
       for (const room of socket.rooms) {
         if (room.startsWith('city_map_room:')) {
           socket.to(room).emit('player:moved', {
-            characterId: actor.id,
+            characterId: actor.userId,
             x: parsed.data.x,
             y: parsed.data.y,
             at: Date.now(),
@@ -116,53 +156,120 @@ export function createRealtimeServer(): {
       }
     });
 
-    socket.on('chat:send', (payload) => {
-      const parsed = ChatSendPayloadSchema.safeParse(payload);
-      if (!parsed.success || !allowChat(socket.id)) return;
-
-      const { channelId, message, displayName: providedName } = parsed.data;
-      const at = Date.now();
-      const cleanName = providedName?.trim().slice(0, 80);
-      const roleLabel = actor.role === 'admin' ? 'Quản trị viên' : actor.role === 'moderator' ? 'Điều hành viên' : null;
-      const senderName = roleLabel
-        ? (cleanName ? `${cleanName} (${roleLabel})` : roleLabel)
-        : (cleanName || 'Người chơi');
-
-      // Chat riêng tư: channelId dạng "private:<targetCharacterId>".
-      // Chỉ gửi cho người gửi và người nhận (room cá nhân), không lộ ra phòng public.
-      if (channelId.startsWith('private:')) {
-        const targetId = channelId.slice('private:'.length);
-        if (!UUID_RE.test(targetId) || targetId === actor.id) return;
-        io.to(Rooms.character(targetId)).emit('chat:message', {
-          channelId,
-          characterId: actor.id,
-          displayName: senderName,
-          message,
-          at,
-          toCharacterId: targetId,
-          fromPrivate: true,
-        });
-        socket.emit('chat:message', {
-          channelId,
-          characterId: actor.id,
-          displayName: 'Bạn',
-          message,
-          at,
-          toCharacterId: targetId,
-          fromPrivate: true,
-        });
+    // New: chat:global
+    socket.on('chat:global', async (payload, ackCb) => {
+      const parsed = ChatGlobalSendSchema.safeParse(payload);
+      if (!parsed.success) {
+        ackCb?.(ackOf(false, 'Nội dung không hợp lệ', (payload as any)?.clientMsgId));
         return;
       }
-
-      // Chat tổng / kênh công khai: phát cho mọi người trong phòng.
-      const room = Rooms.chat(channelId);
-      io.to(room).emit('chat:message', {
-        channelId,
-        characterId: actor.id,
-        displayName: senderName,
-        message,
-        at,
+      if (!allowChat(socket.id)) {
+        socket.emit('chat:rate_limited', { message: 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' });
+        ackCb?.(ackOf(false, 'rate_limited', parsed.data.clientMsgId));
+        return;
+      }
+      const msg: ChatMessage = {
+        id: randomUUID(),
+        clientMsgId: parsed.data.clientMsgId,
+        channel: 'global',
+        senderId: actor.userId,
+        senderName: actor.displayName,
+        senderRole: actor.role,
+        receiverId: null,
+        content: parsed.data.content.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      await persistMessage(msg);
+      // phát tới phòng chat tổng
+      io.to(Rooms.chat('global')).emit('chat:global', msg);
+      // legacy compatibility
+      io.to(Rooms.chat('global')).emit('chat:message', {
+        channelId: 'global',
+        characterId: actor.userId,
+        displayName: actor.displayName,
+        message: msg.content,
+        at: Date.parse(msg.createdAt),
+        clientMsgId: msg.clientMsgId,
       });
+      ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
+    });
+
+    // New: chat:private
+    socket.on('chat:private', async (payload, ackCb) => {
+      const parsed = ChatPrivateSendSchema.safeParse(payload);
+      if (!parsed.success) {
+        ackCb?.(ackOf(false, 'Nội dung không hợp lệ', (payload as any)?.clientMsgId));
+        return;
+      }
+      const { receiverId, content, clientMsgId } = parsed.data;
+      if (!UUID_RE.test(receiverId) || receiverId === actor.userId) {
+        ackCb?.(ackOf(false, 'Người nhận không hợp lệ', clientMsgId));
+        return;
+      }
+      if (!allowChat(socket.id)) {
+        socket.emit('chat:rate_limited', { message: 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' });
+        ackCb?.(ackOf(false, 'rate_limited', clientMsgId));
+        return;
+      }
+      const msg: ChatMessage = {
+        id: randomUUID(),
+        clientMsgId,
+        channel: 'private',
+        senderId: actor.userId,
+        senderName: actor.displayName,
+        senderRole: actor.role,
+        receiverId,
+        content: content.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      await persistMessage(msg);
+      // Chỉ emit tới room của người nhận (và tương thích room cũ)
+      io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:private', msg);
+      // legacy compatibility cho người nhận
+      io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:message', {
+        channelId: `private:${receiverId}`,
+        characterId: actor.userId,
+        displayName: actor.displayName,
+        message: msg.content,
+        at: Date.parse(msg.createdAt),
+        toCharacterId: receiverId,
+        fromPrivate: true,
+        clientMsgId: msg.clientMsgId,
+      });
+      // ACK/xác nhận lại cho người gửi (kèm clientMsgId để đối chiếu)
+      ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
+    });
+
+    // Legacy: chat:send
+    socket.on('chat:send', async (payload, ackCb) => {
+      const { channelId, message, clientMsgId } = payload || ({} as any);
+      if (typeof channelId !== 'string' || typeof message !== 'string' || !message.trim()) {
+        ackCb?.(ackOf(false, 'invalid'));
+        return;
+      }
+      if (channelId.startsWith('private:')) {
+        const receiverId = channelId.slice('private:'.length);
+        // delegate
+        socket.emit as any; // noop
+        const fake = { receiverId, content: message, clientMsgId } as any;
+        // inline handle
+        if (!UUID_RE.test(receiverId) || receiverId === actor.userId) { ackCb?.(ackOf(false, 'invalid')); return; }
+        if (!allowChat(socket.id)) { socket.emit('chat:rate_limited', { message: 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' }); ackCb?.(ackOf(false, 'rate_limited', clientMsgId)); return; }
+        const msg: ChatMessage = { id: randomUUID(), clientMsgId, channel: 'private', senderId: actor.userId, senderName: actor.displayName, senderRole: actor.role, receiverId, content: message.trim(), createdAt: new Date().toISOString() };
+        await persistMessage(msg);
+        io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:private', msg);
+        io.to(`user:${receiverId}`).to(Rooms.character(receiverId)).emit('chat:message', { channelId, characterId: actor.userId, displayName: actor.displayName, message: msg.content, at: Date.parse(msg.createdAt), toCharacterId: receiverId, fromPrivate: true, clientMsgId });
+        ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
+        return;
+      }
+      // public/global
+      if (!allowChat(socket.id)) { socket.emit('chat:rate_limited', { message: 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' }); ackCb?.(ackOf(false, 'rate_limited', clientMsgId)); return; }
+      const chan = channelId === 'global' || channelId === 'hcmc' ? 'global' : channelId;
+      const msg: ChatMessage = { id: randomUUID(), clientMsgId, channel: 'global', senderId: actor.userId, senderName: actor.displayName, senderRole: actor.role, receiverId: null, content: message.trim(), createdAt: new Date().toISOString() };
+      await persistMessage(msg);
+      io.to(Rooms.chat(channelId)).emit('chat:global', msg);
+      io.to(Rooms.chat(channelId)).emit('chat:message', { channelId, characterId: actor.userId, displayName: actor.displayName, message: msg.content, at: Date.parse(msg.createdAt), clientMsgId });
+      ackCb?.(ackOf(true, { id: msg.id, clientMsgId: msg.clientMsgId, createdAt: msg.createdAt }));
     });
 
     socket.on('court:statement', (payload) => {
@@ -190,7 +297,7 @@ export function createRealtimeServer(): {
 
     socket.on('disconnect', () => {
       chatWindows.delete(socket.id);
-      logger.debug({ characterId: actor.id }, 'socket disconnected');
+      logger.debug({ userId: actor.userId }, 'socket disconnected');
     });
   });
 
