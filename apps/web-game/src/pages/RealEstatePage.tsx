@@ -16,7 +16,8 @@ import { Modal } from '../shared/ui/Modal';
 import { Badge } from '../shared/ui/Badge';
 import { GameInput } from '../shared/ui/GameInput';
 import { formatMoney, formatCompact } from '../shared/lib/format';
-import { apiRequest, ApiError } from '../shared/api/httpClient';
+import { apiRequest, ApiError, createIdempotencyKey } from '../shared/api/httpClient';
+import { TransactionConfirmModal } from '../shared/ui/TransactionConfirmModal';
 import { useToast } from '../shared/ui/Toast';
 import { useDialog } from '../shared/ui/DialogContext';
 
@@ -98,9 +99,17 @@ export function RealEstatePage() {
   const [offerMsg, setOfferMsg] = useState('');
   const [bidTarget, setBidTarget] = useState<AuctionDto | null>(null);
   const [bidAmount, setBidAmount] = useState('');
+  const [confirmBuy, setConfirmBuy] = useState<{ target: UnifiedProperty; amount: number; idempotencyKey: string } | null>(null);
+  const [confirmBid, setConfirmBid] = useState<{ auction: AuctionDto; amount: number; idempotencyKey: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const { toast } = useToast();
+
+  const { data: banking } = useQuery<{ cash: { amount: number } }>({
+    queryKey: ['banking', 'overview'],
+    queryFn: () => apiRequest('/api/v1/banking/overview'),
+  });
+  const cash = banking?.cash?.amount ?? 0;
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -743,7 +752,16 @@ export function RealEstatePage() {
             <div className="text-xs text-slate-600">Lô {buyTarget.lotNumber || '—'} · {provinceLabel(buyTarget)} · ({buyTarget.location.x},{buyTarget.location.y})</div>
             <div className="flex justify-between text-sm"><span className="text-slate-600">Giá mua</span><span className="font-mono text-emerald-700 font-semibold">{formatMoney((buyTarget.askingPrice?.amount ?? buyTarget.purchasePrice.amount))}</span></div>
             <p className="text-[11px] text-slate-500">Hệ thống sẽ kiểm tra số dư. Nếu không đủ tiền, bạn sẽ nhận thông báo.</p>
-            <GameButton variant="primary" loading={isBusy(buyTarget.id)} disabled={isBusy(buyTarget.id) || buyTarget.__source !== 'core'} onClick={() => runAction(buyTarget.id, async () => { await apiRequest('/api/v1/real-estate/buy', { method: 'POST', body: JSON.stringify({ propertyId: buyTarget.id }) }); setBuyTarget(null); }, 'Mua bất động sản thành công.')}>Xác nhận mua</GameButton>
+            <GameButton
+              variant="primary"
+              disabled={isBusy(buyTarget.id) || buyTarget.__source !== 'core'}
+              onClick={() => {
+                const amount = buyTarget.askingPrice?.amount ?? buyTarget.purchasePrice.amount;
+                setConfirmBuy({ target: buyTarget, amount, idempotencyKey: createIdempotencyKey() });
+              }}
+            >
+              Xác nhận mua
+            </GameButton>
           </div>
         )}
       </Modal>
@@ -803,12 +821,79 @@ export function RealEstatePage() {
             <div className="flex justify-between text-sm"><span className="text-slate-600">Còn lại (giờ game)</span><span className="font-mono text-rose-700">{auctionTimeLeftLabel(bidTarget.endsAt)}</span></div>
             <div className="flex justify-between text-sm"><span className="text-slate-600">Mốc kết thúc thực</span><span className="font-mono text-slate-700">{new Date(bidTarget.endsAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></div>
             <div className="text-[11px] text-slate-500">Thời lượng phiên: 3 ngày game (3 phút thực), hiển thị theo giờ game.</div>
-            <GameInput label="Giá bạn đặt (VNĐ)" type="number" value={bidAmount} onChange={(e) => setBidAmount(e.target.value)} />
+            <GameInput id="auction-bid-amount" label="Giá bạn đặt (đ)" type="number" value={bidAmount} onChange={(e) => setBidAmount(e.target.value)} />
             <p className="text-[11px] text-slate-500">Tiền được khóa trong escrow; nếu bị vượt giá sẽ hoàn trả. Cần đủ số dư để đặt giá.</p>
-            <GameButton variant="primary" loading={isBusy(bidTarget.id)} disabled={isBusy(bidTarget.id)} onClick={() => { const v = Math.round(Number(bidAmount)); if (!Number.isFinite(v) || v <= bidTarget.currentBid.amount) { toast({ title: 'Giá đặt không hợp lệ', description: `Giá phải lớn hơn giá hiện tại (${formatMoney(bidTarget.currentBid.amount)}).`, variant: 'error' }); return; } runAction(bidTarget.id, async () => { await apiRequest(`/api/v1/auctions/${bidTarget.id}/bid`, { method: 'POST', body: JSON.stringify({ auctionId: bidTarget.id, amount: { amount: v, currency: 'VND' } }) }); setBidTarget(null); }, `Đã đặt giá ${formatMoney(v)} cho "${bidTarget.propertyName}". Tiền đã được giữ trong escrow; nếu bị vượt giá sẽ được hoàn trả.`); }}>Đặt giá</GameButton>
+            <GameButton
+              variant="primary"
+              disabled={isBusy(bidTarget.id)}
+              onClick={() => {
+                const v = Math.round(Number(bidAmount));
+                if (!Number.isFinite(v) || v <= bidTarget.currentBid.amount) {
+                  toast({ title: 'Giá đặt không hợp lệ', description: `Giá phải lớn hơn giá hiện tại (${formatMoney(bidTarget.currentBid.amount)}).`, variant: 'error' });
+                  return;
+                }
+                setConfirmBid({ auction: bidTarget, amount: v, idempotencyKey: createIdempotencyKey() });
+              }}
+            >
+              Tiếp tục xác nhận
+            </GameButton>
           </div>
         )}
       </Modal>
+
+      <TransactionConfirmModal
+        open={!!confirmBuy}
+        onClose={() => { if (confirmBuy && !isBusy(confirmBuy.target.id)) setConfirmBuy(null); }}
+        onConfirm={async () => {
+          if (!confirmBuy) return;
+          await runAction(confirmBuy.target.id, async () => {
+            await apiRequest('/api/v1/real-estate/buy', {
+              method: 'POST',
+              headers: { 'X-Idempotency-Key': confirmBuy.idempotencyKey },
+              body: JSON.stringify({ propertyId: confirmBuy.target.id }),
+            });
+            setConfirmBuy(null);
+            setBuyTarget(null);
+          }, 'Mua bất động sản thành công.');
+        }}
+        loading={!!(confirmBuy && isBusy(confirmBuy.target.id))}
+        title="Xác nhận mua bất động sản"
+        transactionType="Mua đất / Mua bất động sản"
+        targetLabel="Bất động sản"
+        targetValue={confirmBuy ? `${confirmBuy.target.name} · Lô ${confirmBuy.target.lotNumber || '—'} · ${provinceLabel(confirmBuy.target)}` : ''}
+        amountMinor={confirmBuy?.amount}
+        feeOrRateValue="Phí: 0 đ (nếu có phí khác, hệ thống sẽ áp dụng theo quy định)"
+        projectedBalanceMinor={confirmBuy ? cash - confirmBuy.amount : undefined}
+        warning="Hành động mua bất động sản không thể hoàn tác. Hệ thống sẽ kiểm tra số dư tại thời điểm thực hiện."
+      />
+
+      <TransactionConfirmModal
+        open={!!confirmBid}
+        onClose={() => { if (confirmBid && !isBusy(confirmBid.auction.id)) setConfirmBid(null); }}
+        onConfirm={async () => {
+          if (!confirmBid) return;
+          await runAction(confirmBid.auction.id, async () => {
+            await apiRequest(`/api/v1/auctions/${confirmBid.auction.id}/bid`, {
+              method: 'POST',
+              headers: { 'X-Idempotency-Key': confirmBid.idempotencyKey },
+              body: JSON.stringify({ auctionId: confirmBid.auction.id, amount: { amount: confirmBid.amount, currency: 'VND' } }),
+            });
+            setConfirmBid(null);
+            setBidTarget(null);
+          }, `Đã đặt giá ${formatMoney(confirmBid.amount)} cho "${confirmBid.auction.propertyName}". Tiền đã được giữ trong escrow; nếu bị vượt giá sẽ được hoàn trả.`);
+        }}
+        loading={!!(confirmBid && isBusy(confirmBid.auction.id))}
+        title="Xác nhận đặt giá đấu"
+        transactionType="Đặt giá đấu giá đất / bất động sản"
+        targetLabel="Phiên đấu giá"
+        targetValue={confirmBid ? confirmBid.auction.propertyName : ''}
+        amountLabel="Giá đặt"
+        amountMinor={confirmBid?.amount}
+        feeOrRateValue="Phí: 0 đ · Tiền giữ trong escrow (hoàn nếu bị vượt giá)"
+        projectedBalanceLabel="Số dư tiền mặt dự kiến (ước tính sau khi giữ tiền)"
+        projectedBalanceMinor={confirmBid ? cash - confirmBid.amount : undefined}
+        warning="Giá đặt phải hợp lệ tại thời điểm thực hiện. Hệ thống sẽ kiểm tra số dư và điều kiện phiên đấu giá."
+      />
     </div>
   );
 }

@@ -304,12 +304,14 @@ export function LoginPage() {
             <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
               {mode === 'register' ? (
                 <>
-                  <label className="block text-xs font-medium text-slate-600">
+                  <label htmlFor="register-username" className="block text-xs font-medium text-slate-600">
                     Tên công dân
                     <input
+                      id="register-username"
                       required
                       minLength={3}
                       maxLength={32}
+                      autoComplete="username"
                       value={username}
                       onChange={(event) => setUsername(event.target.value)}
                       placeholder="Nguyễn Văn An"
@@ -317,12 +319,14 @@ export function LoginPage() {
                     />
                   </label>
 
-                  <label className="block text-xs font-medium text-slate-600">
+                  <label htmlFor="register-full-name" className="block text-xs font-medium text-slate-600">
                     Họ và tên nhân vật
                     <input
+                      id="register-full-name"
                       required
                       minLength={2}
                       maxLength={80}
+                      autoComplete="name"
                       value={fullName}
                       onChange={(event) => setFullName(event.target.value)}
                       placeholder="Nguyễn Văn An"
@@ -330,9 +334,10 @@ export function LoginPage() {
                     />
                   </label>
 
-                  <label className="block text-xs font-medium text-slate-600">
+                  <label htmlFor="register-birthplace" className="block text-xs font-medium text-slate-600">
                     Nơi sinh
                     <select
+                      id="register-birthplace"
                       value={birthplaceCode}
                       onChange={(event) => setBirthplaceCode(event.target.value)}
                       className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
@@ -347,9 +352,10 @@ export function LoginPage() {
                 </>
               ) : null}
 
-              <label className="block text-xs font-medium text-slate-600">
+              <label htmlFor="auth-email" className="block text-xs font-medium text-slate-600">
                 Email
                 <input
+                  id="auth-email"
                   type="email"
                   required
                   autoComplete="email"
@@ -360,9 +366,10 @@ export function LoginPage() {
                 />
               </label>
 
-              <label className="block text-xs font-medium text-slate-600">
+              <label htmlFor="auth-password" className="block text-xs font-medium text-slate-600">
                 Mật khẩu
                 <input
+                  id="auth-password"
                   type="password"
                   required
                   minLength={8}

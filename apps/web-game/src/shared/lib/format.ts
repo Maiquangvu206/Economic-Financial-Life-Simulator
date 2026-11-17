@@ -1,32 +1,44 @@
 /**
- * Format tiền tệ chuẩn Việt Nam (VND - Đồng)
- * 1 đơn vị trong game = 1 VNĐ (hoặc minor unit nếu quy đổi)
+ * Chuẩn hóa hiển thị tiền tệ VNĐ: 1.000.000 đ (dấu chấm phân tách hàng nghìn, đơn vị "đ")
  */
 export function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency: 'VND',
-    maximumFractionDigits: 0,
-  }).format(amount);
+  const value = Number.isFinite(amount) ? Math.round(amount) : 0;
+  const sign = value < 0 ? '-' : '';
+  return `${sign}${Math.abs(value).toLocaleString('vi-VN')} đ`;
 }
 
 /**
- * Rút gọn số tiền bằng tiếng Việt: nghìn, triệu, tỷ
+ * Rút gọn số tiền bằng tiếng Việt: nghìn, triệu, tỷ (đơn vị chuẩn "đ")
  */
 export function formatCompact(amount: number): string {
-  const abs = Math.abs(amount);
-  const sign = amount < 0 ? '-' : '';
+  const value = Number.isFinite(amount) ? amount : 0;
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
 
   if (abs >= 1_000_000_000) {
-    return `${sign}${(abs / 1_000_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ ₫`;
+    return `${sign}${(abs / 1_000_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ đ`;
   }
   if (abs >= 1_000_000) {
-    return `${sign}${(abs / 1_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tr ₫`;
+    return `${sign}${(abs / 1_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tr đ`;
   }
   if (abs >= 1_000) {
-    return `${sign}${(abs / 1_000).toLocaleString('vi-VN', { maximumFractionDigits: 0 })} k ₫`;
+    return `${sign}${(abs / 1_000).toLocaleString('vi-VN', { maximumFractionDigits: 0 })} nghìn đ`;
   }
-  return `${amount.toLocaleString('vi-VN')} ₫`;
+  return `${sign}${Math.abs(Math.round(value)).toLocaleString('vi-VN')} đ`;
+}
+
+/** Hiển thị đơn vị kỳ hạn/lãi suất rõ ràng */
+export function formatRatePerYear(ratePct: number): string {
+  const v = Number.isFinite(ratePct) ? ratePct : 0;
+  return `${v.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%/năm`;
+}
+
+export function formatMoneyPerMonth(amount: number): string {
+  return `${formatMoney(amount)}/tháng`;
+}
+
+export function formatMoneyPerTerm(amount: number): string {
+  return `${formatMoney(amount)}/kỳ`;
 }
 
 export function formatPercent(value: number): string {

@@ -31,6 +31,7 @@ export function PoliticsPage() {
   const {
     data: overview,
     isLoading,
+    isError,
     refetch,
   } = useQuery<PoliticsOverviewDto>({
     queryKey: ['politics', 'overview'],
@@ -70,6 +71,7 @@ export function PoliticsPage() {
   const candidates = overview?.candidates ?? [];
   const mayor = overview?.mayor ?? null;
   const isMayor = !!mayor?.active && !!mayor?.isYou;
+  const hasOpenElection = election?.status === 'open';
 
   const totalVotes = candidates.reduce((sum, c) => sum + (c.votes ?? 0), 0);
   const totalDonations = candidates.reduce((sum, c) => sum + (c.donations?.amount ?? 0), 0);
@@ -84,6 +86,20 @@ export function PoliticsPage() {
         <PageHeader title="Chính trị & Bầu cử" description="Đang tải thông tin bầu cử..." />
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
         <p className="mt-4 text-sm text-slate-600">Đang tải...</p>
+      </div>
+    );
+  }
+
+  if (isError || !overview) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Chính trị & Bầu cử" />
+        <Panel title="Lỗi tải dữ liệu" borderColor="rose">
+          <p className="text-sm text-rose-700">Không thể tải dữ liệu chính trị & bầu cử. Vui lòng kiểm tra kết nối và thử lại.</p>
+          <div className="mt-3">
+            <GameButton variant="outline" size="sm" onClick={() => void refetch()}>Thử lại</GameButton>
+          </div>
+        </Panel>
       </div>
     );
   }
@@ -301,8 +317,18 @@ export function PoliticsPage() {
         <Panel title="Ứng viên Thị trưởng" borderColor="emerald">
           <div className="space-y-3">
             {!election && (
-              <div className="text-center py-4 space-y-3">
-                <p className="text-xs text-slate-500">Chưa có cuộc bầu cử nào.</p>
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4 text-center space-y-2">
+                <p className="text-sm font-medium text-slate-800">Chưa có đợt bầu cử đang mở</p>
+                <p className="text-xs text-slate-600">Hiện chưa có dữ liệu bầu cử hoặc chưa đến đợt mở. Hãy quay lại sau khi hệ thống mở cuộc bầu cử mới.</p>
+                <div className="flex justify-center">
+                  <GameButton variant="outline" size="sm" onClick={() => void refetch()}>Làm mới</GameButton>
+                </div>
+              </div>
+            )}
+            {election && election.status !== 'open' && election.status !== 'ended' && (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4 text-center space-y-1">
+                <p className="text-sm font-medium text-slate-800">Chưa có đợt mở</p>
+                <p className="text-xs text-slate-600">Cuộc bầu cử hiện không ở trạng thái mở. Vui lòng kiểm tra lại sau.</p>
               </div>
             )}
 
@@ -394,7 +420,7 @@ export function PoliticsPage() {
             onChange={(e) => setCandidateName(e.target.value)}
             placeholder="Tên của bạn trên phiếu bầu..."
           />
-          <p className="text-[11px] text-slate-500">Phí tranh cử 5.000.000 ₫ chuyển thẳng vào ngân sách thành phố.</p>
+          <p className="text-[11px] text-slate-500">Phí tranh cử {formatMoney(5_000_000)} chuyển thẳng vào ngân sách thành phố.</p>
           <GameButton
             variant="primary"
             disabled={busy === 'candidacy'}
@@ -425,7 +451,7 @@ export function PoliticsPage() {
             type="number"
             placeholder="1000000"
           />
-          <p className="text-[11px] text-slate-500">Mỗi 1.000.000 ₫ quyên góp = +10 điểm cho ứng viên (tối thiểu 1tr).</p>
+          <p className="text-[11px] text-slate-500">Mỗi {formatMoney(1_000_000)} quyên góp = +10 điểm cho ứng viên (tối thiểu {formatMoney(1_000_000)}).</p>
           <GameButton
             variant="primary"
             disabled={busy === 'donate'}

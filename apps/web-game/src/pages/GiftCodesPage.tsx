@@ -88,8 +88,9 @@ export function GiftCodesPage() {
             }}
           >
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Mã code</label>
+              <label htmlFor="gift-code-input" className="block text-xs font-medium text-slate-700 mb-1">Mã code</label>
               <input
+                id="gift-code-input"
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 placeholder="Nhập mã (VD: WELCOME2026)"

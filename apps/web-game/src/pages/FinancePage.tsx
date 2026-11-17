@@ -2,8 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { type ApplyLoanRequest, type BankingOverviewDto } from '@efls/contracts';
 import { monthlyPayment, recommendedInterestRate } from '@efls/domain';
-import { apiRequest } from '../shared/api/httpClient';
-import { formatMoney } from '../shared/lib/format';
+import { apiRequest, createIdempotencyKey } from '../shared/api/httpClient';
+import { formatMoney, formatMoneyPerMonth, formatRatePerYear } from '../shared/lib/format';
 import { GameButton } from '../shared/ui/GameButton';
 import { GameInput } from '../shared/ui/GameInput';
 import { CCCDLookupInput } from '../shared/identity/CCCDLookupInput';
@@ -12,6 +12,7 @@ import { Panel } from '../shared/ui/Panel';
 import { StatCard } from '../shared/ui/StatCard';
 import { Badge } from '../shared/ui/Badge';
 import { useToast } from '../shared/ui/Toast';
+import { TransactionConfirmModal } from '../shared/ui/TransactionConfirmModal';
 
 function moneyMinor(amount: number) {
   return { amount, currency: 'VND' as const };
@@ -150,14 +151,20 @@ export function FinancePage() {
   const [lookupResult, setLookupResult] = useState<TransferLookup | null>(null);
 
   const applyLoan = useMutation({
-    mutationFn: (req: ApplyLoanRequest) =>
+    mutationFn: ({ req, idempotencyKey }: { req: ApplyLoanRequest; idempotencyKey: string }) =>
       apiRequest('/api/v1/banking/loans', {
         method: 'POST',
+        headers: { 'X-Idempotency-Key': idempotencyKey },
         body: JSON.stringify(req),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['banking', 'overview'] });
       queryClient.invalidateQueries({ queryKey: ['banking', 'history'] });
+      setConfirmTx(null);
+      setLoanModal(false);
+      setLoanAmount('');
+      setLoanTerm('12');
+      setLoanCollateral('none');
       toast({
         title: 'Vay thành công',
         description: 'Khoản vay đã được giải ngân vào tài khoản.',
@@ -196,15 +203,17 @@ export function FinancePage() {
   });
 
   const depositSavings = useMutation({
-    mutationFn: ({ amount, termMonths }: { amount: number; termMonths: number }) =>
+    mutationFn: ({ amount, termMonths, idempotencyKey }: { amount: number; termMonths: number; idempotencyKey: string }) =>
       apiRequest('/api/v1/banking/savings/deposit', {
         method: 'POST',
+        headers: { 'X-Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ amount: moneyMinor(amount), termMonths }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['banking', 'overview'] });
       queryClient.invalidateQueries({ queryKey: ['banking', 'history'] });
       setDepositAmount('');
+      setConfirmTx(null);
       toast({
         title: 'Gửi tiết kiệm thành công',
         description: 'Số tiền đã chuyển từ ví vào sổ tiết kiệm.',
@@ -220,15 +229,17 @@ export function FinancePage() {
   });
 
   const withdrawSavings = useMutation({
-    mutationFn: ({ amount, depositId }: { amount: number; depositId?: string }) =>
+    mutationFn: ({ amount, depositId, idempotencyKey }: { amount: number; depositId?: string; idempotencyKey: string }) =>
       apiRequest('/api/v1/banking/savings/withdraw', {
         method: 'POST',
+        headers: { 'X-Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ amount: moneyMinor(amount), depositId }),
       }),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['banking', 'overview'] });
       queryClient.invalidateQueries({ queryKey: ['banking', 'history'] });
       setWithdrawAmount('');
+      setConfirmTx(null);
       const interest = data?.interest?.amount ?? 0;
       toast({
         title: 'Rút tiết kiệm thành công',
@@ -255,9 +266,10 @@ export function FinancePage() {
   });
 
   const createTransfer = useMutation({
-    mutationFn: (payload: { targetCccd: string; amount: number; message?: string }) =>
+    mutationFn: (payload: { targetCccd: string; amount: number; message?: string; idempotencyKey: string }) =>
       apiRequest('/api/v1/banking/transfers', {
         method: 'POST',
+        headers: { 'X-Idempotency-Key': payload.idempotencyKey },
         body: JSON.stringify({
           targetCccd: payload.targetCccd,
           amount: moneyMinor(payload.amount),
@@ -271,6 +283,7 @@ export function FinancePage() {
       queryClient.invalidateQueries({ queryKey: ['characters', 'me'] });
       setTransferAmount('');
       setTransferMessage('');
+      setConfirmTx(null);
       toast({
         title: 'Chuyển khoản thành công',
         description: `Đã chuyển ${formatMoney(res?.amount?.amount ?? 0)} tới ${res?.toName ?? lookupResult?.fullName ?? 'người nhận'}.`,
@@ -290,22 +303,65 @@ export function FinancePage() {
   const [loanTerm, setLoanTerm] = useState('12');
   const [loanCollateral, setLoanCollateral] = useState<string>('none'); // none | property:<id> | company:<id>
 
+  const [confirmTx, setConfirmTx] = useState<
+    | null
+    | { kind: 'transfer'; targetCccd: string; amount: number; message: string; idempotencyKey: string }
+    | { kind: 'deposit'; amount: number; termMonths: number; idempotencyKey: string }
+    | { kind: 'withdraw'; amount: number; depositId?: string; idempotencyKey: string }
+    | { kind: 'loan'; req: ApplyLoanRequest; amount: number; termMonths: number; ratePct: number; idempotencyKey: string }
+  >(null);
+
+  const confirmTxBusy =
+    (confirmTx?.kind === 'transfer' && createTransfer.isPending) ||
+    (confirmTx?.kind === 'deposit' && depositSavings.isPending) ||
+    (confirmTx?.kind === 'withdraw' && withdrawSavings.isPending) ||
+    (confirmTx?.kind === 'loan' && applyLoan.isPending);
+
+  async function executeConfirmTx() {
+    if (!confirmTx) return;
+    if (confirmTx.kind === 'transfer') {
+      await createTransfer.mutateAsync({
+        targetCccd: confirmTx.targetCccd,
+        amount: confirmTx.amount,
+        message: confirmTx.message,
+        idempotencyKey: confirmTx.idempotencyKey,
+      });
+      return;
+    }
+    if (confirmTx.kind === 'deposit') {
+      await depositSavings.mutateAsync({
+        amount: confirmTx.amount,
+        termMonths: confirmTx.termMonths,
+        idempotencyKey: confirmTx.idempotencyKey,
+      });
+      return;
+    }
+    if (confirmTx.kind === 'withdraw') {
+      await withdrawSavings.mutateAsync({
+        amount: confirmTx.amount,
+        depositId: confirmTx.depositId,
+        idempotencyKey: confirmTx.idempotencyKey,
+      });
+      return;
+    }
+    if (confirmTx.kind === 'loan') {
+      await applyLoan.mutateAsync({ req: confirmTx.req, idempotencyKey: confirmTx.idempotencyKey });
+    }
+  }
+
   const handleApplyLoan = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const amount = parseVnd(loanAmount);
-      const term = Number(loanTerm);
-      if (!amount || amount <= 0 || !term || term <= 0) return;
+      const term = Math.max(0, Math.floor(Number(loanTerm) || 0));
+      if (!overview || amount <= 0 || term <= 0) return;
       const req: ApplyLoanRequest = { amount: moneyMinor(amount), termMonths: term };
       if (loanCollateral.startsWith('property:')) req.collateralPropertyId = loanCollateral.slice('property:'.length);
       if (loanCollateral.startsWith('company:')) req.collateralCompanyId = loanCollateral.slice('company:'.length);
-      applyLoan.mutate(req);
-      setLoanModal(false);
-      setLoanAmount('');
-      setLoanTerm('12');
-      setLoanCollateral('none');
+      const ratePct = recommendedInterestRate(overview.creditScore, overview.baseRatePct ?? 5);
+      setConfirmTx({ kind: 'loan', req, amount, termMonths: term, ratePct, idempotencyKey: createIdempotencyKey() });
     },
-    [loanAmount, loanTerm, loanCollateral, applyLoan],
+    [loanAmount, loanTerm, loanCollateral, overview],
   );
 
   const loanPreview = useMemo(() => {
@@ -358,7 +414,7 @@ export function FinancePage() {
       });
       return;
     }
-    depositSavings.mutate({ amount, termMonths: selectedTerm });
+    setConfirmTx({ kind: 'deposit', amount, termMonths: selectedTerm, idempotencyKey: createIdempotencyKey() });
   };
 
   const handleWithdraw = (depositId?: string, maxForDeposit?: number) => {
@@ -376,7 +432,7 @@ export function FinancePage() {
       });
       return;
     }
-    withdrawSavings.mutate({ amount, depositId });
+    setConfirmTx({ kind: 'withdraw', amount, depositId, idempotencyKey: createIdempotencyKey() });
   };
 
   const handleRepay = (loanId: string, maxAmount: number) => {
@@ -422,7 +478,13 @@ export function FinancePage() {
       toast({ title: 'Không đủ tiền mặt', description: `Tiền mặt hiện có ${formatMoney(cash)}, không đủ để chuyển ${formatMoney(amount)}.`, variant: 'error' });
       return;
     }
-    createTransfer.mutate({ targetCccd: transferCccd.replace(/\s+/g, ''), amount, message: transferMessage.trim() });
+    setConfirmTx({
+      kind: 'transfer',
+      targetCccd: transferCccd.replace(/\s+/g, ''),
+      amount,
+      message: transferMessage.trim(),
+      idempotencyKey: createIdempotencyKey(),
+    });
   };
 
   const copyStk = async () => {
@@ -617,8 +679,9 @@ export function FinancePage() {
             <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Gửi tiết kiệm</p>
               <div>
-                <label className="text-[11px] text-slate-500">Kỳ hạn & lãi suất</label>
+                <label htmlFor="savings-term-select" className="text-[11px] text-slate-500">Kỳ hạn &amp; lãi suất</label>
                 <select
+                  id="savings-term-select"
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                   value={selectedTerm}
                   onChange={(e) => setSelectedTerm(Number(e.target.value))}
@@ -631,10 +694,11 @@ export function FinancePage() {
                 </select>
               </div>
               <GameInput
-                label="Số tiền gửi (VND)"
+                id="savings-deposit-amount"
+                label="Số tiền gửi (đ)"
                 value={depositAmount}
                 onChange={(e) => setDepositAmount(e.target.value)}
-                placeholder={`Tối đa ${cash.toLocaleString('vi-VN')}`}
+                placeholder={`Tối đa ${formatMoney(cash)}`}
               />
               <div className="flex gap-2">
                 <GameButton
@@ -651,7 +715,7 @@ export function FinancePage() {
               </div>
               {selectedTermInfo && (
                 <p className="text-[11px] text-slate-500">
-                  Lãi suất áp dụng: <b>{selectedTermInfo.annualRatePct}%/năm</b> ({selectedTermInfo.label}).
+                  Lãi suất áp dụng: <b>{formatRatePerYear(selectedTermInfo.annualRatePct)}</b> ({selectedTermInfo.label}).
                   {selectedTermInfo.termMonths > 0 && ' Rút trước hạn sẽ bị giảm lãi theo cấu hình.'}
                 </p>
               )}
@@ -660,10 +724,11 @@ export function FinancePage() {
             <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Rút tiết kiệm</p>
               <GameInput
-                label="Số tiền rút (VND)"
+                id="savings-withdraw-amount"
+                label="Số tiền rút (đ)"
                 value={withdrawAmount}
                 onChange={(e) => setWithdrawAmount(e.target.value)}
-                placeholder={`Tối đa ${totalSavings.toLocaleString('vi-VN')}`}
+                placeholder={`Tối đa ${formatMoney(totalSavings)}`}
               />
               <div className="flex gap-2">
                 <GameButton
@@ -700,6 +765,7 @@ export function FinancePage() {
         <Panel title="Chuyển khoản nhanh qua CCCD" borderColor="emerald">
           <div className="space-y-3">
             <CCCDLookupInput
+              id="transfer-recipient-cccd"
               value={transferCccd}
               onChange={(v) => { setTransferCccd(v); setLookupResult(null); }}
               onResolved={(r) => {
@@ -720,10 +786,11 @@ export function FinancePage() {
             )}
 
             <GameInput
-              label="Số tiền chuyển (VND)"
+              id="transfer-amount"
+              label="Số tiền chuyển (đ)"
               value={transferAmount}
               onChange={(e) => setTransferAmount(e.target.value)}
-              placeholder={`Tối đa ${cash.toLocaleString('vi-VN')}`}
+              placeholder={`Tối đa ${formatMoney(cash)}`}
             />
             <div className="flex gap-2">
               <GameButton variant="outline" size="sm" onClick={() => setTransferAmount(String(cash))} disabled={cash <= 0}>
@@ -731,6 +798,7 @@ export function FinancePage() {
               </GameButton>
             </div>
             <GameInput
+              id="transfer-message"
               label="Nội dung chuyển khoản"
               value={transferMessage}
               onChange={(e) => setTransferMessage(e.target.value)}
@@ -869,9 +937,9 @@ export function FinancePage() {
                     <span className="text-slate-500">Gốc vay</span>
                     <span className="font-mono text-right">{formatMoney(loan.principal.amount)}</span>
                     <span className="text-slate-500">Lãi suất</span>
-                    <span className="font-mono text-right">{loan.interestRatePct}%/năm</span>
+                    <span className="font-mono text-right">{formatRatePerYear(loan.interestRatePct)}</span>
                     <span className="text-slate-500">Trả hàng tháng</span>
-                    <span className="font-mono text-right">{formatMoney(loan.monthlyPayment.amount)}</span>
+                    <span className="font-mono text-right">{formatMoneyPerMonth(loan.monthlyPayment.amount)}</span>
                     <span className="text-slate-500">Kỳ trả tiếp</span>
                     <span className="font-mono text-right">{fmtDate(loan.nextDueAt)}</span>
                   </div>
@@ -968,7 +1036,7 @@ export function FinancePage() {
                     <span className="text-slate-500">Gốc</span>
                     <span className="font-mono text-right">{formatMoney(d.principal.amount)}</span>
                     <span className="text-slate-500">Lãi suất</span>
-                    <span className="font-mono text-right">{d.annualRatePct}%/năm</span>
+                    <span className="font-mono text-right">{formatRatePerYear(d.annualRatePct)}</span>
                     <span className="text-slate-500">Lãi ước tính</span>
                     <span className="font-mono text-right text-emerald-700">{formatMoney(d.interestEarned.amount)}</span>
                   </div>
@@ -1026,7 +1094,7 @@ export function FinancePage() {
                             });
                             return;
                           }
-                          withdrawSavings.mutate({ amount: amt, depositId: d.id });
+                          setConfirmTx({ kind: 'withdraw', amount: amt, depositId: d.id, idempotencyKey: createIdempotencyKey() });
                         }}
                       >
                         Rút từ sổ này
@@ -1073,8 +1141,9 @@ export function FinancePage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[11px] text-slate-600">Tài sản thế chấp</label>
+                  <label htmlFor="loan-collateral-select" className="text-[11px] text-slate-600">Tài sản thế chấp</label>
                   <select
+                    id="loan-collateral-select"
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                     value={loanCollateral}
                     onChange={(e) => setLoanCollateral(e.target.value)}
@@ -1096,7 +1165,8 @@ export function FinancePage() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <GameInput
-                      label="Số tiền vay (VND)"
+                      id="loan-amount"
+                      label="Số tiền vay (đ)"
                       value={loanAmount}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoanAmount(e.target.value)}
                       placeholder="Nhập số tiền..."
@@ -1107,6 +1177,7 @@ export function FinancePage() {
                     </GameButton>
                   </div>
                   <GameInput
+                    id="loan-term-months"
                     label="Kỳ hạn (tháng)"
                     type="number"
                     value={loanTerm}
@@ -1204,6 +1275,74 @@ export function FinancePage() {
           </div>
         </form>
       </Modal>
+
+      <TransactionConfirmModal
+        open={confirmTx?.kind === 'transfer'}
+        onClose={() => { if (!confirmTxBusy) setConfirmTx(null); }}
+        onConfirm={executeConfirmTx}
+        loading={!!(confirmTx?.kind === 'transfer' && createTransfer.isPending)}
+        title="Xác nhận chuyển khoản"
+        transactionType="Chuyển khoản CCCD"
+        targetLabel="Người nhận (CCCD/STK)"
+        targetValue={confirmTx?.kind === 'transfer' ? `${lookupResult?.fullName ?? '—'} · CCCD ${confirmTx.targetCccd} · STK ${lookupResult?.accountNumber ?? '—'}` : ''}
+        amountMinor={confirmTx?.kind === 'transfer' ? confirmTx.amount : 0}
+        feeOrRateValue="Phí: 0 đ"
+        projectedBalanceMinor={confirmTx?.kind === 'transfer' ? Math.max(0, cash - confirmTx.amount) : undefined}
+        details={confirmTx?.kind === 'transfer' && confirmTx.message ? [{ label: 'Nội dung', value: confirmTx.message }] : []}
+        warning="Vui lòng kiểm tra kỹ người nhận và số tiền trước khi xác nhận."
+      />
+
+      <TransactionConfirmModal
+        open={confirmTx?.kind === 'deposit'}
+        onClose={() => { if (!confirmTxBusy) setConfirmTx(null); }}
+        onConfirm={executeConfirmTx}
+        loading={!!(confirmTx?.kind === 'deposit' && depositSavings.isPending)}
+        title="Xác nhận gửi tiết kiệm"
+        transactionType="Gửi tiết kiệm"
+        targetLabel="Tài khoản/Sổ"
+        targetValue={confirmTx?.kind === 'deposit' ? `Sổ tiết kiệm ${confirmTx.termMonths > 0 ? `kỳ hạn ${confirmTx.termMonths} tháng` : 'không kỳ hạn'} — ${terms.find(t => t.termMonths === confirmTx.termMonths)?.annualRatePct ?? 0}%/năm` : ''}
+        amountMinor={confirmTx?.kind === 'deposit' ? confirmTx.amount : 0}
+        feeOrRateValue={confirmTx?.kind === 'deposit' ? `Lãi suất: ${terms.find(t => t.termMonths === confirmTx.termMonths)?.annualRatePct ?? 0}%/năm` : '—'}
+        projectedBalanceLabel="Tiền mặt dự kiến sau giao dịch"
+        projectedBalanceMinor={confirmTx?.kind === 'deposit' ? Math.max(0, cash - confirmTx.amount) : undefined}
+        details={confirmTx?.kind === 'deposit' ? [{ label: 'Tổng tiết kiệm dự kiến', value: formatMoney(totalSavings + confirmTx.amount) }] : []}
+      />
+
+      <TransactionConfirmModal
+        open={confirmTx?.kind === 'withdraw'}
+        onClose={() => { if (!confirmTxBusy) setConfirmTx(null); }}
+        onConfirm={executeConfirmTx}
+        loading={!!(confirmTx?.kind === 'withdraw' && withdrawSavings.isPending)}
+        title="Xác nhận rút tiết kiệm"
+        transactionType="Rút tiết kiệm"
+        targetLabel="Nguồn rút"
+        targetValue={confirmTx?.kind === 'withdraw' ? (confirmTx.depositId ? `Từ sổ tiết kiệm đã chọn` : 'Từ tổng sổ tiết kiệm') : ''}
+        amountMinor={confirmTx?.kind === 'withdraw' ? confirmTx.amount : 0}
+        feeOrRateValue={confirmTx?.kind === 'withdraw' && confirmTx.depositId ? 'Lãi/phạt (nếu có) sẽ được hệ thống tính khi rút' : 'Không có phí cố định (lãi/phạt theo sổ nếu áp dụng)'}
+        projectedBalanceLabel="Tiền mặt dự kiến sau giao dịch"
+        projectedBalanceMinor={confirmTx?.kind === 'withdraw' ? cash + confirmTx.amount : undefined}
+        details={confirmTx?.kind === 'withdraw' ? [{ label: 'Tổng tiết kiệm dự kiến', value: formatMoney(Math.max(0, totalSavings - confirmTx.amount)) }] : []}
+        warning="Số tiền thực nhận có thể khác nếu phát sinh lãi/phạt theo kỳ hạn và quy tắc rút."
+      />
+
+      <TransactionConfirmModal
+        open={confirmTx?.kind === 'loan'}
+        onClose={() => { if (!confirmTxBusy) setConfirmTx(null); }}
+        onConfirm={executeConfirmTx}
+        loading={!!(confirmTx?.kind === 'loan' && applyLoan.isPending)}
+        title="Xác nhận vay ngân hàng"
+        transactionType="Vay ngân hàng"
+        targetLabel="Khoản vay"
+        targetValue={confirmTx?.kind === 'loan' ? `Vay ${formatMoney(confirmTx.amount)} · Kỳ hạn ${confirmTx.termMonths} tháng` : ''}
+        amountMinor={confirmTx?.kind === 'loan' ? confirmTx.amount : 0}
+        feeOrRateValue={confirmTx?.kind === 'loan' ? `${formatRatePerYear(confirmTx.ratePct)} (lãi suất dự kiến)` : '—'}
+        projectedBalanceLabel="Tiền mặt dự kiến sau giải ngân"
+        projectedBalanceMinor={confirmTx?.kind === 'loan' ? cash + confirmTx.amount : undefined}
+        details={confirmTx?.kind === 'loan' ? [
+          { label: 'Trả dự kiến', value: `${formatMoney(monthlyPayment({ principalMinor: confirmTx.amount, annualRatePct: confirmTx.ratePct, termMonths: confirmTx.termMonths }))}/tháng` },
+        ] : []}
+        warning="Khoản vay sẽ tạo nghĩa vụ trả nợ định kỳ. Vui lòng kiểm tra lãi suất, kỳ hạn và tài sản thế chấp (nếu có)."
+      />
     </div>
   );
 }

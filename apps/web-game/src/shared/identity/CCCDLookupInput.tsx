@@ -11,6 +11,7 @@ export function CCCDLookupInput({
   label = 'CCCD (12 số)',
   placeholder = 'Nhập chính xác 12 số CCCD',
   disabled,
+  id = 'transfer-cccd',
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -18,6 +19,7 @@ export function CCCDLookupInput({
   label?: string;
   placeholder?: string;
   disabled?: boolean;
+  id?: string;
 }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<ResolveResult | null>(null);
@@ -49,6 +51,7 @@ export function CCCDLookupInput({
       <div className="flex gap-2 items-end">
         <div className="flex-1">
           <GameInput
+            id={id}
             label={label}
             value={value}
             onChange={(e) => { onChange(e.target.value); setResult(null); setError(null); onResolved?.(null); }}

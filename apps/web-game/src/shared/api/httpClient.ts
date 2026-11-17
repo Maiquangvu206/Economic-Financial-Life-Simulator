@@ -76,6 +76,18 @@ async function send(path: string, init: RequestInit, token: string | null): Prom
   return fetch(`${env.apiBaseUrl}${path}`, { ...init, headers, cache: 'no-store' });
 }
 
+/** Tạo Idempotency-Key (UUID) cho các giao dịch quan trọng để chống bấm lặp. */
+export function createIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   let token = useSessionStore.getState().accessToken;
   let response = await send(path, init, token);

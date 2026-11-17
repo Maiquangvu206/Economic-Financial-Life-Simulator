@@ -9,9 +9,10 @@ import { GameButton } from '../shared/ui/GameButton';
 import { GameInput } from '../shared/ui/GameInput';
 import { toast } from '../shared/ui/Toast';
 import { useDialog } from '../shared/ui/DialogContext';
+import { formatMoney } from '../shared/lib/format';
 
 function moneyText(m: { amount: number }) {
-  return `${Number(m.amount || 0).toLocaleString('vi-VN')} ₫`;
+  return formatMoney(Number(m.amount || 0));
 }
 
 const INDUSTRIES: Array<{ value: IndustryType; label: string }> = [
@@ -123,10 +124,27 @@ export function RecruitmentPage() {
   }, [jobs]);
 
   if (isLoading) {
-    return <div className="p-6 text-sm text-slate-600">Đang tải trang tuyển dụng...</div>;
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Tuyển dụng" />
+        <Panel title="Đang tải dữ liệu" borderColor="default">
+          <p className="text-sm text-slate-600">Đang tải trang tuyển dụng...</p>
+        </Panel>
+      </div>
+    );
   }
   if (error || !data) {
-    return <div className="p-6 text-sm text-rose-600">Không thể tải dữ liệu tuyển dụng. <button className="underline" onClick={() => void refetch()}>Thử lại</button></div>;
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Tuyển dụng" />
+        <Panel title="Lỗi tải dữ liệu" borderColor="rose">
+          <p className="text-sm text-rose-700">Không thể tải dữ liệu tuyển dụng. Vui lòng kiểm tra kết nối và thử lại.</p>
+          <div className="mt-3">
+            <GameButton variant="outline" size="sm" onClick={() => void refetch()}>Thử lại</GameButton>
+          </div>
+        </Panel>
+      </div>
+    );
   }
 
   return (
@@ -147,8 +165,17 @@ export function RecruitmentPage() {
 
             <div className="space-y-3">
               {jobs.length === 0 ? (
-                <div className="text-sm text-slate-500 rounded-xl border border-dashed border-slate-300 p-4 bg-slate-50/50">
-                  Chưa có tin tuyển dụng nào.
+                <div className="rounded-xl border border-dashed border-slate-300 p-4 bg-slate-50/60 space-y-2">
+                  <p className="text-sm font-medium text-slate-800">Chưa có tin tuyển dụng phù hợp</p>
+                  <p className="text-xs text-slate-600">
+                    Hiện chưa có đợt tuyển dụng mở để bạn ứng tuyển. Bạn có thể làm mới danh sách, học/chứng chỉ khởi điểm hoặc kiểm tra lại sau khi có công ty đăng tin mới.
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <GameButton variant="outline" size="sm" onClick={() => void refetch()}>Làm mới danh sách</GameButton>
+                    {!employment ? (
+                      <span className="text-[11px] text-slate-500 self-center">Gợi ý: vào trang Giáo dục để đăng ký khóa cơ bản phù hợp vốn khởi đầu.</span>
+                    ) : null}
+                  </div>
                 </div>
               ) : (
                 jobs.map((job) => {

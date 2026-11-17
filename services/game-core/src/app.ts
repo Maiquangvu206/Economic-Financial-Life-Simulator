@@ -7,6 +7,7 @@ import { logger } from './shared/logger.js';
 import { attachActor, requireInternalToken } from './shared/http/actor.js';
 import { asyncHandler } from './shared/http/asyncHandler.js';
 import { errorHandler } from './shared/http/errorHandler.js';
+import { idempotencyMiddleware } from './shared/http/idempotency.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { bankingRouter } from './modules/banking/banking.routes.js';
@@ -98,6 +99,8 @@ export function createApp(): Express {
     res.setHeader('Cache-Control', 'no-store');
     next();
   });
+  // Chống bấm lặp giao dịch: cache phản hồi theo X-Idempotency-Key trong 60 giây.
+  app.use('/api', idempotencyMiddleware);
 
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/banking', attachActor, bankingRouter);

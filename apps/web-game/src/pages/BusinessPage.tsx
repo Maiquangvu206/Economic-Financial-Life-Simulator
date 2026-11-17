@@ -10,8 +10,9 @@ import type {
   CompanyPremisesOptionsDto,
   IndustryType,
 } from '@efls/contracts';
-import { apiRequest } from '../shared/api/httpClient';
+import { apiRequest, createIdempotencyKey } from '../shared/api/httpClient';
 import { formatCompact, formatMoney } from '../shared/lib/format';
+import { TransactionConfirmModal } from '../shared/ui/TransactionConfirmModal';
 import { Panel } from '../shared/ui/Panel';
 import { StatCard } from '../shared/ui/StatCard';
 import { GameButton } from '../shared/ui/GameButton';
@@ -72,6 +73,7 @@ export function BusinessPage() {
   const [capital, setCapital] = useState('10000000');
   const [premisesKey, setPremisesKey] = useState('');
   const [relocatePremisesKey, setRelocatePremisesKey] = useState('');
+  const [confirmCreate, setConfirmCreate] = useState<{ idempotencyKey: string; name: string; industry: IndustryType; capital: number; premisesLabel: string } | null>(null);
 
   const [investAmount, setInvestAmount] = useState('1000000');
   const [ipoSymbol, setIpoSymbol] = useState('');
@@ -102,7 +104,7 @@ export function BusinessPage() {
   const [buyOfferShares, setBuyOfferShares] = useState<Record<string, string>>({});
   const [suggestionPlan, setSuggestionPlan] = useState<any | null>(null);
 
-  const { data: me } = useQuery<{ id: string; fullName: string }>({
+  const { data: me } = useQuery<{ id: string; fullName: string; cash?: { amount: number } }>({
     queryKey: ['characters', 'me'],
     queryFn: () => apiRequest('/api/v1/characters/me'),
   });
@@ -180,7 +182,7 @@ export function BusinessPage() {
   }, [premisesOptions]);
 
   const createCompany = useMutation({
-    mutationFn: () => {
+    mutationFn: ({ idempotencyKey }: { idempotencyKey: string }) => {
       const selected = premisesMap.get(premisesKey);
       if (!selected) throw new Error('Vui lòng chọn địa điểm/cơ sở để thành lập công ty.');
       const premises =
@@ -191,6 +193,7 @@ export function BusinessPage() {
             : { type: 'company_property' as const, companyPropertyId: selected.id };
       return apiRequest<CompanyDto>('/api/v1/corporations', {
         method: 'POST',
+        headers: { 'X-Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           name: name.trim(),
           industry,
@@ -201,6 +204,7 @@ export function BusinessPage() {
     },
     onSuccess: async (c) => {
       toast({ title: 'Đã thành lập công ty', description: `Công ty "${c.name}" đã được tạo.` });
+      setConfirmCreate(null);
       setCreateOpen(false);
       setName('');
       setPremisesKey('');
@@ -600,7 +604,11 @@ export function BusinessPage() {
         <div className="min-w-0 xl:col-span-2">
           <Panel title="Thị trường doanh nghiệp" borderColor="default">
             {companies.length === 0 ? (
-              <p className="text-sm text-slate-500">Chưa có công ty nào được thành lập.</p>
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-800">Chưa có dữ liệu công ty</p>
+                <p className="text-xs text-slate-600">Hiện chưa có công ty nào trên thị trường. Bạn có thể thành lập công ty nếu đã có địa điểm/cơ sở hợp lệ và đủ vốn.</p>
+                <GameButton variant="outline" size="sm" onClick={() => setCreateOpen(true)} disabled={!overview}>Thành lập công ty</GameButton>
+              </div>
             ) : (
               <div className="overflow-auto max-h-[60vh]">
                 <table className="min-w-[680px] w-full text-sm">
@@ -656,10 +664,29 @@ export function BusinessPage() {
           className="space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            createCompany.mutate();
+            const selected = premisesMap.get(premisesKey);
+            const allPremises = [...(premisesOptions?.land ?? []), ...(premisesOptions?.companyProperties ?? [])];
+            const found = allPremises.find((o) => `${o.type}:${o.id}` === premisesKey);
+            if (!name.trim() || !selected || !found) {
+              toast({ title: 'Thiếu thông tin', description: 'Vui lòng nhập tên công ty và chọn địa điểm/cơ sở hợp lệ.', variant: 'error' });
+              return;
+            }
+            const cap = Math.max(0, Math.floor(Number(capital) || 0));
+            if (cap <= 0) {
+              toast({ title: 'Vốn không hợp lệ', description: 'Vốn khởi điểm phải lớn hơn 0.', variant: 'error' });
+              return;
+            }
+            setConfirmCreate({
+              idempotencyKey: createIdempotencyKey(),
+              name: name.trim(),
+              industry,
+              capital: cap,
+              premisesLabel: found.label ?? premisesKey,
+            });
           }}
         >
           <GameInput
+            id="company-create-name"
             label="Tên công ty"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -667,8 +694,9 @@ export function BusinessPage() {
             required
           />
           <div className="space-y-1">
-            <label className="text-[11px] uppercase tracking-wider text-slate-500">Ngành</label>
+            <label htmlFor="company-create-industry" className="text-[11px] uppercase tracking-wider text-slate-500">Ngành</label>
             <select
+              id="company-create-industry"
               value={industry}
               onChange={(e) => setIndustry(e.target.value as IndustryType)}
               className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-100"
@@ -681,7 +709,8 @@ export function BusinessPage() {
             </select>
           </div>
           <GameInput
-            label="Vốn khởi điểm (VND)"
+            id="company-create-capital"
+            label="Vốn khởi điểm (đ)"
             type="number"
             min={1}
             value={capital}
@@ -692,7 +721,7 @@ export function BusinessPage() {
           <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <label className="text-[11px] uppercase tracking-wider text-slate-600">Địa điểm / cơ sở công ty (bắt buộc)</label>
+                <label htmlFor="company-create-premises" className="text-[11px] uppercase tracking-wider text-slate-600">Địa điểm / cơ sở công ty (bắt buộc)</label>
               </div>
               <div className="flex flex-wrap justify-end gap-1.5 shrink-0">
                 <button type="button" onClick={() => void queryClient.invalidateQueries({ queryKey: ['corporations', 'premises-options'] })} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Làm mới</button>
@@ -703,8 +732,9 @@ export function BusinessPage() {
               <p className="text-xs text-slate-500">Đang tải địa điểm khả dụng từ bất động sản/bản đồ...</p>
             ) : (
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700">Chọn địa điểm/cơ sở (combo box)</label>
+                <label htmlFor="company-create-premises" className="text-xs font-semibold text-slate-700">Chọn địa điểm/cơ sở (combo box)</label>
                 <select
+                  id="company-create-premises"
                   value={premisesKey}
                   onChange={(e) => setPremisesKey(e.target.value)}
                   className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
@@ -758,9 +788,9 @@ export function BusinessPage() {
             <GameButton
               variant="primary"
               type="submit"
-              disabled={createCompany.isPending || !name.trim() || !premisesKey}
+              disabled={createCompany.isPending || !name.trim() || !premisesKey || premisesLoading}
             >
-              {createCompany.isPending ? 'Đang tạo...' : 'Thành lập'}
+              {createCompany.isPending ? 'Đang tạo...' : 'Tiếp tục xác nhận'}
             </GameButton>
           </div>
         </form>
@@ -1147,6 +1177,26 @@ export function BusinessPage() {
           </div>
         )}
       </Modal>
+      <TransactionConfirmModal
+        open={!!confirmCreate}
+        onClose={() => { if (!createCompany.isPending) setConfirmCreate(null); }}
+        onConfirm={async () => {
+          if (!confirmCreate) return;
+          await createCompany.mutateAsync({ idempotencyKey: confirmCreate.idempotencyKey });
+        }}
+        loading={createCompany.isPending}
+        title="Xác nhận thành lập công ty"
+        transactionType="Thành lập công ty"
+        targetLabel="Công ty"
+        targetValue={confirmCreate ? `${confirmCreate.name} · ${industryLabel(confirmCreate.industry)}` : ''}
+        amountLabel="Vốn khởi điểm"
+        amountMinor={confirmCreate?.capital}
+        feeOrRateValue="Phí/Lãi suất: Không áp dụng"
+        projectedBalanceLabel="Số dư tiền mặt dự kiến sau giao dịch"
+        projectedBalanceMinor={typeof (me as any)?.cash?.amount === 'number' && confirmCreate ? Math.max(0, Number((me as any).cash.amount) - confirmCreate.capital) : undefined}
+        details={confirmCreate ? [{ label: 'Địa điểm/cơ sở', value: confirmCreate.premisesLabel }] : []}
+        warning="Hành động thành lập công ty không thể hoàn tác. Hệ thống sẽ kiểm tra vốn, địa điểm/cơ sở và điều kiện hợp lệ khi thực hiện."
+      />
     </div>
   );
 }
