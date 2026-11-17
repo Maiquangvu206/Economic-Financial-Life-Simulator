@@ -21,46 +21,51 @@ import { InterestRatesConfigPage } from '../pages/InterestRatesConfigPage';
 import { IndustryRevenueConfigPage } from '../pages/IndustryRevenueConfigPage';
 import { StockMarketControlPage } from '../pages/StockMarketControlPage';
 
-const router = createBrowserRouter([
+const router = createBrowserRouter(
+  [
+    {
+      path: '/login',
+      element: <AdminLoginPage />,
+    },
+    {
+      // Nhận phiên quản trị từ cổng đăng nhập duy nhất SSO.
+      path: '/sso',
+      element: <SsoPage />,
+    },
+    {
+      element: <RequireAdmin />,
+      children: [
+        {
+          path: '/',
+          element: <AdminLayout />,
+          children: [
+            { index: true, element: <MacroDashboardPage /> },
+            { path: 'broadcast', element: <SystemBroadcastPage /> },
+            { path: 'gift-codes', element: <GiftCodesPage /> },
+            { path: 'calendar-seasons', element: <SeasonCalendarPage /> },
+            { path: 'education-config', element: <EducationConfigPage /> },
+            { path: 'politics', element: <PoliticsConfigPage /> },
+            { path: 'interest-rates', element: <InterestRatesConfigPage /> },
+            { path: 'industry-revenue', element: <IndustryRevenueConfigPage /> },
+            { path: 'stock-market-control', element: <StockMarketControlPage /> },
+            { path: 'offline', element: <OfflinePolicyPage /> },
+            { path: 'restriction', element: <RestrictionSettingsPage /> },
+            { path: 'audit-logs', element: <AuditLogsPage /> },
+            { path: 'players', element: <PlayersPage /> },
+            { path: 'map-editor', element: <MapEditorPage /> },
+            { path: 'ai-events', element: <AiEventConsolePage /> },
+            { path: 'ai-providers', element: <AiProvidersPage /> },
+            { path: 'chat', element: <ChatPage /> },
+            { path: '*', element: <Navigate to="/" replace /> },
+          ],
+        },
+      ],
+    },
+  ],
   {
-    path: '/login',
-    element: <AdminLoginPage />,
+    basename: import.meta.env.BASE_URL.replace(/\/$/, ''),
   },
-  {
-    // Nhận phiên quản trị từ cổng đăng nhập duy nhất SSO.
-    path: '/sso',
-    element: <SsoPage />,
-  },
-  {
-    element: <RequireAdmin />,
-    children: [
-      {
-        path: '/',
-        element: <AdminLayout />,
-        children: [
-          { index: true, element: <MacroDashboardPage /> },
-          { path: 'broadcast', element: <SystemBroadcastPage /> },
-          { path: 'gift-codes', element: <GiftCodesPage /> },
-          { path: 'calendar-seasons', element: <SeasonCalendarPage /> },
-          { path: 'education-config', element: <EducationConfigPage /> },
-          { path: 'politics', element: <PoliticsConfigPage /> },
-          { path: 'interest-rates', element: <InterestRatesConfigPage /> },
-          { path: 'industry-revenue', element: <IndustryRevenueConfigPage /> },
-          { path: 'stock-market-control', element: <StockMarketControlPage /> },
-          { path: 'offline', element: <OfflinePolicyPage /> },
-          { path: 'restriction', element: <RestrictionSettingsPage /> },
-          { path: 'audit-logs', element: <AuditLogsPage /> },
-          { path: 'players', element: <PlayersPage /> },
-          { path: 'map-editor', element: <MapEditorPage /> },
-          { path: 'ai-events', element: <AiEventConsolePage /> },
-          { path: 'ai-providers', element: <AiProvidersPage /> },
-          { path: 'chat', element: <ChatPage /> },
-          { path: '*', element: <Navigate to="/" replace /> },
-        ],
-      },
-    ],
-  },
-]);
+);
 
 export function AppRouter() {
   return <RouterProvider router={router} />;

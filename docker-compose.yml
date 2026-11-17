@@ -1,0 +1,292 @@
+name: project-1
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+x-node-build: &node-build
+  context: .
+  dockerfile: infra/docker/node-service.Dockerfile
+
+x-service-env: &service-env
+  NODE_ENV: production
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
+  INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN in .env}
+  AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?set AI_SERVICE_TOKEN in .env}
+  AI_SERVICE_URL: http://ai:8000
+  AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-15000}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-efls}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-efls}
+    command: ['postgres', '-c', 'max_connections=200', '-c', 'shared_buffers=256MB']
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    logging: *default-logging
+    networks: [app-net]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging: *default-logging
+    networks: [app-net]
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-efls}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:-efls}
+    volumes:
+      - ./infra/db/migrations:/migrations:ro
+      - ./infra/docker/migrate.sh:/migrate.sh:ro
+    entrypoint: ['/bin/sh', '/migrate.sh']
+    restart: 'no'
+    logging: *default-logging
+    networks: [app-net]
+
+  ai:
+    build:
+      context: .
+      dockerfile: infra/docker/ai.Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      APP_ENV: production
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?set AI_SERVICE_TOKEN in .env}
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      LLM_FAILOVER_CHAIN: ${LLM_FAILOVER_CHAIN:-openai,gemini,fake}
+      AI_PROVIDER_COOLDOWN_SEC: ${AI_PROVIDER_COOLDOWN_SEC:-60}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_ENDPOINTS: ${OPENAI_ENDPOINTS:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_API_KEYS: ${GEMINI_API_KEYS:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-15000}
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=3)',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [app-net, ai-net]
+
+  game-core:
+    build:
+      <<: *node-build
+      args: { SERVICE: game-core }
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      ai:
+        condition: service_healthy
+    environment:
+      <<: *service-env
+      CORE_PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-efls}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-efls}
+      REDIS_URL: redis://redis:6379
+      REALTIME_CHANNEL: ${REALTIME_CHANNEL:-efls:realtime}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/health >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    stop_grace_period: 15s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [app-net]
+
+  api-gateway:
+    build:
+      <<: *node-build
+      args: { SERVICE: api-gateway }
+    restart: unless-stopped
+    init: true
+    depends_on:
+      game-core:
+        condition: service_healthy
+    environment:
+      <<: *service-env
+      GATEWAY_PORT: 3000
+      CORE_URL: http://game-core:4000
+      WEB_ORIGIN: ${PUBLIC_ORIGIN:-https://project1.zorse-mizar.ts.net}
+      ADMIN_ORIGIN: ${PUBLIC_ORIGIN:-https://project1.zorse-mizar.ts.net}
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    stop_grace_period: 15s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [app-net]
+
+  realtime:
+    build:
+      <<: *node-build
+      args: { SERVICE: realtime }
+    restart: unless-stopped
+    init: true
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *service-env
+      REALTIME_PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-efls}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-efls}
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: ${PUBLIC_ORIGIN:-https://project1.zorse-mizar.ts.net}
+      ADMIN_ORIGIN: ${PUBLIC_ORIGIN:-https://project1.zorse-mizar.ts.net}
+      REALTIME_CHANNEL: ${REALTIME_CHANNEL:-efls:realtime}
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:5000/health >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    stop_grace_period: 15s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [app-net]
+
+  worker:
+    build:
+      <<: *node-build
+      args: { SERVICE: worker }
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      ai:
+        condition: service_healthy
+    environment:
+      <<: *service-env
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-efls}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-efls}
+      REDIS_URL: redis://redis:6379
+      GAME_TICK_INTERVAL_MS: ${GAME_TICK_INTERVAL_MS:-60000}
+      AI_NEWS_CRON: ${AI_NEWS_CRON:-0 6 * * *}
+      DOMAIN_EVENT_CHANNEL: ${DOMAIN_EVENT_CHANNEL:-efls:domain-events}
+      WORKER_METRICS_PORT: 6060
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:6060/health >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    stop_grace_period: 30s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+    networks: [app-net]
+
+  tailscale:
+    image: tailscale/tailscale:stable
+    hostname: project1
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}
+      TS_AUTH_ONCE: 'true'
+      TS_HOSTNAME: project1
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_ENABLE_HEALTH_CHECK: 'true'
+      TS_LOCAL_ADDR_PORT: 127.0.0.1:9002
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./ts-config:/config:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:9002/healthz']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks: [app-net, ai-net]
+    logging: *default-logging
+
+  web-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://project1.zorse-mizar.ts.net}
+    restart: unless-stopped
+    depends_on:
+      tailscale:
+        condition: service_healthy
+      api-gateway:
+        condition: service_healthy
+      realtime:
+        condition: service_healthy
+    network_mode: service:tailscale
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/healthz >/dev/null || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    security_opt: ['no-new-privileges:true']
+    logging: *default-logging
+
+volumes:
+  postgres-data:
+  redis-data:
+  tailscale-state:
+
+networks:
+  app-net:
+    driver: bridge
+  ai-net:
+    external: true

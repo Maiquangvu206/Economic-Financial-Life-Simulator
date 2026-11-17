@@ -21,6 +21,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+/ts-config/
 *.log
 postgres-data/
 redis-data/

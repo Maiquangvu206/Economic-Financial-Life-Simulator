@@ -6,7 +6,7 @@
 #   docker build -f infra/docker/node-service.Dockerfile \
 #     --build-arg SERVICE=game-core -t efls/game-core .
 
-FROM node:20-alpine AS base
+FROM node:24-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
@@ -37,7 +37,7 @@ RUN test -n "$SERVICE" \
  && pnpm --filter "@efls/${SERVICE}..." build \
  && pnpm --filter "@efls/${SERVICE}" deploy --prod /out
 
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 RUN apk add --no-cache dumb-init
 ENV NODE_ENV=production \
     NODE_OPTIONS=--enable-source-maps

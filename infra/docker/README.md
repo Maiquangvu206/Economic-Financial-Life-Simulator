@@ -98,23 +98,24 @@ sẽ tự động:
 
 1. Build image multi-arch cho tất cả 5 service (game-core, api-gateway,
    realtime, worker, ai).
-2. Push lên registry được cấu hình trong `REGISTRY` secret.
+2. Push lên registry được cấu hình trong `REGISTRY_HOST` và `REGISTRY_NAMESPACE` secrets.
 3. Gọi webhook deploy trên server production.
 
 Deploy thủ công từ local:
 
 ```bash
-REGISTRY=ghcr.io/efls VERSION=v1.2.3 node scripts/deploy.mjs
+REGISTRY=ghcr.io/your-org/efls VERSION=<commit-sha> node scripts/deploy.mjs
 ```
 
 Các secret cần thiết trong GitHub / server:
 
-| Secret               | Mô tả                                       |
-| -------------------- | ------------------------------------------- |
-| `REGISTRY`           | Địa chỉ registry (ví dụ `ghcr.io/efls`)     |
-| `REGISTRY_USERNAME`  | Tên đăng nhập registry                      |
-| `REGISTRY_PASSWORD`  | Token/Mật khẩu registry                     |
-| `DEPLOY_WEBHOOK_URL` | URL webhook để kích hoạt deploy trên server |
+| Secret               | Mô tả                                                |
+| -------------------- | ---------------------------------------------------- |
+| `REGISTRY_HOST`      | Registry host used for login (ví dụ `ghcr.io`)       |
+| `REGISTRY_NAMESPACE` | Full image namespace (ví dụ `ghcr.io/your-org/efls`) |
+| `REGISTRY_USERNAME`  | Tên đăng nhập registry                               |
+| `REGISTRY_PASSWORD`  | Token/Mật khẩu registry                              |
+| `DEPLOY_WEBHOOK_URL` | URL webhook để kích hoạt deploy trên server          |
 
 ## Docker Compose profiles
 

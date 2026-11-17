@@ -99,7 +99,7 @@ services:
     init: true
     environment:
       APP_ENV: production
-      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-change-me-ai-token}
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?set AI_SERVICE_TOKEN in .env}
       LLM_PROVIDER: ${LLM_PROVIDER:-fake}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
@@ -144,7 +144,7 @@ services:
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN in .env}
       AI_SERVICE_URL: http://ai:8000
-      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-change-me-ai-token}
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?set AI_SERVICE_TOKEN in .env}
       AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-15000}
     ports:
       - '127.0.0.1:${CORE_PORT:-4000}:4000'
@@ -254,7 +254,7 @@ services:
       GAME_TICK_INTERVAL_MS: ${GAME_TICK_INTERVAL_MS:-60000}
       AI_NEWS_CRON: ${AI_NEWS_CRON:-0 6 * * *}
       AI_SERVICE_URL: http://ai:8000
-      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-change-me-ai-token}
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?set AI_SERVICE_TOKEN in .env}
       AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-15000}
       DOMAIN_EVENT_CHANNEL: ${DOMAIN_EVENT_CHANNEL:-efls:domain-events}
       WORKER_METRICS_PORT: 6060
