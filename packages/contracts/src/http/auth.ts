@@ -25,6 +25,21 @@ export type RefreshRequest = z.infer<typeof RefreshRequestSchema>;
 export const AccountStatusSchema = z.enum(['active', 'banned', 'restricted']);
 export type AccountStatus = z.infer<typeof AccountStatusSchema>;
 
+export const RestrictionContactSchema = z.object({
+  enabled: z.boolean().optional(),
+  title: z.string().optional(),
+  message: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  hotline: z.string().optional(),
+  zalo: z.string().optional(),
+  discord: z.string().optional(),
+  other: z.string().optional(),
+  otherChannel: z.string().optional(),
+  updatedAt: z.string().optional(),
+}).passthrough();
+export type RestrictionContact = z.infer<typeof RestrictionContactSchema>;
+
 export const SessionUserSchema = z.object({
   id: IdSchema,
   email: z.string().email(),
@@ -32,6 +47,7 @@ export const SessionUserSchema = z.object({
   role: UserRoleSchema,
   status: AccountStatusSchema.default('active'),
   restrictionReason: z.string().nullable().optional(),
+  banReason: z.string().nullable().optional(),
   /** Thời gian tạo tài khoản (thực tế), dùng cho "số ngày hoạt động" của tài khoản. */
   createdAt: z.string().datetime().optional(),
 });
@@ -42,6 +58,7 @@ export const TokenPairSchema = z.object({
   refreshToken: z.string(),
   expiresInSeconds: z.number().int().positive(),
   user: SessionUserSchema,
+  restrictionContact: RestrictionContactSchema.optional(),
 });
 export type TokenPair = z.infer<typeof TokenPairSchema>;
 

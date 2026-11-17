@@ -12,6 +12,7 @@ import type {
   UpdateAccountProfileRequest,
 } from '@efls/contracts';
 import { env } from '../../config/env.js';
+import { pool } from '../../shared/db/pool.js';
 import { AppError } from '../../shared/http/errors.js';
 import { AuthRepository, type UserRow } from './auth.repository.js';
 
@@ -43,28 +44,66 @@ function pruneExpiredTickets(): void {
 
 function toSessionUser(user: UserRow): SessionUser {
   const status = (user.status ?? 'active') as SessionUser['status'];
+  const banReason = user.ban_reason ?? null;
   return {
     id: user.id,
     email: user.email,
     username: user.username,
     role: user.role,
     status,
-    restrictionReason: status === 'restricted' ? (user.ban_reason ?? null) : null,
-    createdAt: user.created_at instanceof Date ? user.created_at.toISOString() : new Date(user.created_at as any).toISOString(),
+    restrictionReason: status === 'restricted' || status === 'banned' ? banReason : null,
+    banReason,
+    createdAt:
+      user.created_at instanceof Date
+        ? user.created_at.toISOString()
+        : new Date(user.created_at as any).toISOString(),
   };
 }
 
-/** Bị khóa (banned) không được đăng nhập; bị hạn chế (restricted) vẫn đăng nhập nhưng sẽ bị chặn thao tác trong game. */
-function ensureCanAuthenticate(user: UserRow): void {
-  const status = user.status ?? 'active';
-  if (status === 'banned') {
-    const until = user.banned_until ? ` đến ${new Date(user.banned_until).toLocaleString('vi-VN')}` : '';
-    const reason = user.ban_reason ? ` Lý do: ${user.ban_reason}` : '';
-    throw AppError.forbidden(`Tài khoản đã bị khóa${until}.${reason}`.trim());
+/**
+ * Cho phép tài khoản bị khóa/hạn chế vẫn đăng nhập để hiển thị overlay thông báo trong ứng dụng.
+ * Các thao tác nghiệp vụ ghi dữ liệu vẫn bị chặn bởi middleware hạn chế (403).
+ */
+function ensureCanAuthenticate(_user: UserRow): void {
+  // no-op
+}
+
+function defaultRestrictionContact() {
+  return {
+    enabled: true,
+    title: 'Tài khoản đang bị hạn chế',
+    message:
+      'Tài khoản của bạn đang bị hạn chế thao tác. Vui lòng liên hệ quản trị viên để được hỗ trợ gỡ hạn chế.',
+    email: '',
+    phone: '',
+    hotline: '',
+    zalo: '',
+    discord: '',
+    other: '',
+    otherChannel: '',
+  };
+}
+
+async function getRestrictionContactConfig(): Promise<Record<string, unknown>> {
+  try {
+    const r = await pool.query<{ macro: any }>(`SELECT macro FROM game_state WHERE id = 1`);
+    const macro = r.rows[0]?.macro && typeof r.rows[0].macro === 'object' ? r.rows[0].macro : {};
+    const raw = (macro as any).restrictionContact ?? {};
+    const d = defaultRestrictionContact();
+    return {
+      ...d,
+      ...(raw && typeof raw === 'object' ? raw : {}),
+      hotline: (raw as any)?.hotline ?? (raw as any)?.phone ?? d.hotline,
+      phone: (raw as any)?.phone ?? (raw as any)?.hotline ?? d.phone,
+      otherChannel: (raw as any)?.otherChannel ?? (raw as any)?.other ?? d.otherChannel,
+      other: (raw as any)?.other ?? (raw as any)?.otherChannel ?? d.other,
+    };
+  } catch {
+    return defaultRestrictionContact();
   }
 }
 
-function issueTokens(user: UserRow): TokenPair {
+async function issueTokens(user: UserRow): Promise<TokenPair> {
   ensureCanAuthenticate(user);
   const accessToken = jwt.sign(
     { sub: user.id, role: user.role, type: 'access' },
@@ -81,6 +120,7 @@ function issueTokens(user: UserRow): TokenPair {
     refreshToken,
     expiresInSeconds: 15 * 60,
     user: toSessionUser(user),
+    restrictionContact: await getRestrictionContactConfig(),
   };
 }
 
@@ -101,7 +141,7 @@ export class AuthService {
       birthplaceCode: input.birthplaceCode ?? '001',
     });
 
-    return issueTokens(user);
+    return await issueTokens(user);
   }
 
   async login(input: LoginRequest): Promise<TokenPair> {
@@ -116,7 +156,7 @@ export class AuthService {
     }
 
     ensureCanAuthenticate(user);
-    return issueTokens(user);
+    return await issueTokens(user);
   }
 
   async refresh(refreshToken: string): Promise<TokenPair> {
@@ -126,7 +166,7 @@ export class AuthService {
       throw AppError.unauthorized('User no longer exists');
     }
     ensureCanAuthenticate(user);
-    return issueTokens(user);
+    return await issueTokens(user);
   }
 
   /**
@@ -165,7 +205,7 @@ export class AuthService {
       throw AppError.unauthorized('User no longer exists');
     }
     ensureCanAuthenticate(user);
-    return issueTokens(user);
+    return await issueTokens(user);
   }
 
   async changePassword(userId: string, input: ChangePasswordRequest): Promise<{ ok: true; message: string }> {

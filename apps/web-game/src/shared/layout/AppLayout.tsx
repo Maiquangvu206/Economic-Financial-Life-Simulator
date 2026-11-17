@@ -79,6 +79,8 @@ export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const user = useSessionStore((state) => state.user);
+  const refreshToken = useSessionStore((state) => state.refreshToken);
+  const setSession = useSessionStore((state) => state.setSession);
   const clearSession = useSessionStore((state) => state.clearSession);
   const {
     netWorth, cash, heatLevel, energy, year, month, day, hour, minute,
@@ -98,7 +100,7 @@ export function AppLayout() {
     staleTime: 15000,
   });
   const isDead = me?.isAlive === false;
-  const isRestricted = user?.status === 'restricted';
+  const isAccountBlocked = user?.status === 'restricted' || user?.status === 'banned';
 
   // Đồng bộ thanh báo cáo (topbar) theo dữ liệu nhân vật thực từ server, tránh hiển thị dữ liệu mẫu
   const prevCashRef = useRef<number | null>(null);
@@ -175,6 +177,7 @@ export function AppLayout() {
 
   const maintenance = gameConfig?.maintenance;
   const isMaintenance = !!maintenance?.enabled && user?.role === 'player';
+  const accountBlockReason = user?.banReason ?? user?.restrictionReason ?? null;
 
   useEffect(() => {
     if (!gameConfig) return;
@@ -210,7 +213,7 @@ export function AppLayout() {
 
   // Xử lý offline khi quay lại (một lần mỗi phiên tải app): cập nhật mốc/recap và hiển thị nếu được bật
   useEffect(() => {
-    if (isRestricted || isMaintenance) return;
+    if (isAccountBlocked || isMaintenance) return;
     if (!me || offlineChecked) return;
     let cancelled = false;
     (async () => {
@@ -246,7 +249,7 @@ export function AppLayout() {
     return () => {
       cancelled = true;
     };
-  }, [me, offlineChecked, queryClient, navigate, location.pathname, isRestricted, isMaintenance]);
+  }, [me, offlineChecked, queryClient, navigate, location.pathname, isAccountBlocked, isMaintenance]);
 
   // Nhận thông báo & thời gian game realtime -> đồng bộ dữ liệu/toast/clock
   useEffect(() => {
@@ -257,18 +260,38 @@ export function AppLayout() {
       void queryClient.invalidateQueries({ queryKey: ['game-config'] });
 
       const bodyText = String(payload?.body || '');
-      // Khi tài khoản bị khóa: tự động đăng xuất theo thời gian thực
+      // Khi tài khoản bị khóa/hạn chế giữa chừng: làm mới phiên/trạng thái để hiển thị overlay (không đăng xuất)
       if (
         payload?.kind === 'admin_action' &&
-        (bodyText.includes('bị khóa') || bodyText.includes('đã bị khóa') || bodyText.includes('khóa tài khoản'))
+        (
+          bodyText.includes('bị khóa') ||
+          bodyText.includes('đã bị khóa') ||
+          bodyText.includes('khóa tài khoản') ||
+          bodyText.includes('bị hạn chế') ||
+          bodyText.includes('hạn chế tài khoản')
+        )
       ) {
+        void (async () => {
+          try {
+            if (refreshToken) {
+              const pair = await apiRequest<any>('/api/v1/auth/refresh', {
+                method: 'POST',
+                body: JSON.stringify({ refreshToken }),
+              });
+              if (pair?.accessToken && pair?.refreshToken && pair?.user) setSession(pair);
+            }
+          } catch {
+            // ignore: overlay có thể vẫn hiển thị sau F5 hoặc khi user refresh thủ công
+          }
+          void queryClient.invalidateQueries({ queryKey: ['characters', 'me'] });
+          void queryClient.invalidateQueries({ queryKey: ['game-config'] });
+          void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        })();
         toast({
           title: payload.title || 'Thông báo từ quản trị hệ thống',
-          description: payload.body || 'Tài khoản của bạn đã bị khóa.',
+          description: payload.body || 'Trạng thái tài khoản của bạn đã thay đổi.',
           variant: 'error',
         });
-        clearSession();
-        navigate('/login', { replace: true });
         return;
       }
 
@@ -301,7 +324,7 @@ export function AppLayout() {
       socket.off('notification', onNotification as never);
       (socket as any).off('game:time', onGameTime);
     };
-  }, [queryClient, clearSession, navigate, syncServerTime]);
+  }, [queryClient, clearSession, navigate, syncServerTime, refreshToken, setSession]);
 
   const unreadCount = notifications.filter((n) => !n.readAt).length;
   const hudBroadcasts = useMemo(
@@ -311,7 +334,7 @@ export function AppLayout() {
 
   // Chuẩn hệ thống: 1 ngày trong game = 1 phút thực tế (24 phút game mỗi giây thực, đồng bộ từ server tick)
   useEffect(() => {
-    if (isPaused || isDead || isMaintenance) return;
+    if (isPaused || isDead || isMaintenance || isAccountBlocked) return;
     const interval = setInterval(() => {
       tickTime(24);
     }, 1000);
@@ -355,7 +378,7 @@ export function AppLayout() {
     navigate('/login', { replace: true });
   }
 
-  const restrictionContact = gameConfig?.restrictionContact;
+  const restrictionContact = (gameConfig?.restrictionContact as any) ?? (user as any)?.restrictionContact;
 
   return (
     <div className="flex h-dvh min-h-dvh w-full overflow-hidden bg-surface-50 text-slate-900 font-sans">
@@ -398,73 +421,68 @@ export function AppLayout() {
           </div>
         </div>
       )}
-      {isRestricted && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-3xl border border-rose-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-2xl">🚫</div>
-              <div className="min-w-0 flex-1">
-                <h2 className="text-lg font-heading font-black text-slate-900">
-                  {restrictionContact?.title || 'Tài khoản đang bị hạn chế'}
-                </h2>
-                <p className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
-                  {restrictionContact?.message ||
-                    'Tài khoản của bạn đang bị hạn chế thao tác. Toàn bộ chức năng game đã bị khóa cho đến khi được quản trị viên gỡ hạn chế.'}
-                </p>
-                {user?.restrictionReason ? (
-                  <p className="mt-2 text-sm text-rose-700">
-                    <span className="font-semibold">Lý do/Ghi chú:</span> {user.restrictionReason}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-
-            {restrictionContact?.enabled !== false && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Thông tin liên hệ hỗ trợ gỡ hạn chế</div>
-                <div className="space-y-1.5 text-sm text-slate-800">
-                  {restrictionContact?.email ? (
-                    <div><span className="font-semibold text-slate-600">Email:</span> {restrictionContact.email}</div>
+      {isAccountBlocked && (() => {
+        const isBanned = user?.status === 'banned';
+        const defaultTitle = isBanned ? 'Tài khoản đã bị khóa' : 'Tài khoản đang bị hạn chế';
+        const defaultMessage = isBanned
+          ? 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.'
+          : 'Tài khoản của bạn đang bị hạn chế thao tác. Vui lòng liên hệ quản trị viên để được hỗ trợ gỡ hạn chế.';
+        const title = (restrictionContact?.title && String(restrictionContact.title).trim()) || defaultTitle;
+        const message = (restrictionContact?.message && String(restrictionContact.message).trim()) || defaultMessage;
+        const hotline = restrictionContact?.hotline ?? restrictionContact?.phone ?? '';
+        const otherChannel = restrictionContact?.otherChannel ?? restrictionContact?.other ?? '';
+        const showContacts =
+          restrictionContact?.enabled !== false &&
+          (!!restrictionContact?.email || !!hotline || !!restrictionContact?.zalo || !!restrictionContact?.discord || !!otherChannel);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-lg rounded-3xl border border-rose-200 bg-white p-6 shadow-2xl space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-2xl">{isBanned ? '🔒' : '🚫'}</div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-lg font-heading font-black text-slate-900">{title}</h2>
+                  <p className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">{message}</p>
+                  {accountBlockReason ? (
+                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50/70 px-3 py-2 text-sm text-rose-800">
+                      <span className="font-semibold">Lý do:</span> {accountBlockReason}
+                    </div>
                   ) : null}
-                  {restrictionContact?.phone ? (
-                    <div><span className="font-semibold text-slate-600">Hotline/SĐT:</span> {restrictionContact.phone}</div>
-                  ) : null}
-                  {restrictionContact?.zalo ? (
-                    <div><span className="font-semibold text-slate-600">Zalo/Nhắn tin:</span> {restrictionContact.zalo}</div>
-                  ) : null}
-                  {restrictionContact?.discord ? (
-                    <div><span className="font-semibold text-slate-600">Discord/Cộng đồng:</span> {restrictionContact.discord}</div>
-                  ) : null}
-                  {restrictionContact?.other ? (
-                    <div><span className="font-semibold text-slate-600">Khác:</span> {restrictionContact.other}</div>
-                  ) : null}
-                  {!restrictionContact?.email &&
-                    !restrictionContact?.phone &&
-                    !restrictionContact?.zalo &&
-                    !restrictionContact?.discord &&
-                    !restrictionContact?.other && (
-                      <div className="text-slate-600 text-xs">Quản trị viên chưa cấu hình kênh liên hệ cụ thể. Vui lòng liên hệ đội ngũ hỗ trợ/quản trị của hệ thống để được gỡ hạn chế.</div>
-                    )}
                 </div>
               </div>
-            )}
 
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              Tài khoản của bạn hiện <b>không thể thao tác bất kỳ chức năng game</b> nào cho đến khi được gỡ hạn chế. Bạn có thể đăng xuất và quay lại sau khi quản trị viên xử lý.
-            </div>
+              {showContacts ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 text-sm space-y-1.5">
+                  {restrictionContact?.email ? (
+                    <div><span className="font-semibold text-slate-700">Email hỗ trợ:</span> {restrictionContact.email}</div>
+                  ) : null}
+                  {hotline ? (
+                    <div><span className="font-semibold text-slate-700">Số điện thoại / Hotline:</span> {hotline}</div>
+                  ) : null}
+                  {restrictionContact?.zalo ? (
+                    <div><span className="font-semibold text-slate-700">Zalo / Nhắn tin:</span> {restrictionContact.zalo}</div>
+                  ) : null}
+                  {restrictionContact?.discord ? (
+                    <div><span className="font-semibold text-slate-700">Discord / Cộng đồng:</span> {restrictionContact.discord}</div>
+                  ) : null}
+                  {otherChannel ? (
+                    <div><span className="font-semibold text-slate-700">Kênh khác:</span> {otherChannel}</div>
+                  ) : null}
+                </div>
+              ) : null}
 
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
-              >
-                Đăng xuất
-              </button>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  Đăng xuất
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       <DeathSuccessionModal
         open={isDead}
         onCompleted={() => {
@@ -684,8 +702,8 @@ export function AppLayout() {
         <main className="w-full flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6">
           {isMaintenance ? (
             <div className="flex h-full items-center justify-center text-slate-500 text-sm">Hệ thống đang bảo trì. Vui lòng quay lại sau.</div>
-          ) : isRestricted ? (
-            <div className="flex h-full items-center justify-center text-slate-500 text-sm">Tài khoản đang bị hạn chế. Vui lòng xem thông báo và liên hệ quản trị viên để được gỡ.</div>
+          ) : isAccountBlocked ? (
+            <div className="flex h-full items-center justify-center text-slate-500 text-sm">Tài khoản đang bị khóa/hạn chế. Vui lòng xem thông báo để liên hệ hỗ trợ.</div>
           ) : isDead ? (
             <div className="flex h-full items-center justify-center text-slate-500">Nhân vật đã qua đời. Vui lòng hoàn tất kế thừa.</div>
           ) : (
