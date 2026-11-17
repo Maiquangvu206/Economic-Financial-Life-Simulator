@@ -1283,6 +1283,7 @@ function maskSecret(value: unknown): string {
 function normalizeAiConfig(raw: any): any {
   const c = raw && typeof raw === 'object' ? raw : {};
   const endpoints = Array.isArray(c.openaiEndpoints) ? c.openaiEndpoints : [];
+  const geminiKeysRaw = Array.isArray(c.geminiApiKeys) ? c.geminiApiKeys : [];
   return {
     provider: typeof c.provider === 'string' ? c.provider : 'fake',
     failoverChain: typeof c.failoverChain === 'string' ? c.failoverChain : 'openai,gemini,fake',
@@ -1292,13 +1293,25 @@ function normalizeAiConfig(raw: any): any {
     openaiModel: typeof c.openaiModel === 'string' ? c.openaiModel : '',
     openaiApiKey: typeof c.openaiApiKey === 'string' ? c.openaiApiKey : '',
     openaiEndpoints: endpoints.map((e: any) => ({
+      name: typeof e?.name === 'string' ? e.name : '',
       baseUrl: typeof e?.baseUrl === 'string' ? e.baseUrl : (typeof e?.base_url === 'string' ? e.base_url : ''),
       apiKey: typeof e?.apiKey === 'string' ? e.apiKey : (typeof e?.api_key === 'string' ? e.api_key : ''),
       model: typeof e?.model === 'string' ? e.model : '',
+      enabled: e?.enabled !== false,
     })),
     geminiModel: typeof c.geminiModel === 'string' ? c.geminiModel : '',
     geminiApiKey: typeof c.geminiApiKey === 'string' ? c.geminiApiKey : '',
-    geminiApiKeys: Array.isArray(c.geminiApiKeys) ? c.geminiApiKeys.filter((k: any) => typeof k === 'string') : [],
+    geminiApiKeys: geminiKeysRaw.map((k: any) => {
+      if (typeof k === 'string') return { key: k, name: '', enabled: true };
+      if (k && typeof k === 'object') {
+        return {
+          key: typeof k.key === 'string' ? k.key : (typeof k.apiKey === 'string' ? k.apiKey : ''),
+          name: typeof k.name === 'string' ? k.name : '',
+          enabled: k.enabled !== false,
+        };
+      }
+      return { key: '', name: '', enabled: true };
+    }).filter((k: any) => k.key || k.name),
     updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : null,
     note: typeof c.note === 'string' ? c.note : '',
   };
@@ -1310,7 +1323,7 @@ function maskAiConfig(cfg: any): any {
     openaiApiKey: maskSecret(cfg.openaiApiKey),
     openaiEndpoints: (cfg.openaiEndpoints || []).map((e: any) => ({ ...e, apiKey: maskSecret(e.apiKey) })),
     geminiApiKey: maskSecret(cfg.geminiApiKey),
-    geminiApiKeys: (cfg.geminiApiKeys || []).map((k: string) => (k ? '********' : '')),
+    geminiApiKeys: (cfg.geminiApiKeys || []).map((k: any) => (typeof k === 'string' ? (k ? '********' : '') : { ...k, key: maskSecret(k?.key) })),
   };
 }
 
@@ -1322,7 +1335,14 @@ function mergeSecrets(next: any, prev: any): any {
     const pe = prev.openaiEndpoints?.[i] || {};
     return { ...e, apiKey: e.apiKey === '********' ? (pe.apiKey || '') : (e.apiKey || '') };
   });
-  merged.geminiApiKeys = (next.geminiApiKeys || []).map((k: string, i: number) => (k === '********' ? (prev.geminiApiKeys?.[i] || '') : k));
+  merged.geminiApiKeys = (next.geminiApiKeys || []).map((k: any, i: number) => {
+    const pk = prev.geminiApiKeys?.[i];
+    const prevKey = typeof pk === 'string' ? pk : (pk?.key || '');
+    const nextKey = typeof k === 'string' ? k : (k?.key || '');
+    const resolvedKey = nextKey === '********' ? prevKey : nextKey;
+    if (typeof k === 'string') return resolvedKey;
+    return { ...k, key: resolvedKey };
+  });
   return merged;
 }
 
@@ -1331,7 +1351,39 @@ export async function getAiConfigAdmin(req: Request, res: Response): Promise<voi
   const r = await pool.query(`SELECT macro FROM game_state WHERE id = 1`);
   const macro = (r.rows[0]?.macro && typeof r.rows[0].macro === 'object') ? r.rows[0].macro : {};
   const cfg = normalizeAiConfig((macro as any).aiConfig);
-  res.json({ config: maskAiConfig(cfg), applyMode: 'save-only', note: 'Lưu cấu hình vào DB (macro). Để áp dụng runtime cho AI service hiện tại, cần cập nhật biến môi trường và khởi động lại dịch vụ AI (hoặc triển khai cơ chế đồng bộ cấu hình động).' });
+  res.json({
+    config: maskAiConfig(cfg),
+    applyMode: 'auto-apply',
+    note: 'Cấu hình được lưu vào DB và hệ thống sẽ tự áp dụng vào AI service runtime khi lưu (nếu AI service khả dụng). Bạn cũng có thể lưu lại để đồng bộ.',
+  });
+}
+
+async function pushAiConfigToRuntime(cfg: any): Promise<{ applied: boolean; error?: string; detail?: any }> {
+  const baseUrl = (env.AI_SERVICE_URL || '').replace(/\/$/, '');
+  if (!baseUrl) return { applied: false, error: 'AI_SERVICE_URL chưa được cấu hình' };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(2000, env.AI_REQUEST_TIMEOUT_MS || 15000));
+  try {
+    const r = await fetch(`${baseUrl}/v1/ai-admin/config`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(env.AI_SERVICE_TOKEN ? { 'x-ai-token': env.AI_SERVICE_TOKEN } : {}),
+      },
+      body: JSON.stringify({ config: cfg }),
+      signal: controller.signal,
+    });
+    const text = await r.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    if (!r.ok) return { applied: false, error: `AI service trả về ${r.status}`, detail: data };
+    if (data && data.applied === false) return { applied: false, error: data.error || 'AI service không áp dụng được cấu hình', detail: data };
+    return { applied: true, detail: data };
+  } catch (e: any) {
+    return { applied: false, error: e?.name === 'AbortError' ? 'Timeout khi áp dụng cấu hình AI runtime' : 'Không thể kết nối AI service để áp dụng cấu hình', detail: String(e?.message || e) };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function updateAiConfigAdmin(req: Request, res: Response): Promise<void> {
@@ -1363,7 +1415,18 @@ export async function updateAiConfigAdmin(req: Request, res: Response): Promise<
     });
     await client.query('COMMIT');
 
-    res.json({ ok: true, config: maskAiConfig(nextCfg), applyMode: 'save-only' });
+    // Tự áp dụng cấu hình vào AI service runtime (best-effort). DB đã lưu thành công.
+    const apply = await pushAiConfigToRuntime(nextCfg);
+    res.json({
+      ok: true,
+      config: maskAiConfig(nextCfg),
+      applyMode: apply.applied ? 'saved-and-applied' : 'saved-only',
+      applied: apply.applied,
+      applyError: apply.error ?? null,
+      note: apply.applied
+        ? 'Đã lưu cấu hình và áp dụng vào AI service runtime.'
+        : `Đã lưu cấu hình vào DB nhưng chưa áp dụng runtime: ${apply.error || 'không rõ lỗi'}.`,
+    });
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;

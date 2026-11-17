@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -20,6 +21,9 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     provider = build_provider(settings)
     app.state.provider = provider
+    app.state.runtime_settings = settings
+    app.state.runtime_config_source = "env"
+    app.state.runtime_config_applied_at = time.time()
     logger.info("AI service starting (provider=%s)", provider.name)
     yield
 
