@@ -31,15 +31,21 @@ export class TaxService {
   constructor(private readonly repository = taxRepository) {}
 
   async getOverview(userId: string, dbOverride?: Db): Promise<TaxOverviewExtDto> {
-    // Tự động quyết toán thuế cá nhân năm hiện tại (1 lần/năm) dựa trên công việc đang giữ.
+    // Tự động quyết toán thuế cá nhân năm hiện tại (1 lần/năm, theo năm game) dựa trên công việc đang giữ.
     if (!dbOverride) {
       return withTransaction(async (client) => {
         const character = await requireCharacterByUserId(client, userId);
-        await this.ensureAnnualPersonalTax(client, userId, character.id, new Date().getFullYear());
+        const currentYear = await this.getCurrentGameYear(client);
+        await this.ensureAnnualPersonalTax(client, userId, character.id, currentYear);
         return this.buildOverview(userId, client);
       });
     }
     return this.buildOverview(userId, dbOverride);
+  }
+
+  private async getCurrentGameYear(db: Db): Promise<number> {
+    const yearRow = await (db as any).query(`SELECT current_year FROM game_state WHERE id = 1`);
+    return Number(yearRow.rows[0]?.current_year ?? GAME_START_YEAR);
   }
 
   private async buildOverview(userId: string, db: Db): Promise<TaxOverviewExtDto> {
@@ -199,9 +205,17 @@ export class TaxService {
     return assessmentId;
   }
 
-  async assess(userId: string, taxYear: number): Promise<TaxOverviewExtDto> {
+  async assess(userId: string, _taxYear?: number): Promise<TaxOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireCharacterByUserId(client, userId);
+      const taxYear = await this.getCurrentGameYear(client);
+      const existing = await this.repository.getAssessmentForCharacterYear(character.id, taxYear, client);
+      if (existing) {
+        throw AppError.conflict(
+          'tax_already_settled',
+          `Bạn đã quyết toán thuế cho năm ${taxYear} rồi.`,
+        );
+      }
       await this.ensureAnnualPersonalTax(client, userId, character.id, taxYear);
       return this.buildOverview(userId, client);
     });

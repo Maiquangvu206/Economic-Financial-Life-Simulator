@@ -59,14 +59,33 @@ export async function getMacroSnapshot(req: Request, res: Response): Promise<voi
     const [stateRes, moneyRes, marketRes, ccuRes, casesRes] = await Promise.all([
       client.query(`SELECT current_day, current_year, season, macro FROM game_state WHERE id = 1`),
       client.query(
-        `SELECT COALESCE(SUM(balance_minor), 0)::bigint AS total
-         FROM ledger_accounts
-         WHERE currency = 'VND' AND (owner_type IN ('character','company','escrow','clearing') OR (owner_type = 'government' AND balance_minor > 0))`,
+        `SELECT (
+            COALESCE((
+              SELECT SUM(la.balance_minor)::bigint
+              FROM ledger_accounts la
+              JOIN characters c ON c.id = la.owner_id AND la.owner_type = 'character'
+              JOIN users u ON u.id = c.user_id
+              WHERE u.role = 'player' AND la.currency = 'VND'
+            ), 0)
+          + COALESCE((
+              SELECT SUM(la.balance_minor)::bigint
+              FROM ledger_accounts la
+              JOIN companies co ON co.id = la.owner_id AND la.owner_type = 'company'
+              JOIN characters c ON c.id = co.owner_character_id
+              JOIN users u ON u.id = c.user_id
+              WHERE u.role = 'player' AND la.currency = 'VND'
+            ), 0)
+          )::bigint AS total`,
       ),
       client.query(`
         SELECT COALESCE(SUM(effective_company_valuation(c.id)), 0)::bigint AS total FROM companies c WHERE c.status = 'ipo' OR c.ticker_symbol IS NOT NULL
       `),
-      client.query(`SELECT COUNT(*)::int AS total FROM characters WHERE user_id IS NOT NULL AND is_alive = true`),
+      client.query(
+        `SELECT COUNT(*)::int AS total
+         FROM characters c
+         JOIN users u ON u.id = c.user_id
+         WHERE u.role = 'player' AND COALESCE(c.is_alive, true) = true`,
+      ),
       client.query(
         `SELECT COUNT(*)::int AS total
          FROM information_schema.tables

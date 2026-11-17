@@ -88,7 +88,7 @@ export function MacroDashboardPage() {
         <AdminStat label="Tổng tiền lưu thông" value={isLoading ? '…' : formatCompact(moneySupply)} />
         <AdminStat label="Lạm phát" value={isLoading ? '…' : `${inflation.toFixed(2)}%`} />
         <AdminStat label="Chỉ số giá tiêu dùng" value={isLoading ? '…' : cpi.toFixed(1)} />
-        <AdminStat label="Nhân vật sống (có user)" value={isLoading ? '…' : String(ccu)} />
+        <AdminStat label="Nhân vật người chơi" value={isLoading ? '…' : String(ccu)} />
         <AdminStat label="Vốn hóa sàn" value={isLoading ? '…' : formatCompact(marketCap)} />
         <AdminStat label="Vụ án đang mở" value={isLoading ? '…' : String(cases)} tone={cases > 0 ? 'warning' : 'default'} />
         <AdminStat label="NGÀY GAME HIỆN TẠI" value={isLoading ? '…' : String(tick)} />
