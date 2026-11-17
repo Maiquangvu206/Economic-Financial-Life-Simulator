@@ -1,0 +1,22 @@
+# Redis low-RAM example for ~3.2 GB RAM host (EFLS)
+# Place in /etc/redis/redis.conf.d/efls.conf or merge into redis.conf
+
+bind 127.0.0.1 ::1
+port 6379
+protected-mode yes
+supervised systemd
+
+# Keep memory bounded
+maxmemory 96mb
+# Choose policy based on realtime usage; if unsure start with noeviction and monitor
+maxmemory-policy noeviction
+
+# Persistence: adjust for your durability needs (AOF/RDB). For small host, avoid aggressive fsync.
+save 900 1
+save 300 10
+save 60 10000
+appendonly no
+
+# Reduce overhead
+tcp-keepalive 300
+timeout 0

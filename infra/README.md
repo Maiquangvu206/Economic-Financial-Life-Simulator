@@ -23,7 +23,11 @@ pnpm ai:dev            # AI service (cửa sổ riêng)
 Migration runner trong compose áp dụng mọi `*.sql` trừ `*.down.sql`, theo thứ tự tên file.
 Đây là tiện ích dev; production dùng pipeline migration có version table.
 
-## Deployment shape (chưa dựng)
+## Production deployment (low-RAM / self-hosted)
+
+For a lightweight Ubuntu host (Nginx + PM2 + PostgreSQL + Redis native, static `dist/`, Cloudflare Tunnel public, Tailscale-only admin), see **`deploy/README.md`** and templates in `deploy/`.
+
+## Deployment shape (reference)
 
 ```
 Internet

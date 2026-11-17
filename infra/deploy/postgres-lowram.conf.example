@@ -1,0 +1,25 @@
+# PostgreSQL low-RAM tuning example for ~3.2 GB RAM host (EFLS)
+# Merge into postgresql.conf or a conf.d include (e.g. /etc/postgresql/*/main/conf.d/efls-lowram.conf)
+# Validate with `SHOW ...;` and monitor memory/swap.
+
+listen_addresses = 'localhost'
+max_connections = 40
+
+# Memory (conservative)
+shared_buffers = 128MB
+effective_cache_size = 512MB
+work_mem = 4MB
+maintenance_work_mem = 64MB
+temp_buffers = 8MB
+
+# WAL/checkpoints (reasonable defaults for small SSD)
+wal_buffers = 4MB
+checkpoint_completion_target = 0.9
+
+# Logging (lightweight)
+log_min_duration_statement = 500ms
+log_line_prefix = '%m [%p] %u@%d '
+
+# Autovacuum (important for chat_messages growth)
+autovacuum = on
+track_counts = on

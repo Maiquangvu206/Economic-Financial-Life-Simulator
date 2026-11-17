@@ -25,6 +25,8 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:banking": "node scripts/smoke-banking.mjs",
     "loadtest": "node scripts/loadtest.mjs",
+    "db:cleanup:demo": "node scripts/cleanup-demo-data.mjs",
+    "chat:retention": "node scripts/chat-retention.mjs",
     "ai:dev": "cd ai && uvicorn app.main:app --reload --port 8000",
     "ai:test": "cd ai && pytest"
   },

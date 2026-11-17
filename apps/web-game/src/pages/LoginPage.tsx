@@ -258,149 +258,142 @@ export function LoginPage() {
 
           {/* Form panel (đăng nhập/đăng ký) */}
           <div className="p-7 sm:p-9">
-          <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setError(null);
-              }}
-              onMouseDown={(e) => e.preventDefault()}
-              className={`flex-1 rounded-lg px-3 py-2 transition ${
-                mode === 'login'
-                  ? 'bg-white text-emerald-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Đăng nhập
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('register');
-                setError(null);
-              }}
-              onMouseDown={(e) => e.preventDefault()}
-              className={`flex-1 rounded-lg px-3 py-2 transition ${
-                mode === 'register'
-                  ? 'bg-white text-emerald-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Tạo tài khoản
-            </button>
-          </div>
+            <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('login');
+                  setError(null);
+                }}
+                onMouseDown={(e) => e.preventDefault()}
+                className={`flex-1 rounded-lg px-3 py-2 transition ${mode === 'login'
+                    ? 'bg-white text-emerald-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                  }`}
+              >
+                Đăng nhập
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('register');
+                  setError(null);
+                }}
+                onMouseDown={(e) => e.preventDefault()}
+                className={`flex-1 rounded-lg px-3 py-2 transition ${mode === 'register'
+                    ? 'bg-white text-emerald-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                  }`}
+              >
+                Tạo tài khoản
+              </button>
+            </div>
 
-          <div className="mt-6">
-            <h2 className="text-lg font-semibold text-slate-900">
-              {staffDestination
-                ? 'Cổng đăng nhập quản trị'
-                : mode === 'login'
-                  ? 'Chào mừng trở lại'
-                  : 'Bắt đầu cuộc sống mới'}
-            </h2>
-            {staffDestination ? (
-              <p className="mt-1 text-xs text-slate-500">
-                Đăng nhập bằng tài khoản quản trị viên hoặc điều hành viên. Hệ thống sẽ tự mở bảng điều khiển.
-              </p>
-            ) : null}
-          </div>
-
-          {/* Thông báo hệ thống hiển thị ở bảng riêng bên cạnh (không đặt trong phần đăng nhập) */}
-
-          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-            {mode === 'register' ? (
-              <>
-                <label className="block text-xs font-medium text-slate-600">
-                  Tên công dân
-                  <input
-                    required
-                    minLength={3}
-                    maxLength={32}
-                    value={username}
-                    onChange={(event) => setUsername(event.target.value)}
-                    placeholder="Nguyễn Văn An"
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-
-                <label className="block text-xs font-medium text-slate-600">
-                  Họ và tên nhân vật
-                  <input
-                    required
-                    minLength={2}
-                    maxLength={80}
-                    value={fullName}
-                    onChange={(event) => setFullName(event.target.value)}
-                    placeholder="Nguyễn Văn An"
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-
-                <label className="block text-xs font-medium text-slate-600">
-                  Nơi sinh
-                  <select
-                    value={birthplaceCode}
-                    onChange={(event) => setBirthplaceCode(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
-                  >
-                    {PROVINCES_34_STATIC.map((p) => (
-                      <option key={p.code} value={p.code}>
-                        {p.code} · {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            ) : null}
-
-            <label className="block text-xs font-medium text-slate-600">
-              Email
-              <input
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="ban@efls.vn"
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
-              />
-            </label>
-
-            <label className="block text-xs font-medium text-slate-600">
-              Mật khẩu
-              <input
-                type="password"
-                required
-                minLength={8}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Tối thiểu 8 ký tự"
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
-              />
-            </label>
-
-            {error ? (
-              <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
-                {error}
-              </p>
-            ) : null}
-
-            <button
-              type="submit"
-              disabled={submitting || redirecting}
-              className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/25 transition hover:brightness-105 disabled:opacity-60"
-            >
-              {redirecting
-                ? 'Đang mở bảng điều khiển…'
-                : submitting
-                  ? 'Đang xử lý…'
+            <div className="mt-6">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {staffDestination
+                  ? 'Cổng đăng nhập quản trị'
                   : mode === 'login'
-                    ? 'Đăng nhập'
-                    : 'Tạo tài khoản & nhập thành phố'}
-            </button>
-          </form>
+                    ? 'Chào mừng trở lại'
+                    : 'Bắt đầu cuộc sống mới'}
+              </h2>
+            </div>
+
+            {/* Thông báo hệ thống hiển thị ở bảng riêng bên cạnh (không đặt trong phần đăng nhập) */}
+
+            <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+              {mode === 'register' ? (
+                <>
+                  <label className="block text-xs font-medium text-slate-600">
+                    Tên công dân
+                    <input
+                      required
+                      minLength={3}
+                      maxLength={32}
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value)}
+                      placeholder="Nguyễn Văn An"
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </label>
+
+                  <label className="block text-xs font-medium text-slate-600">
+                    Họ và tên nhân vật
+                    <input
+                      required
+                      minLength={2}
+                      maxLength={80}
+                      value={fullName}
+                      onChange={(event) => setFullName(event.target.value)}
+                      placeholder="Nguyễn Văn An"
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </label>
+
+                  <label className="block text-xs font-medium text-slate-600">
+                    Nơi sinh
+                    <select
+                      value={birthplaceCode}
+                      onChange={(event) => setBirthplaceCode(event.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                    >
+                      {PROVINCES_34_STATIC.map((p) => (
+                        <option key={p.code} value={p.code}>
+                          {p.code} · {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : null}
+
+              <label className="block text-xs font-medium text-slate-600">
+                Email
+                <input
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="ban@efls.vn"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+
+              <label className="block text-xs font-medium text-slate-600">
+                Mật khẩu
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Tối thiểu 8 ký tự"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+
+              {error ? (
+                <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
+                  {error}
+                </p>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={submitting || redirecting}
+                className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/25 transition hover:brightness-105 disabled:opacity-60"
+              >
+                {redirecting
+                  ? 'Đang mở bảng điều khiển…'
+                  : submitting
+                    ? 'Đang xử lý…'
+                    : mode === 'login'
+                      ? 'Đăng nhập'
+                      : 'Tạo tài khoản & nhập thành phố'}
+              </button>
+            </form>
           </div>
         </div>
       </div>
