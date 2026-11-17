@@ -48,12 +48,6 @@ export function AdminLoginPage() {
     }
   }
 
-  function fillCredentials(testEmail: string, testPass: string) {
-    setEmail(testEmail);
-    setPassword(testPass);
-    setError(null);
-  }
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 text-slate-800">
       <div className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-8 shadow-sm">
@@ -80,7 +74,7 @@ export function AdminLoginPage() {
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@efls.local"
+              placeholder="Nhập email quản trị..."
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-800 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
             />
           </div>
@@ -115,40 +109,6 @@ export function AdminLoginPage() {
             {submitting ? 'Đang xác thực…' : 'Đăng nhập Quản trị'}
           </button>
         </form>
-
-        {/* Quick test accounts */}
-        <div className="mt-6 border-t border-slate-100 pt-5">
-          <p className="text-[11px] font-semibold text-slate-500">Tài khoản test mặc định:</p>
-          <div className="mt-2.5 space-y-2">
-            <button
-              type="button"
-              onClick={() => fillCredentials('admin@efls.local', 'Admin1234!')}
-              className="w-full flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-indigo-50/50 hover:border-indigo-200"
-            >
-              <div>
-                <span className="font-semibold text-indigo-700">admin@efls.local</span>
-                <span className="ml-1 text-[10px] text-slate-400 font-mono">(Admin1234!)</span>
-              </div>
-              <span className="rounded-md bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
-                ADMIN
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => fillCredentials('moderator@efls.local', 'Admin1234!')}
-              className="w-full flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-emerald-50/50 hover:border-emerald-200"
-            >
-              <div>
-                <span className="font-semibold text-emerald-700">moderator@efls.local</span>
-                <span className="ml-1 text-[10px] text-slate-400 font-mono">(Admin1234!)</span>
-              </div>
-              <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                MODERATOR
-              </span>
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
