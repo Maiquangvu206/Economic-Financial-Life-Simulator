@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from app.providers.base import LLMProvider
@@ -15,7 +16,51 @@ class FakeProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
     ) -> dict[str, Any]:
-        del system_prompt, user_prompt
+        del system_prompt
+        if task == "recruitment":
+            try:
+                request = json.loads(user_prompt)
+            except (TypeError, json.JSONDecodeError):
+                request = {}
+            role = str(request.get("role_focus") or "Nhân viên vận hành").strip()
+            industry = str(request.get("industry") or "doanh nghiệp").strip()
+            company = str(request.get("company_id") or request.get("company_name") or "").strip()
+            headcount = max(1, min(20, int(request.get("headcount") or 3)))
+            profiles = [
+                ("intern", "thực tập, nghiên cứu dữ liệu", 5_000_000, 72, "Cần người hướng dẫn và mục tiêu học việc rõ ràng.", "Có tư duy học hỏi, phù hợp xử lý nghiên cứu và tác vụ nền."),
+                ("junior", "triển khai công việc hằng ngày", 8_000_000, 78, "Cần đào tạo quy trình nội bộ.", "Có thể nhanh chóng đảm nhận các đầu việc vận hành thường nhật."),
+                ("mid", "phân tích và cải tiến quy trình", 12_000_000, 84, "Cần thống nhất quyền tự chủ và chỉ tiêu.", "Có kinh nghiệm phân tích số liệu và đề xuất cải tiến thực tế."),
+                ("senior", "quản lý khách hàng và phối hợp liên phòng ban", 18_000_000, 88, "Chi phí cao hơn, kỳ vọng phạm vi phụ trách rõ ràng.", "Có thể xử lý tình huống phức tạp và phối hợp nhiều nhóm."),
+                ("lead", "dẫn dắt nhóm và xây dựng chiến lược", 25_000_000, 91, "Cần trao quyền phù hợp với trách nhiệm quản lý.", "Có kinh nghiệm xây đội ngũ và chịu trách nhiệm kết quả dài hạn."),
+                ("junior", "kiểm soát chất lượng và tuân thủ", 9_000_000, 80, "Cần tiếp cận quy định và checklist hiện có.", "Bổ sung góc nhìn kiểm soát, giảm sai sót khi mở rộng hoạt động."),
+                ("mid", "đối tác và phát triển thị trường", 14_000_000, 86, "Hiệu quả phụ thuộc vào mục tiêu thị trường cụ thể.", "Có thế mạnh xây quan hệ và tìm cơ hội tăng trưởng mới."),
+                ("senior", "đào tạo và cố vấn chuyên môn", 20_000_000, 87, "Cần cân đối thời gian cố vấn với khối lượng thực thi.", "Có thể nâng năng lực chuyên môn cho các thành viên khác."),
+            ]
+            names = [
+                "Nguyễn Minh An", "Trần Thu Hà", "Lê Quốc Bảo", "Phạm Gia Linh",
+                "Võ Hoàng Nam", "Đặng Khánh Vy", "Bùi Đức Thành", "Đỗ Ngọc Mai",
+                "Hồ Anh Tuấn", "Ngô Phương Thảo", "Dương Nhật Minh", "Lý Thanh Trúc",
+                "Mai Quang Huy", "Phan Bảo Ngọc", "Cao Minh Khang", "Tạ Thùy Dung",
+                "Vũ Hải Đăng", "Đinh Tú Anh", "Trương Quốc Khánh", "Lâm Yến Nhi",
+            ]
+            offset = sum(ord(char) for char in f"{company}:{role}:{industry}") % len(profiles)
+            candidates = []
+            for index in range(headcount):
+                seniority, specialty, salary, fit, risk, reason = profiles[(offset + index) % len(profiles)]
+                candidates.append({
+                    "full_name": names[(offset + index) % len(names)],
+                    "role_title": f"{role} — {specialty}",
+                    "seniority": seniority,
+                    "proposed_salary_minor": salary,
+                    "fit_score": fit,
+                    "risk_note": risk,
+                    "reason": f"Phù hợp ngành {industry}; {reason}",
+                })
+            return {
+                "rationale": f"Danh sách cân đối giữa thực thi, chuyên môn và dẫn dắt cho vị trí {role} tại doanh nghiệp ngành {industry}.",
+                "candidates": candidates,
+            }
+
         responses: dict[str, dict[str, Any]] = {
             "judge": {
                 "verdict": "settlement",
@@ -48,38 +93,6 @@ class FakeProvider(LLMProvider):
                 "rationale": (
                     "Fake provider: giữ nguyên trạng thái để tránh thay đổi chưa kiểm chứng."
                 ),
-            },
-            "recruitment": {
-                "rationale": "Đề xuất ứng viên theo nhu cầu vận hành; người chơi cần duyệt trước khi tuyển.",
-                "candidates": [
-                    {
-                        "full_name": "Nguyễn Minh An",
-                        "role_title": "Nhân viên vận hành",
-                        "seniority": "junior",
-                        "proposed_salary_minor": 8_000_000,
-                        "fit_score": 78,
-                        "risk_note": "Cần đào tạo quy trình nội bộ.",
-                        "reason": "Phù hợp vận hành cơ bản, chi phí hợp lý.",
-                    },
-                    {
-                        "full_name": "Trần Thu Hà",
-                        "role_title": "Chuyên viên kinh doanh",
-                        "seniority": "mid",
-                        "proposed_salary_minor": 12_000_000,
-                        "fit_score": 82,
-                        "risk_note": "Kỳ vọng thưởng theo doanh số.",
-                        "reason": "Kinh nghiệm bán hàng, hỗ trợ tăng doanh thu.",
-                    },
-                    {
-                        "full_name": "Lê Quốc Bảo",
-                        "role_title": "Kế toán tổng hợp",
-                        "seniority": "mid",
-                        "proposed_salary_minor": 14_000_000,
-                        "fit_score": 80,
-                        "risk_note": "Cần kiểm soát tuân thủ và chứng từ.",
-                        "reason": "Hỗ trợ sổ cái, báo cáo và tối ưu chi phí hợp lệ.",
-                    },
-                ],
             },
             "education_quiz": {
                 "title": "Bài kiểm tra tốt nghiệp sớm (cơ bản)",

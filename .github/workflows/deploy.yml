@@ -60,4 +60,27 @@ jobs:
             docker compose -p "$previous_project" down
           fi
           docker compose up -d --build
+          web_app_id="$(docker compose ps -q web-app)"
+          if [[ -z "$web_app_id" ]]; then
+            echo "web-app container was not created."
+            exit 1
+          fi
+          for attempt in $(seq 1 30); do
+            web_app_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$web_app_id")"
+            if [[ "$web_app_health" == "healthy" ]]; then
+              echo "web-app healthcheck passed."
+              break
+            fi
+            if [[ "$web_app_health" == "unhealthy" || "$web_app_health" == "missing" ]]; then
+              echo "web-app failed healthcheck (status: $web_app_health)."
+              docker compose logs --tail=100 web-app
+              exit 1
+            fi
+            if [[ "$attempt" == "30" ]]; then
+              echo "Timed out waiting for web-app healthcheck (status: $web_app_health)."
+              docker compose logs --tail=100 web-app
+              exit 1
+            fi
+            sleep 2
+          done
           docker compose ps

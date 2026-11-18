@@ -29,7 +29,7 @@ JUDGE_PROMPT_VERSION = "judge@v1"
 NEWS_PROMPT_VERSION = "news@v1"
 NPC_PROMPT_VERSION = "npc_merchant@v1"
 GM_PROMPT_VERSION = "gm_economy@v1"
-RECRUITMENT_PROMPT_VERSION = "recruitment@v1"
+RECRUITMENT_PROMPT_VERSION = "recruitment@v2"
 EDUCATION_QUIZ_PROMPT_VERSION = "education_quiz@v1"
 UNDERWORLD_SWEEP_PROMPT_VERSION = "underworld_sweep@v1"
 
