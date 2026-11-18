@@ -949,6 +949,29 @@ export function BusinessPage() {
                     </div>
 
                     <div className="space-y-2 rounded-lg border border-amber-100 bg-white p-2.5">
+                      <p className="text-[11px] font-semibold text-slate-700">Ghi bút toán</p>
+                      <p className="text-[11px] text-slate-500">OPEX, lương, thuế, phạt, chi phí khác và điều chỉnh sẽ trừ tiền từ quỹ công ty. Doanh thu được hệ thống chốt tự động theo kỳ 30 ngày.</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-medium text-slate-600">Loại bút toán</span>
+                          <select value={entryType} onChange={(e) => setEntryType(e.target.value as typeof entryType)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
+                            {ENTRY_TYPES.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
+                          </select>
+                        </label>
+                        <GameInput label="Số tiền (VND)" type="number" min={1} value={entryAmount} onChange={(e) => setEntryAmount(e.target.value)} />
+                        <GameInput label="Số tiền khai báo (để trống = số tiền thực)" type="number" min={0} value={declaredAmount} onChange={(e) => setDeclaredAmount(e.target.value)} />
+                        <GameInput label="Diễn giải" value={entryDesc} onChange={(e) => setEntryDesc(e.target.value)} placeholder="VD: tiền thuê văn phòng" />
+                      </div>
+                      <label className="flex items-center gap-2 text-[11px] text-slate-600">
+                        <input type="checkbox" checked={entryEvasion} onChange={(e) => setEntryEvasion(e.target.checked)} />
+                        Đánh dấu bút toán có dấu hiệu khai sai/trốn thuế
+                      </label>
+                      <GameButton variant="outline" onClick={() => addLedgerEntry.mutate(selectedCompany.id)} disabled={addLedgerEntry.isPending || selectedCompany.status === 'bankrupt' || !(Number(entryAmount) > 0)}>
+                        {addLedgerEntry.isPending ? 'Đang ghi...' : 'Ghi bút toán'}
+                      </GameButton>
+                    </div>
+
+                    <div className="space-y-2 rounded-lg border border-amber-100 bg-white p-2.5">
                       <p className="text-[11px] font-semibold text-slate-700">Khai và nộp thuế kỳ 30 ngày</p>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <GameInput label="Kỳ (để trống = kỳ gần nhất chưa khai)" value={filingPeriod} onChange={(e) => setFilingPeriod(e.target.value)} placeholder="VD: 2000-01" />

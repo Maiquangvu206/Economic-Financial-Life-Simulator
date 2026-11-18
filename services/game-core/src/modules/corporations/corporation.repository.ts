@@ -736,9 +736,17 @@ export class CorporationRepository {
   async ledgerTotals(companyId: string, db: Db = this.db): Promise<any> {
     const r = await db.query(
       `SELECT
-         COALESCE(SUM(CASE WHEN entry_type = 'revenue' THEN amount_minor ELSE 0 END),0)::bigint AS revenue,
+         (
+           COALESCE((SELECT SUM(actual_revenue_minor) FROM company_revenue_settlements WHERE company_id = $1), 0)
+           + COALESCE((SELECT SUM(amount_minor) FROM company_ledger_entries
+                       WHERE company_id = $1 AND entry_type = 'revenue' AND ledger_kind <> 'ACTUAL'), 0)
+         )::bigint AS revenue,
          COALESCE(SUM(CASE WHEN entry_type IN ('opex','payroll','tax','fine','bribe','other') THEN amount_minor ELSE 0 END),0)::bigint AS expense,
-         COALESCE(SUM(CASE WHEN entry_type = 'revenue' THEN declared_amount_minor ELSE 0 END),0)::bigint AS "declaredRevenue",
+         (
+           COALESCE((SELECT SUM(actual_revenue_minor) FROM company_revenue_settlements WHERE company_id = $1), 0)
+           + COALESCE((SELECT SUM(declared_amount_minor) FROM company_ledger_entries
+                       WHERE company_id = $1 AND entry_type = 'revenue' AND ledger_kind <> 'ACTUAL'), 0)
+         )::bigint AS "declaredRevenue",
          COALESCE(SUM(CASE WHEN entry_type IN ('opex','payroll','tax','fine','bribe','other') THEN declared_amount_minor ELSE 0 END),0)::bigint AS "declaredExpense"
        FROM company_ledger_entries WHERE company_id = $1`,
       [companyId],
