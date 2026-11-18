@@ -111,6 +111,11 @@ export const SavingsWithdrawRequestSchema = z.object({
 });
 export type SavingsWithdrawRequest = z.infer<typeof SavingsWithdrawRequestSchema>;
 
+export const SavingsWithdrawInterestRequestSchema = z.object({
+  depositId: IdSchema,
+});
+export type SavingsWithdrawInterestRequest = z.infer<typeof SavingsWithdrawInterestRequestSchema>;
+
 /** @deprecated use SavingsDepositRequestSchema/SavingsWithdrawRequestSchema */
 export const SavingsRequestSchema = z.object({
   amount: MoneySchema,

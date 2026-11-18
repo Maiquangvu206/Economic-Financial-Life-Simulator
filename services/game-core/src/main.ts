@@ -5,11 +5,18 @@ import { logger } from './shared/logger.js';
 import { auctionService } from './modules/auctions/auction.service.js';
 import { provinceLandAuctionService } from './modules/auctions/provinceLandAuction.service.js';
 import { underworldService } from './modules/underworld/underworld.service.js';
+import { syncSavedAiConfigToRuntime } from './modules/admin/admin.integration.js';
 
 const app = createApp();
 
 const server = app.listen(env.CORE_PORT, () => {
   logger.info({ port: env.CORE_PORT }, 'game-core listening');
+  void syncSavedAiConfigToRuntime()
+    .then((result) => {
+      if (result.applied) logger.info('Đã khôi phục cấu hình AI đã lưu vào runtime');
+      else if (result.configured) logger.warn({ error: result.error }, 'Không thể khôi phục cấu hình AI đã lưu');
+    })
+    .catch((error) => logger.warn({ error }, 'Đồng bộ cấu hình AI đã lưu thất bại'));
 });
 
 // Tự kết thúc các phiên đấu giá đã hết hạn (Countdown = 0), quét mỗi 60 giây.

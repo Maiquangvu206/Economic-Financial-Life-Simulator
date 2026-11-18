@@ -258,6 +258,32 @@ export function FinancePage() {
     },
   });
 
+  const withdrawSavingsInterest = useMutation({
+    mutationFn: ({ depositId, idempotencyKey }: { depositId: string; idempotencyKey: string }) =>
+      apiRequest('/api/v1/banking/savings/withdraw-interest', {
+        method: 'POST',
+        headers: { 'X-Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ depositId }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['banking', 'overview'] });
+      queryClient.invalidateQueries({ queryKey: ['banking', 'history'] });
+      queryClient.invalidateQueries({ queryKey: ['characters', 'me'] });
+      setConfirmTx(null);
+      toast({
+        title: 'Đã rút lãi thành công',
+        description: `${formatMoney(data?.interest?.amount ?? 0)} đã chuyển vào tiền mặt; gốc vẫn ở trong sổ.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: 'Rút lãi thất bại',
+        description: err.message ?? 'Không thể rút lãi.',
+        variant: 'error',
+      });
+    },
+  });
+
   const lookupTransfer = useMutation({
     mutationFn: (cccd: string) =>
       apiRequest<TransferLookup>(`/api/v1/banking/transfers/lookup?cccd=${encodeURIComponent(cccd.trim())}`),
@@ -308,6 +334,7 @@ export function FinancePage() {
     | { kind: 'transfer'; targetCccd: string; amount: number; message: string; idempotencyKey: string }
     | { kind: 'deposit'; amount: number; termMonths: number; idempotencyKey: string }
     | { kind: 'withdraw'; amount: number; depositId?: string; idempotencyKey: string }
+    | { kind: 'withdrawInterest'; amount: number; depositId: string; idempotencyKey: string }
     | { kind: 'loan'; req: ApplyLoanRequest; amount: number; termMonths: number; ratePct: number; idempotencyKey: string }
   >(null);
 
@@ -315,6 +342,7 @@ export function FinancePage() {
     (confirmTx?.kind === 'transfer' && createTransfer.isPending) ||
     (confirmTx?.kind === 'deposit' && depositSavings.isPending) ||
     (confirmTx?.kind === 'withdraw' && withdrawSavings.isPending) ||
+    (confirmTx?.kind === 'withdrawInterest' && withdrawSavingsInterest.isPending) ||
     (confirmTx?.kind === 'loan' && applyLoan.isPending);
 
   async function executeConfirmTx() {
@@ -339,6 +367,13 @@ export function FinancePage() {
     if (confirmTx.kind === 'withdraw') {
       await withdrawSavings.mutateAsync({
         amount: confirmTx.amount,
+        depositId: confirmTx.depositId,
+        idempotencyKey: confirmTx.idempotencyKey,
+      });
+      return;
+    }
+    if (confirmTx.kind === 'withdrawInterest') {
+      await withdrawSavingsInterest.mutateAsync({
         depositId: confirmTx.depositId,
         idempotencyKey: confirmTx.idempotencyKey,
       });
@@ -1072,6 +1107,21 @@ export function FinancePage() {
                       >
                         Toàn bộ
                       </GameButton>
+                      {d.termMonths === 0 && (
+                        <GameButton
+                          variant="outline"
+                          size="sm"
+                          disabled={withdrawSavingsInterest.isPending || d.interestEarned.amount <= 0}
+                          onClick={() => setConfirmTx({
+                            kind: 'withdrawInterest',
+                            amount: d.interestEarned.amount,
+                            depositId: d.id,
+                            idempotencyKey: createIdempotencyKey(),
+                          })}
+                        >
+                          Rút lãi
+                        </GameButton>
+                      )}
                       <GameButton
                         variant="primary"
                         size="sm"
@@ -1323,6 +1373,23 @@ export function FinancePage() {
         projectedBalanceMinor={confirmTx?.kind === 'withdraw' ? cash + confirmTx.amount : undefined}
         details={confirmTx?.kind === 'withdraw' ? [{ label: 'Tổng tiết kiệm dự kiến', value: formatMoney(Math.max(0, totalSavings - confirmTx.amount)) }] : []}
         warning="Số tiền thực nhận có thể khác nếu phát sinh lãi/phạt theo kỳ hạn và quy tắc rút."
+      />
+
+      <TransactionConfirmModal
+        open={confirmTx?.kind === 'withdrawInterest'}
+        onClose={() => { if (!confirmTxBusy) setConfirmTx(null); }}
+        onConfirm={executeConfirmTx}
+        loading={!!(confirmTx?.kind === 'withdrawInterest' && withdrawSavingsInterest.isPending)}
+        title="Xác nhận rút lãi"
+        transactionType="Rút lãi tiết kiệm"
+        targetLabel="Nguồn nhận"
+        targetValue="Tiền mặt · Gốc vẫn giữ trong sổ không kỳ hạn"
+        amountMinor={confirmTx?.kind === 'withdrawInterest' ? confirmTx.amount : 0}
+        feeOrRateValue="Không mất phí"
+        projectedBalanceLabel="Tiền mặt dự kiến sau giao dịch"
+        projectedBalanceMinor={confirmTx?.kind === 'withdrawInterest' ? cash + confirmTx.amount : undefined}
+        details={confirmTx?.kind === 'withdrawInterest' ? [{ label: 'Tiết kiệm giữ nguyên', value: formatMoney(totalSavings) }] : []}
+        warning="Lãi đã rút sẽ bắt đầu một kỳ tích lũy mới; phần gốc trong sổ không thay đổi."
       />
 
       <TransactionConfirmModal

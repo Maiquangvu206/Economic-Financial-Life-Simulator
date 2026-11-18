@@ -75,7 +75,8 @@ export async function processGmTick(): Promise<{ action: string }> {
     if (action !== 'do_nothing') {
       await client.query(
         `UPDATE game_state SET macro = $1::jsonb, updated_at = now() WHERE id = 1`,
-        [JSON.stringify(next)],
+        // Preserve sibling game_state.macro settings (including saved aiConfig).
+        [JSON.stringify({ ...macro, ...next })],
       );
     }
 

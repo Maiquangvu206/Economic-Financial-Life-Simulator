@@ -5,6 +5,7 @@ import type {
   RepayLoanRequest,
   SavingsDepositRequest,
   SavingsWithdrawRequest,
+  SavingsWithdrawInterestRequest,
 } from '@efls/contracts';
 import { requireActorId } from '../../shared/http/actor.js';
 import { BankingService } from './banking.service.js';
@@ -57,6 +58,13 @@ export class BankingController {
       input.amount.amount,
       input.depositId,
     );
+    res.json(savings);
+  };
+
+  withdrawSavingsInterest = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const input = req.body as SavingsWithdrawInterestRequest;
+    const savings = await this.service.withdrawSavingsInterest(userId, input.depositId);
     res.json(savings);
   };
 

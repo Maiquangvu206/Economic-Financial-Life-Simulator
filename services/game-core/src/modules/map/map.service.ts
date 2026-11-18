@@ -3,6 +3,7 @@ import { AppError } from '../../shared/http/errors.js';
 import { withTransaction } from '../../shared/db/tx.js';
 import { mapRepository, type MapRoadInput } from './map.repository.js';
 import type { PutMapRequest, PutMapResponse } from '@efls/contracts';
+import { defaultProvinceLandPrice } from './provinceLandPrices.js';
 
 function uuidFromSeed(seed: string): string {
   let h1 = 0xdeadbeef;
@@ -51,7 +52,7 @@ export class MapService {
           y: n.y,
           zoneType: n.zone,
           name: n.name,
-          landPriceMinor: savedPrices.get(`${n.x}-${n.y}`) ?? 0,
+          landPriceMinor: savedPrices.get(`${n.x}-${n.y}`) ?? defaultProvinceLandPrice(n.zone),
         })),
         roads: generated.roads.map((r) => ({
           nodeId: nodeIdByCoord.get(`${r.x}-${r.y}`)!,
@@ -63,7 +64,12 @@ export class MapService {
       };
     }
     const map = await this.repository.getMap();
-    return { ...map, provinceCode: '001', provinceName: 'Thành phố Hà Nội' };
+    return {
+      ...map,
+      nodes: map.nodes.map((node) => ({ ...node, landPriceMinor: Number(node.landPriceMinor) || 0 })),
+      provinceCode: '001',
+      provinceName: 'Thành phố Hà Nội',
+    };
   }
 
   /**

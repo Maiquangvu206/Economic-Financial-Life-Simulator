@@ -5,6 +5,7 @@ import {
   RepayLoanRequestSchema,
   SavingsDepositRequestSchema,
   SavingsWithdrawRequestSchema,
+  SavingsWithdrawInterestRequestSchema,
 } from '@efls/contracts';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
@@ -36,6 +37,11 @@ bankingRouter.post(
   '/savings/withdraw',
   validateBody(SavingsWithdrawRequestSchema),
   asyncHandler(controller.withdrawSavings),
+);
+bankingRouter.post(
+  '/savings/withdraw-interest',
+  validateBody(SavingsWithdrawInterestRequestSchema),
+  asyncHandler(controller.withdrawSavingsInterest),
 );
 
 // Chuyển khoản theo số tài khoản (STK) - thời gian thực

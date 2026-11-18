@@ -63,7 +63,10 @@ export function MapEditorPage() {
       const data = await adminRequest<MapDto>(`/api/v1/map?province=${encodeURIComponent(code)}`);
       setMap(data);
       const next: Record<string, number> = {};
-      for (const node of data.nodes) next[`${node.x}-${node.y}`] = node.landPriceMinor;
+      for (const node of data.nodes) {
+        const price = Number(node.landPriceMinor);
+        next[`${node.x}-${node.y}`] = Number.isFinite(price) && price >= 0 ? price : 0;
+      }
       setPrices(next);
       // The database stores prices per map tile; rebuild the displayed matrix
       // from those saved tile prices so reopening a province restores its values.
@@ -75,7 +78,10 @@ export function MapEditorPage() {
         for (const row of ZONE_PRICE_ROWS) {
           const zoneNodes = data.nodes.filter((node) => node.zoneType === row.id);
           if (zoneNodes.length === 0) continue;
-          const averagePrice = zoneNodes.reduce((sum, node) => sum + node.landPriceMinor, 0) / zoneNodes.length;
+          const averagePrice = zoneNodes.reduce((sum, node) => {
+            const price = Number(node.landPriceMinor);
+            return sum + (Number.isFinite(price) && price >= 0 ? price : 0);
+          }, 0) / zoneNodes.length;
           matrix[row.id] = String(Math.round(averagePrice));
         }
         setZonePrices((prev) => ({ ...prev, ...matrix }));

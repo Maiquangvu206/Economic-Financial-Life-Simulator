@@ -81,7 +81,8 @@ export class GmService {
       });
 
       if (action !== 'do_nothing') {
-        await this.repository.setMacro(client, next);
+        // Macro shares a JSON object with other persistent settings such as aiConfig.
+        await this.repository.setMacro(client, { ...macro, ...next });
       }
       const id = await this.repository.insertDirective(
         client,

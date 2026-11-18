@@ -413,6 +413,13 @@ export class BankingRepository {
     );
   }
 
+  async resetSavingsDepositAccrual(db: Db, depositId: string, openedAt: Date): Promise<void> {
+    await db.query(
+      `UPDATE savings_deposits SET opened_at = $2, updated_at = now() WHERE id = $1`,
+      [depositId, openedAt],
+    );
+  }
+
   async rolloverSavingsDeposit(
     db: Db,
     input: {

@@ -46,6 +46,14 @@ export function EducationPage() {
   const universities = overview?.universities ?? [];
   const degrees = overview?.degrees ?? [];
   const unlocked = overview?.unlockedFeatures ?? [];
+  const completedDegreeCodes = new Set(
+    degrees
+      .filter((degree) => degree.status === 'graduated' && degree.degreeCode)
+      .map((degree) => degree.degreeCode!.trim().toLowerCase()),
+  );
+  const availableUniversities = universities.filter(
+    (university) => !completedDegreeCodes.has((university.degreeCode ?? '').trim().toLowerCase()),
+  );
 
   async function handleEnroll(universityId: string) {
     setBusy(universityId);
@@ -269,7 +277,7 @@ export function EducationPage() {
 
         <Panel title="Trường đại học / Ngành học" borderColor="emerald">
           <div className="space-y-3">
-            {universities.map((u) => (
+            {availableUniversities.map((u) => (
               <div key={u.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white/50">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -286,7 +294,8 @@ export function EducationPage() {
                 </GameButton>
               </div>
             ))}
-            {universities.length === 0 && <div className="text-center py-4 text-xs text-slate-500">Đang tải danh sách trường...</div>}
+            {universities.length === 0 && <div className="text-center py-4 text-xs text-slate-500">Hiện chưa có trường đại học nào.</div>}
+            {universities.length > 0 && availableUniversities.length === 0 && <div className="text-center py-4 text-xs text-slate-500">Bạn đã hoàn thành các bằng cấp đang được đào tạo.</div>}
           </div>
         </Panel>
       </div>

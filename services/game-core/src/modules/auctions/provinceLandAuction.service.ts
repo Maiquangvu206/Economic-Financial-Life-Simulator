@@ -9,6 +9,7 @@ import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js'
 import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { notify } from '../notifications/notification.service.js';
 import { mapRepository } from '../map/map.repository.js';
+import { defaultProvinceLandPrice } from '../map/provinceLandPrices.js';
 import { pool } from '../../shared/db/pool.js';
 import { provinceLandAuctionRepository, type ProvinceLandAuctionRow } from './provinceLandAuction.repository.js';
 
@@ -144,13 +145,40 @@ export class ProvinceLandAuctionService {
     const existing = await this.repo.listOpenByProvince(code);
     if (existing.length > 0) return false;
 
-    const generated = generateProvinceMap(code);
-    const savedPrices = await mapRepository.getProvinceLandPrices(pool, code);
-    const candidates = generated.nodes.filter((n) => {
-      if (n.zone === 'water' || n.zone === 'park') return false;
-      const p = savedPrices.get(`${n.x}-${n.y}`) ?? 0;
-      return p > 0;
-    });
+    const [map, savedPrices, existingLand] = await Promise.all([
+      code === '001' ? mapRepository.getMap() : Promise.resolve(null),
+      code === '001' ? Promise.resolve(null) : mapRepository.getProvinceLandPrices(pool, code),
+      pool.query<{ node_x: number; node_y: number }>(
+        `SELECT node_x, node_y FROM province_land_properties WHERE province_code = $1`,
+        [code],
+      ),
+    ]);
+    const existingCoords = new Set(existingLand.rows.map((row) => `${row.node_x}-${row.node_y}`));
+    if (code === '001') {
+      const legacyProperties = await pool.query<{ x: number; y: number }>(
+        `SELECT m.x, m.y FROM properties p JOIN map_nodes m ON m.id = p.node_id`,
+      );
+      for (const row of legacyProperties.rows) existingCoords.add(`${row.x}-${row.y}`);
+    }
+
+    const nodes = code === '001'
+      ? (map?.nodes ?? []).map((n) => ({
+          x: n.x,
+          y: n.y,
+          zone: n.zoneType,
+          name: n.name,
+          price: Number(n.landPriceMinor) || 0,
+        }))
+      : generateProvinceMap(code).nodes.map((n) => ({
+          x: n.x,
+          y: n.y,
+          zone: n.zone,
+          name: n.name,
+          price: savedPrices?.get(`${n.x}-${n.y}`) ?? defaultProvinceLandPrice(n.zone),
+        }));
+    const candidates = nodes.filter((n) =>
+      n.zone !== 'water' && n.zone !== 'park' && n.price > 0 && !existingCoords.has(`${n.x}-${n.y}`),
+    );
     if (candidates.length === 0) return false;
 
     // Chuẩn thời gian: 1 phiên đấu giá = 3 ngày game = 3 phút thực
@@ -161,7 +189,7 @@ export class ProvinceLandAuctionService {
     const seedStr = `${code}:${bucket}`;
     for (let i = 0; i < seedStr.length; i += 1) hash = (hash * 31 + seedStr.charCodeAt(i)) >>> 0;
     const pick = candidates[hash % candidates.length]!;
-    const startingPriceMinor = savedPrices.get(`${pick.x}-${pick.y}`) ?? 0;
+    const startingPriceMinor = pick.price;
     if (startingPriceMinor <= 0) return false;
 
     const endsAt = new Date(now.getTime() + AUCTION_DURATION_MS);
@@ -186,8 +214,8 @@ export class ProvinceLandAuctionService {
     for (const p of provinces.rows) {
       try {
         if (await this.ensureOpenAuction(p.code, now)) opened += 1;
-      } catch {
-        // best-effort per province
+      } catch (error) {
+        console.error(`Không thể mở đấu giá đất tỉnh ${p.code}:`, error);
       }
     }
     return opened;

@@ -28,7 +28,6 @@ import {
 
 const GAME_DAY_MS = 60_000; // 1 ngày game = 1 phút thực tế
 const GAME_MONTH_MS = 30 * GAME_DAY_MS; // 1 tháng game = 30 ngày game
-const MAX_LOAN_MINOR = 2_000_000_000; // trần hệ thống an toàn
 const PROPERTY_LTV_PCT = 80;
 const COMPANY_LTV_PCT = 70;
 
@@ -150,7 +149,7 @@ export class BankingService {
       await this.rolloverMaturedSavings(client, character.id);
       await this.capitalizeOverdueLoanInterest(client, { ...character, user_id: (character.user_id ?? (userId as any)) } as any);
 
-      const [loans, savingsRow, debt, deposits, terms, baseRate, realEstateValue, companyValue, propOptions, companyOptions] = await Promise.all([
+      const [loans, savingsRow, debt, deposits, terms, baseRate, realEstateValue, companyValue, propOptions, companyOptions, salary] = await Promise.all([
         this.repository.listLoans(character.id),
         this.repository.ensureSavingsAccount(client, character.id),
         this.repository.totalDebt(client, character.id),
@@ -161,6 +160,7 @@ export class BankingService {
         this.repository.getOwnedCompanyValue(client, character.id),
         this.repository.listCollateralPropertyOptions(client, character.id),
         this.repository.listCollateralCompanyOptions(client, character.id),
+        this.repository.activeSalary(client, character.id),
       ]);
 
       const termMap = new Map(terms.map((t) => [Number(t.term_months), t]));
@@ -175,8 +175,10 @@ export class BankingService {
       const score = character.credit_score;
       const sf = scoreFactorFromCredit(score);
       const assetBase = cash + savingsTotal + realEstateValue + companyValue;
-      // Hạn mức tín dụng (không/ít thế chấp) dựa trên điểm tín dụng + tiền mặt + tiết kiệm + BĐS + công ty
-      const unsecuredLimit = Math.min(MAX_LOAN_MINOR, Math.max(0, Math.round(assetBase * sf * 0.4)));
+      // Hạn mức tín chấp dựa trên tài sản, thu nhập và điểm tín dụng; không có trần cố định.
+      const assetBasedLimit = Math.max(0, Math.round(assetBase * sf * 0.4));
+      const incomeBasedLimit = Math.max(0, Math.round((salary > 0 ? salary * 24 : cash) * sf * 0.5));
+      const unsecuredLimit = Math.max(assetBasedLimit, incomeBasedLimit);
 
       const collateralOptions = await Promise.all([
         ...propOptions.map(async (p) => {
@@ -188,7 +190,7 @@ export class BankingService {
             name: p.name,
             value: money(p.valueMinor),
             ltvPct: PROPERTY_LTV_PCT,
-            maxLoanAmount: money(Math.min(MAX_LOAN_MINOR, maxByLtv)),
+            maxLoanAmount: money(maxByLtv),
             subtitle: p.subtitle,
             encumbered,
           };
@@ -202,7 +204,7 @@ export class BankingService {
             name: c.name,
             value: money(c.valueMinor),
             ltvPct: COMPANY_LTV_PCT,
-            maxLoanAmount: money(Math.min(MAX_LOAN_MINOR, maxByLtv)),
+            maxLoanAmount: money(maxByLtv),
             subtitle: c.subtitle,
             encumbered,
           };
@@ -211,7 +213,7 @@ export class BankingService {
       const bestSecured = collateralOptions
         .filter((o) => !o.encumbered)
         .reduce((m, o) => Math.max(m, o.maxLoanAmount.amount), 0);
-      const maxLoanAmount = Math.min(MAX_LOAN_MINOR, Math.max(unsecuredLimit, bestSecured));
+      const maxLoanAmount = Math.max(unsecuredLimit, bestSecured);
 
       const daysSinceOpened = Math.max(
         0,
@@ -436,15 +438,15 @@ export class BankingService {
       const sf = scoreFactorFromCredit(character.credit_score);
       const assetBase = cash + savingsTotal + realEstateValue + companyValue;
       // Hạn mức tín dụng dựa trên điểm tín dụng + tiền mặt + tiết kiệm + bất động sản + công ty
-      const unsecuredLimit = Math.min(MAX_LOAN_MINOR, Math.max(0, Math.round(assetBase * sf * 0.4)));
-      // giữ tương thích nhẹ: nếu thu nhập cao, không hạ thấp hơn công thức cũ quá nhiều
-      const incomeCompat = Math.min(MAX_LOAN_MINOR, Math.max(0, Math.round((salary > 0 ? salary * 24 : cash) * sf)));
+      const unsecuredLimit = Math.max(0, Math.round(assetBase * sf * 0.4));
+      // Thu nhập và điểm tín dụng có thể nâng hạn mức tín chấp, không áp trần cố định.
+      const incomeCompat = Math.max(0, Math.round((salary > 0 ? salary * 24 : cash) * sf));
       const effectiveUnsecuredLimit = Math.max(unsecuredLimit, Math.round(incomeCompat * 0.5));
 
       let collateralType: 'property' | 'company' | null = null;
       let collateralPropertyId: string | null = null;
       let collateralCompanyId: string | null = null;
-      let maxLoan = Math.min(MAX_LOAN_MINOR, effectiveUnsecuredLimit);
+      let maxLoan = effectiveUnsecuredLimit;
       let collateralLabel = '';
 
       if (input.collateralPropertyId) {
@@ -458,7 +460,7 @@ export class BankingService {
         const ltvMax = Math.round(value * (PROPERTY_LTV_PCT / 100));
         collateralType = 'property';
         collateralPropertyId = input.collateralPropertyId;
-        maxLoan = Math.min(MAX_LOAN_MINOR, Math.max(effectiveUnsecuredLimit, ltvMax));
+        maxLoan = ltvMax;
         if (input.amountMinor > ltvMax) {
           throw AppError.unprocessable(`Khoản vay thế chấp bất động sản vượt ${PROPERTY_LTV_PCT}% giá trị tài sản (${ltvMax.toLocaleString('vi-VN')} ₫).`);
         }
@@ -474,7 +476,7 @@ export class BankingService {
         const ltvMax = Math.round(value * (COMPANY_LTV_PCT / 100));
         collateralType = 'company';
         collateralCompanyId = input.collateralCompanyId;
-        maxLoan = Math.min(MAX_LOAN_MINOR, Math.max(effectiveUnsecuredLimit, ltvMax));
+        maxLoan = ltvMax;
         if (input.amountMinor > ltvMax) {
           throw AppError.unprocessable(`Khoản vay thế chấp công ty vượt ${COMPANY_LTV_PCT}% giá trị định giá công ty (${ltvMax.toLocaleString('vi-VN')} ₫).`);
         }
@@ -796,6 +798,41 @@ export class BankingService {
         withdrawn: money(withdrawn),
         interest: money(interestTotal),
         payout: money(payoutTotal),
+        balance: money(total),
+      };
+    });
+  }
+
+  async withdrawSavingsInterest(userId: string, depositId: string) {
+    return withTransaction(async (client) => {
+      const character = await requireCharacterByUserId(client, userId);
+      const deposit = await this.repository.findSavingsDeposit(client, character.id, depositId);
+      if (!deposit || deposit.status !== 'active') throw AppError.notFound('Sổ tiết kiệm');
+      if (deposit.term_months !== 0) {
+        throw AppError.badRequest('Chỉ có thể rút lãi riêng từ sổ không kỳ hạn.');
+      }
+
+      const interest = depositInterest(deposit, null);
+      if (interest <= 0) throw AppError.conflict('no_interest', 'Sổ chưa có lãi để rút.');
+
+      await ledger.post(client, {
+        kind: 'savings_interest_payout',
+        description: `Savings interest payout ${character.id} deposit ${deposit.id}`,
+        referenceType: 'savings_deposit',
+        referenceId: deposit.id,
+        legs: [
+          { ownerType: 'character', ownerId: character.id, kind: 'cash', deltaMinor: interest },
+          { ownerType: 'bank', ownerId: SYSTEM_BANK_ID, kind: 'cash', deltaMinor: -interest },
+        ],
+      });
+
+      // Bắt đầu kỳ tích lũy mới để lần sau chỉ nhận phần lãi chưa rút.
+      await this.repository.resetSavingsDepositAccrual(client, deposit.id, new Date());
+      const total = await this.repository.syncSavingsAggregate(client, character.id);
+      return {
+        depositId: deposit.id,
+        interest: money(interest),
+        payout: money(interest),
         balance: money(total),
       };
     });

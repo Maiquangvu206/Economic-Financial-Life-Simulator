@@ -236,6 +236,41 @@ export function CityPage() {
         return [base, ...members];
       });
     }
+    if (activeProvince === '001' && provinceLand?.properties?.length) {
+      const knownCoords = new Set(properties.map((p: any) => `${p.location?.x}-${p.location?.y}`));
+      const auctionLand = provinceLand.properties
+        .filter((p: any) => !knownCoords.has(`${p.location?.x}-${p.location?.y}`))
+        .flatMap((p: any) => {
+          const base = {
+            id: p.id,
+            nodeId: p.nodeId ?? p.id,
+            ownerId: p.ownerCharacterId,
+            ownerCharacterId: p.ownerCharacterId,
+            name: p.name,
+            type: p.propertyType,
+            propertyType: p.propertyType,
+            status: p.status,
+            purchasePriceMinor: p.purchasePrice?.amount ?? 0,
+            askingPriceMinor: p.askingPrice?.amount ?? null,
+            isMine: !!p.isMine,
+            valueMinor: p.currentValue?.amount ?? 0,
+            location: p.location,
+            constructionOption: p.constructionOption ?? null,
+            constructionLabel: p.constructionLabel ?? null,
+            constructionTier: p.constructionTier ?? null,
+            constructionMultiplier: p.constructionMultiplier ?? 1,
+            constructionCostMinor: p.constructionCostMinor ?? 0,
+            constructionBuiltAt: p.constructionBuiltAt ?? null,
+            mergedIntoPropertyId: p.mergedIntoPropertyId ?? null,
+            mergeGroupId: p.mergeGroupId ?? null,
+            mergedMembers: p.mergedMembers ?? [],
+            offers: p.offers ?? [],
+            provinceSource: 'province-land',
+          };
+          return [base];
+        });
+      properties = [...properties, ...auctionLand];
+    }
     return { ...mapDto, properties };
   }, [mapDto, realEstate, provinceLand, activeProvince]);
 

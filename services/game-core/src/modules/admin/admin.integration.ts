@@ -1417,6 +1417,20 @@ async function pushAiConfigToRuntime(cfg: any): Promise<{ applied: boolean; erro
   }
 }
 
+/** Reapply the last admin-saved provider config after the AI container restarts. */
+export async function syncSavedAiConfigToRuntime(): Promise<{ configured: boolean; applied: boolean; error?: string }> {
+  const result = await pool.query(`SELECT macro FROM game_state WHERE id = 1`);
+  const macro = result.rows[0]?.macro && typeof result.rows[0].macro === 'object'
+    ? result.rows[0].macro as Record<string, unknown>
+    : {};
+  if (!macro.aiConfig || typeof macro.aiConfig !== 'object') {
+    return { configured: false, applied: false };
+  }
+
+  const apply = await pushAiConfigToRuntime(normalizeAiConfig(macro.aiConfig));
+  return { configured: true, applied: apply.applied, ...(apply.error ? { error: apply.error } : {}) };
+}
+
 export async function updateAiConfigAdmin(req: Request, res: Response): Promise<void> {
   ensureAdmin(req);
   const body = (req.body ?? {}) as any;
