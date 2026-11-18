@@ -931,6 +931,56 @@ export function BusinessPage() {
             )}
 
             {canManage && detail?.isOwner && (
+              <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/30 p-3">
+                <div>
+                  <p className="text-xs font-semibold text-amber-900">Kế toán & khai thuế doanh nghiệp</p>
+                  <p className="mt-1 text-[11px] text-slate-600">Khai và nộp thuế cho kỳ 30 ngày game đã được hệ thống chốt doanh thu. Nếu để trống kỳ, hệ thống chọn kỳ gần nhất chưa khai.</p>
+                </div>
+
+                {hrAccLoading ? (
+                  <p className="text-xs text-slate-500">Đang tải sổ kế toán...</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <div className="rounded-lg bg-white p-2"><div className="text-[10px] text-slate-500">Doanh thu thực tế</div><div className="text-xs font-semibold text-slate-800">{formatMoney(ledger?.totals.revenue.amount ?? 0)}</div></div>
+                      <div className="rounded-lg bg-white p-2"><div className="text-[10px] text-slate-500">Doanh thu đã khai</div><div className="text-xs font-semibold text-slate-800">{formatMoney(ledger?.totals.declaredRevenue.amount ?? 0)}</div></div>
+                      <div className="rounded-lg bg-white p-2"><div className="text-[10px] text-slate-500">Chi phí</div><div className="text-xs font-semibold text-slate-800">{formatMoney(ledger?.totals.expense.amount ?? 0)}</div></div>
+                      <div className="rounded-lg bg-white p-2"><div className="text-[10px] text-slate-500">Chênh lệch khai báo</div><div className="text-xs font-semibold text-amber-800">{formatMoney(ledger?.totals.taxGap.amount ?? 0)}</div></div>
+                    </div>
+
+                    <div className="space-y-2 rounded-lg border border-amber-100 bg-white p-2.5">
+                      <p className="text-[11px] font-semibold text-slate-700">Khai và nộp thuế kỳ 30 ngày</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <GameInput label="Kỳ (để trống = kỳ gần nhất chưa khai)" value={filingPeriod} onChange={(e) => setFilingPeriod(e.target.value)} placeholder="VD: 2000-01" />
+                        <GameInput label="Doanh thu khai báo (VND)" type="number" min={0} value={declaredRevenueInput} onChange={(e) => setDeclaredRevenueInput(e.target.value)} />
+                      </div>
+                      <GameInput label="Ghi chú (không bắt buộc)" value={filingNotes} onChange={(e) => setFilingNotes(e.target.value)} />
+                      <label className="flex items-start gap-2 text-[11px] text-slate-600">
+                        <input type="checkbox" className="mt-0.5" checked={usePersonalFundsForShortfall} onChange={(e) => setUsePersonalFundsForShortfall(e.target.checked)} />
+                        <span>Cho phép dùng ví cá nhân bù phần quỹ công ty thiếu để nộp thuế và xử lý cổ tức.</span>
+                      </label>
+                      <GameButton variant="primary" onClick={() => createFiling.mutate(selectedCompany.id)} disabled={createFiling.isPending || selectedCompany.status === 'bankrupt'}>
+                        {createFiling.isPending ? 'Đang nộp...' : 'Khai & nộp thuế'}
+                      </GameButton>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold text-slate-700">Lịch sử khai thuế</p>
+                      {filings.length === 0 ? (
+                        <p className="rounded-lg bg-white p-2 text-[11px] text-slate-500">Chưa có hồ sơ khai thuế. Hồ sơ chỉ lập được sau khi hệ thống chốt doanh thu ít nhất một kỳ 30 ngày game.</p>
+                      ) : filings.map((filing) => (
+                        <div key={filing.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-2 text-[11px]">
+                          <div><span className="font-medium text-slate-800">Kỳ {filing.periodKey ?? filing.period}</span><span className="ml-2 text-slate-500">{new Date(filing.createdAt).toLocaleDateString('vi-VN')}</span></div>
+                          <div className="text-right text-slate-600">Thuế {formatMoney(filing.taxPaid.amount)} · DT khai {formatMoney(filing.declaredRevenue.amount)} <Badge variant={filing.status === 'penalized' ? 'warning' : filing.status === 'audited' ? 'success' : 'default'}>{filing.status}</Badge></div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {canManage && detail?.isOwner && (
               <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/30 p-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold text-sky-900">Đề xuất tuyển dụng AI (tạm thời)</p>

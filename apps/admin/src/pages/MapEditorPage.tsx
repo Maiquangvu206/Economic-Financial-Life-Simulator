@@ -65,6 +65,21 @@ export function MapEditorPage() {
       const next: Record<string, number> = {};
       for (const node of data.nodes) next[`${node.x}-${node.y}`] = node.landPriceMinor;
       setPrices(next);
+      // The database stores prices per map tile; rebuild the displayed matrix
+      // from those saved tile prices so reopening a province restores its values.
+      // Unconfigured generated provinces start with all-zero prices, so retain
+      // the editable defaults until that province has been saved at least once.
+      const hasSavedProvinceConfig = data.provinceCode === '001' || data.meta.version > 1;
+      if (hasSavedProvinceConfig) {
+        const matrix: Record<string, string> = {};
+        for (const row of ZONE_PRICE_ROWS) {
+          const zoneNodes = data.nodes.filter((node) => node.zoneType === row.id);
+          if (zoneNodes.length === 0) continue;
+          const averagePrice = zoneNodes.reduce((sum, node) => sum + node.landPriceMinor, 0) / zoneNodes.length;
+          matrix[row.id] = String(Math.round(averagePrice));
+        }
+        setZonePrices((prev) => ({ ...prev, ...matrix }));
+      }
       setNotice(`Đã tải cấu hình giá đất: ${data.provinceName ?? code} (${data.nodes.length} ô, v${data.meta.version}).`);
     } catch (caught) {
       setError(`Không tải được dữ liệu: ${errorMessage(caught).message}`);

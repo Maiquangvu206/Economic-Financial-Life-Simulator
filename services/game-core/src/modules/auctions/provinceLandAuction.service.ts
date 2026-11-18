@@ -130,9 +130,9 @@ export class ProvinceLandAuctionService {
     return count;
   }
 
-  async ensureOpenAuction(provinceCode: string, now: Date = new Date()): Promise<void> {
+  async ensureOpenAuction(provinceCode: string, now: Date = new Date()): Promise<boolean> {
     const code = (provinceCode ?? '001').trim() || '001';
-    if (!provinceByCode(code)) return;
+    if (!provinceByCode(code)) return false;
 
     // Settle expired auction(s) for this province first so a new one can be created.
     try {
@@ -142,7 +142,7 @@ export class ProvinceLandAuctionService {
     }
 
     const existing = await this.repo.listOpenByProvince(code);
-    if (existing.length > 0) return;
+    if (existing.length > 0) return false;
 
     const generated = generateProvinceMap(code);
     const savedPrices = await mapRepository.getProvinceLandPrices(pool, code);
@@ -151,7 +151,7 @@ export class ProvinceLandAuctionService {
       const p = savedPrices.get(`${n.x}-${n.y}`) ?? 0;
       return p > 0;
     });
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) return false;
 
     // Chuẩn thời gian: 1 phiên đấu giá = 3 ngày game = 3 phút thực
     const AUCTION_DURATION_MS = 3 * 60 * 1000;
@@ -162,12 +162,12 @@ export class ProvinceLandAuctionService {
     for (let i = 0; i < seedStr.length; i += 1) hash = (hash * 31 + seedStr.charCodeAt(i)) >>> 0;
     const pick = candidates[hash % candidates.length]!;
     const startingPriceMinor = savedPrices.get(`${pick.x}-${pick.y}`) ?? 0;
-    if (startingPriceMinor <= 0) return;
+    if (startingPriceMinor <= 0) return false;
 
     const endsAt = new Date(now.getTime() + AUCTION_DURATION_MS);
 
-    await withTransaction(async (client) => {
-      await this.repo.create(client, {
+    return withTransaction(async (client) => {
+      const auctionId = await this.repo.create(client, {
         provinceCode: code,
         nodeX: pick.x,
         nodeY: pick.y,
@@ -176,18 +176,21 @@ export class ProvinceLandAuctionService {
         startingPriceMinor,
         endsAt,
       });
+      return auctionId !== null;
     });
   }
 
-  async ensureOpenAuctionsForAllProvinces(now: Date = new Date()): Promise<void> {
+  async ensureOpenAuctionsForAllProvinces(now: Date = new Date()): Promise<number> {
     const provinces = await pool.query<{ code: string }>(`SELECT code FROM provinces ORDER BY code ASC`);
+    let opened = 0;
     for (const p of provinces.rows) {
       try {
-        await this.ensureOpenAuction(p.code, now);
+        if (await this.ensureOpenAuction(p.code, now)) opened += 1;
       } catch {
         // best-effort per province
       }
     }
+    return opened;
   }
 
   async placeBid(userId: string, auctionId: string, amountMinor: number): Promise<AuctionDto> {
