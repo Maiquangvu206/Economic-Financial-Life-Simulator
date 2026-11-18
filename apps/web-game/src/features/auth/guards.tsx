@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router-dom';
 import { SsoHandoffResponseSchema, TokenPairSchema } from '@efls/contracts';
 import { apiRequest } from '../../shared/api/httpClient';
-import { env } from '../../shared/config/env';
+import { adminSsoUrl } from '../../shared/config/env';
 import { useSessionStore } from './sessionStore';
 
 /**
@@ -58,7 +58,7 @@ export function RedirectIfAuthenticated({ children }: { children: React.ReactNod
         });
         const handoff = SsoHandoffResponseSchema.safeParse(response);
         if (!handoff.success) throw new Error('Invalid SSO handoff');
-        window.location.assign(`${env.adminUrl}/sso?code=${encodeURIComponent(handoff.data.code)}`);
+        window.location.assign(adminSsoUrl(handoff.data.code));
       } catch {
         setHandoffError(true);
       }

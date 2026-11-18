@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSessionStore } from '../features/auth/sessionStore';
 import { apiRequest } from '../shared/api/httpClient';
-import { env } from '../shared/config/env';
+import { adminSsoUrl } from '../shared/config/env';
 
 type Mode = 'login' | 'register';
 
@@ -137,7 +137,7 @@ export function LoginPage() {
           setError('Không thể chuyển sang trang quản lý. Vui lòng thử lại.');
           return;
         }
-        window.location.assign(`${env.adminUrl}/sso?code=${encodeURIComponent(handoff.data.code)}`);
+        window.location.assign(adminSsoUrl(handoff.data.code));
         return;
       }
 
