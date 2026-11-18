@@ -261,12 +261,31 @@ export const CreateCompanyTaxFilingRequestSchema = z.object({
 });
 export type CreateCompanyTaxFilingRequest = z.infer<typeof CreateCompanyTaxFilingRequestSchema>;
 
+export const CompanyRevenueSettlementDtoSchema = z.object({
+  id: IdSchema,
+  periodKey: z.string(),
+  gameYear: z.number().int(),
+  gameMonth: z.number().int(),
+  actualRevenue: MoneySchema,
+  baseCapital: MoneySchema.optional(),
+  monthlyRatePct: z.number().optional(),
+  seasonMultiplier: z.number().optional(),
+  status: z.string(),
+  settledAt: z.string().datetime(),
+  filed: z.boolean().optional().default(false),
+  filingStatus: z.string().nullable().optional(),
+  declaredRevenue: MoneySchema.nullable().optional(),
+  taxPaid: MoneySchema.nullable().optional(),
+});
+export type CompanyRevenueSettlementDto = z.infer<typeof CompanyRevenueSettlementDtoSchema>;
+
 export const CompanyHrAccountingDtoSchema = z.object({
   companyId: IdSchema,
   plans: z.array(HiringPlanDtoSchema),
   staff: z.array(CompanyStaffDtoSchema),
   ledger: CompanyLedgerDtoSchema,
   filings: z.array(CompanyTaxFilingDtoSchema),
+  revenueSettlements: z.array(CompanyRevenueSettlementDtoSchema).optional().default([]),
 });
 export type CompanyHrAccountingDto = z.infer<typeof CompanyHrAccountingDtoSchema>;
 

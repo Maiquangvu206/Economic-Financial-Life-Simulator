@@ -865,11 +865,12 @@ export class CorporationService {
     if (company.ownerCharacterId !== character.id) {
       throw AppError.forbidden('Chỉ chủ sở hữu mới xem HR & kế toán.');
     }
-    const [staff, entries, totals, filings] = await Promise.all([
+    const [staff, entries, totals, filings, settlements] = await Promise.all([
       this.repository.listCompanyStaff(companyId, db),
       this.repository.listLedgerEntries(companyId, 100, db),
       this.repository.ledgerTotals(companyId, db),
       this.repository.listTaxFilings(companyId, db),
+      this.repository.listRevenueSettlements(companyId, 24, db),
     ]);
     return {
       companyId,
@@ -929,6 +930,22 @@ export class CorporationService {
         filedAt: f.filedAt ? new Date(f.filedAt).toISOString() : null,
         dividendDistributedAt: (f.dividendDistributedAt ?? f.dividend_distributed_at) ? new Date(f.dividendDistributedAt ?? f.dividend_distributed_at).toISOString() : null,
         auditCheckedAt: (f.auditCheckedAt ?? f.audit_checked_at) ? new Date(f.auditCheckedAt ?? f.audit_checked_at).toISOString() : null,
+      })),
+      revenueSettlements: settlements.map((s: any) => ({
+        id: s.id,
+        periodKey: s.periodKey ?? s.period_key,
+        gameYear: Number(s.gameYear ?? s.game_year ?? 0),
+        gameMonth: Number(s.gameMonth ?? s.game_month ?? 0),
+        actualRevenue: money(Number(s.actualRevenueMinor ?? s.actual_revenue_minor ?? 0)),
+        baseCapital: money(Number(s.baseCapitalMinor ?? s.base_capital_minor ?? 0)),
+        monthlyRatePct: Number(s.monthlyRatePct ?? s.monthly_rate_pct ?? 0),
+        seasonMultiplier: Number(s.seasonMultiplier ?? s.season_multiplier ?? 1),
+        status: s.status ?? 'settled',
+        settledAt: new Date(s.settledAt ?? s.settled_at).toISOString(),
+        filed: Boolean(s.filed),
+        filingStatus: s.filingStatus ?? s.filing_status ?? null,
+        declaredRevenue: s.declaredRevenueMinor != null ? money(Number(s.declaredRevenueMinor)) : (s.declared_revenue_minor != null ? money(Number(s.declared_revenue_minor)) : null),
+        taxPaid: s.taxPaidMinor != null ? money(Number(s.taxPaidMinor)) : (s.tax_paid_minor != null ? money(Number(s.tax_paid_minor)) : null),
       })),
     };
   }

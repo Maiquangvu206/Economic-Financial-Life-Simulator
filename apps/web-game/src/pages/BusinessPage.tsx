@@ -513,6 +513,7 @@ export function BusinessPage() {
   const staff = hrAcc?.staff?.filter((s) => s.status === 'active') ?? [];
   const ledger = hrAcc?.ledger;
   const filings = hrAcc?.filings ?? [];
+  const revenueSettlements = hrAcc?.revenueSettlements ?? [];
 
   if (isLoading) {
     return (
@@ -985,6 +986,51 @@ export function BusinessPage() {
                       <GameButton variant="primary" onClick={() => createFiling.mutate(selectedCompany.id)} disabled={createFiling.isPending || selectedCompany.status === 'bankrupt'}>
                         {createFiling.isPending ? 'Đang nộp...' : 'Khai & nộp thuế'}
                       </GameButton>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold text-slate-700">Bảng thống kê doanh thu theo kỳ (dùng để khai thuế)</p>
+                      <p className="text-[11px] text-slate-500">Doanh thu thực tế do hệ thống tự chốt mỗi 30 ngày game. Khi khai thuế, bạn nên đối chiếu cột <b>Doanh thu thực tế</b> của kỳ tương ứng.</p>
+                      {revenueSettlements.length === 0 ? (
+                        <p className="rounded-lg bg-white p-2 text-[11px] text-slate-500">Chưa có kỳ chốt doanh thu nào. Hệ thống sẽ tự tạo dữ liệu sau mỗi chu kỳ 30 ngày game khi công ty đủ điều kiện.</p>
+                      ) : (
+                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white [-webkit-overflow-scrolling:touch]">
+                          <table className="w-full min-w-[720px] border-collapse text-[11px]">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-50 text-slate-600">
+                                <th className="px-2.5 py-2 text-left font-semibold">Kỳ</th>
+                                <th className="px-2.5 py-2 text-left font-semibold">Năm/Tháng game</th>
+                                <th className="px-2.5 py-2 text-right font-semibold">Doanh thu thực tế</th>
+                                <th className="px-2.5 py-2 text-right font-semibold">Đã khai</th>
+                                <th className="px-2.5 py-2 text-right font-semibold">Thuế đã nộp</th>
+                                <th className="px-2.5 py-2 text-left font-semibold">Trạng thái khai</th>
+                                <th className="px-2.5 py-2 text-left font-semibold">Chốt lúc</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {revenueSettlements.map((s) => (
+                                <tr key={s.id} className="hover:bg-slate-50/60">
+                                  <td className="px-2.5 py-2 font-medium text-slate-800">{s.periodKey}</td>
+                                  <td className="px-2.5 py-2 text-slate-600">{s.gameYear}-{String(s.gameMonth).padStart(2, '0')}</td>
+                                  <td className="px-2.5 py-2 text-right font-semibold text-emerald-700">{formatMoney(s.actualRevenue.amount)}</td>
+                                  <td className="px-2.5 py-2 text-right text-slate-700">{s.declaredRevenue ? formatMoney(s.declaredRevenue.amount) : '—'}</td>
+                                  <td className="px-2.5 py-2 text-right text-slate-700">{s.taxPaid ? formatMoney(s.taxPaid.amount) : '—'}</td>
+                                  <td className="px-2.5 py-2">
+                                    {s.filed ? (
+                                      <Badge variant={s.filingStatus === 'penalized' ? 'warning' : s.filingStatus === 'audited' ? 'success' : 'default'}>
+                                        {s.filingStatus ?? 'đã khai'}
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="warning">Chưa khai</Badge>
+                                    )}
+                                  </td>
+                                  <td className="px-2.5 py-2 text-slate-500 whitespace-nowrap">{new Date(s.settledAt).toLocaleString('vi-VN')}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-1.5">

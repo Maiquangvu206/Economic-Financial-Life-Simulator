@@ -840,6 +840,32 @@ export class CorporationRepository {
     return r.rows;
   }
 
+  async listRevenueSettlements(companyId: string, limit = 24, db: Db = this.db): Promise<any[]> {
+    const r = await db.query(
+      `SELECT s.id,
+              s.period_key AS "periodKey",
+              s.game_year AS "gameYear",
+              s.game_month AS "gameMonth",
+              s.base_capital_minor AS "baseCapitalMinor",
+              s.monthly_rate_pct AS "monthlyRatePct",
+              s.season_multiplier AS "seasonMultiplier",
+              s.actual_revenue_minor AS "actualRevenueMinor",
+              s.status,
+              s.settled_at AS "settledAt",
+              (f.id IS NOT NULL) AS "filed",
+              f.status AS "filingStatus",
+              f.declared_revenue_minor AS "declaredRevenueMinor",
+              f.tax_paid_minor AS "taxPaidMinor"
+       FROM company_revenue_settlements s
+       LEFT JOIN company_tax_filings f ON f.company_id = s.company_id AND f.period_key = s.period_key
+       WHERE s.company_id = $1
+       ORDER BY s.game_year DESC, s.game_month DESC, s.settled_at DESC
+       LIMIT $2`,
+      [companyId, limit],
+    );
+    return r.rows;
+  }
+
   async getSettlementForFiling(
     db: Db,
     companyId: string,
