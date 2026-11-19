@@ -57,6 +57,27 @@ export const UnlicensedCompanyDtoSchema = z.object({
 });
 export type UnlicensedCompanyDto = z.infer<typeof UnlicensedCompanyDtoSchema>;
 
+export const PersonalIncomeSourceDtoSchema = z.object({
+  kind: z.enum(['employment', 'owner_salary']),
+  label: z.string(),
+  companyId: IdSchema.nullable().optional(),
+  amount: MoneySchema,
+  period: z.enum(['month', 'game_day']),
+  annualizedAmount: MoneySchema,
+});
+export type PersonalIncomeSourceDto = z.infer<typeof PersonalIncomeSourceDtoSchema>;
+
+export const PersonalIncomeSummaryDtoSchema = z.object({
+  sources: z.array(PersonalIncomeSourceDtoSchema),
+  annualTaxableIncome: MoneySchema,
+  estimatedTaxDue: MoneySchema,
+  taxRatePct: z.number(),
+  seasonTaxMultiplier: z.number(),
+  currentYear: z.number().int(),
+  hasAssessmentForCurrentYear: z.boolean(),
+});
+export type PersonalIncomeSummaryDto = z.infer<typeof PersonalIncomeSummaryDtoSchema>;
+
 export const TaxOverviewExtDtoSchema = TaxOverviewDtoSchema.extend({
   audits: z.array(AuditDtoSchema),
   licenses: z.array(
@@ -73,6 +94,8 @@ export const TaxOverviewExtDtoSchema = TaxOverviewDtoSchema.extend({
   ownedCompanyLicenses: z.array(LicenseCompanyStatusDtoSchema).default([]),
   /** Công ty chưa có giấy phép hoạt động (để phát hiện/tố cáo). */
   unlicensedCompanies: z.array(UnlicensedCompanyDtoSchema).default([]),
+  /** Nguồn thu nhập cá nhân hiện tại (phục vụ theo dõi/đối chiếu quyết toán thuế). */
+  personalIncome: PersonalIncomeSummaryDtoSchema.optional(),
 });
 export type TaxOverviewExtDto = z.infer<typeof TaxOverviewExtDtoSchema>;
 

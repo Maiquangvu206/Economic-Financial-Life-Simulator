@@ -734,6 +734,86 @@ export function LawPage() {
                   value={formatMoney(tax?.totalDue?.amount ?? 0)}
                 />
               </div>
+
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 space-y-2">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-emerald-900">Nguồn thu nhập cá nhân (để theo dõi/đối chiếu quyết toán thuế)</p>
+                    <p className="text-[11px] text-slate-600">
+                      Dựa trên các nguồn thu nhập cá nhân hiện tại: công việc đang giữ (quy đổi theo tháng × 12) và lương chủ DN đang cấu hình (theo ngày game × 360). Không gồm doanh thu doanh nghiệp.
+                    </p>
+                  </div>
+                  {tax?.personalIncome && (
+                    <Badge variant={tax.personalIncome.hasAssessmentForCurrentYear ? 'default' : 'warning'}>
+                      {tax.personalIncome.hasAssessmentForCurrentYear ? `Đã có quyết toán năm ${tax.personalIncome.currentYear}` : `Chưa quyết toán năm ${tax.personalIncome.currentYear}`}
+                    </Badge>
+                  )}
+                </div>
+
+                {tax?.personalIncome ? (
+                  <>
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-lg bg-white p-2 border border-slate-200">
+                        <div className="text-[10px] text-slate-500">Thu nhập chịu thuế/năm (ước tính hiện tại)</div>
+                        <div className="text-xs font-semibold text-slate-800">{formatMoney(tax.personalIncome.annualTaxableIncome.amount)}</div>
+                      </div>
+                      <div className="rounded-lg bg-white p-2 border border-slate-200">
+                        <div className="text-[10px] text-slate-500">Thuế ước tính</div>
+                        <div className="text-xs font-semibold text-emerald-700">{formatMoney(tax.personalIncome.estimatedTaxDue.amount)}</div>
+                      </div>
+                      <div className="rounded-lg bg-white p-2 border border-slate-200">
+                        <div className="text-[10px] text-slate-500">Thuế suất cá nhân</div>
+                        <div className="text-xs font-semibold text-slate-800">{tax.personalIncome.taxRatePct}%</div>
+                      </div>
+                      <div className="rounded-lg bg-white p-2 border border-slate-200">
+                        <div className="text-[10px] text-slate-500">Hệ số thuế theo mùa</div>
+                        <div className="text-xs font-semibold text-slate-800">x{Number(tax.personalIncome.seasonTaxMultiplier ?? 1).toFixed(2)}</div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold text-slate-700">Chi tiết nguồn thu nhập hiện tại</p>
+                      {(tax.personalIncome.sources?.length ?? 0) === 0 ? (
+                        <p className="rounded-lg bg-white p-2 text-[11px] text-slate-500 border border-slate-200">
+                          Chưa có nguồn thu nhập cá nhân đang hoạt động (không có công việc active và không có lương chủ DN đang cấu hình).
+                        </p>
+                      ) : (
+                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white [-webkit-overflow-scrolling:touch]">
+                          <table className="w-full min-w-[620px] border-collapse text-[11px]">
+                            <thead className="bg-slate-50">
+                              <tr className="border-b border-slate-200 text-slate-600">
+                                <th className="px-2.5 py-2 text-left font-semibold">Nguồn</th>
+                                <th className="px-2.5 py-2 text-left font-semibold">Loại</th>
+                                <th className="px-2.5 py-2 text-right font-semibold">Mức hiện tại</th>
+                                <th className="px-2.5 py-2 text-left font-semibold">Cơ sở</th>
+                                <th className="px-2.5 py-2 text-right font-semibold">Quy đổi năm (ước tính)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {(tax.personalIncome.sources ?? []).map((s, idx) => (
+                                <tr key={`${s.kind}-${s.companyId ?? 'na'}-${idx}`} className="hover:bg-slate-50/60">
+                                  <td className="px-2.5 py-2 font-medium text-slate-800">{s.label}</td>
+                                  <td className="px-2.5 py-2 text-slate-600">{s.kind === 'employment' ? 'Công việc đang giữ' : 'Lương chủ doanh nghiệp'}</td>
+                                  <td className="px-2.5 py-2 text-right text-slate-800">{formatMoney(s.amount.amount)}</td>
+                                  <td className="px-2.5 py-2 text-slate-600">{s.period === 'month' ? 'Mỗi tháng (×12)' : 'Mỗi ngày game (×360)'}</td>
+                                  <td className="px-2.5 py-2 text-right font-semibold text-emerald-700">{formatMoney(s.annualizedAmount.amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      <p className="text-[11px] text-slate-500">
+                        Lưu ý: đây là ước tính theo nguồn thu nhập hiện tại. Quyết toán thực tế của năm game được lập/ghi nhận theo thời điểm quyết toán và quy tắc hệ thống (bao gồm hệ số mùa tại thời điểm quyết toán).
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <p className="rounded-lg bg-white p-2 text-[11px] text-slate-500 border border-slate-200">
+                    Đang tải dữ liệu nguồn thu nhập cá nhân...
+                  </p>
+                )}
+              </div>
               <div className="flex gap-2">
                 <GameButton
                   variant="primary"

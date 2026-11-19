@@ -68,6 +68,42 @@ export class TaxService {
     const auditRisk = latestAudit?.riskScore ?? this.computeRisk(character.heat_level, 0, 0);
     const audited = (latestAudit?.status ?? 'none') !== 'open';
 
+    // Nguồn thu nhập cá nhân hiện tại (để theo dõi/đối chiếu quyết toán thuế)
+    const [jobs, ownerSources, season] = await Promise.all([
+      this.repository.listActiveEmployments(character.id, db),
+      this.repository.listActiveOwnerSalarySources(character.id, db),
+      loadCurrentSeasonEffects(db),
+    ]);
+    const employmentSources = jobs.map((j) => {
+      const monthly = Math.max(0, Number(j.salaryMinor ?? 0));
+      const annualized = monthly * 12;
+      return {
+        kind: 'employment' as const,
+        label: j.title || 'Công việc',
+        companyId: j.companyId ?? null,
+        amount: money(monthly),
+        period: 'month' as const,
+        annualizedAmount: money(annualized),
+      };
+    });
+    const ownerSalarySources = ownerSources.map((s) => {
+      const perGameDay = Math.max(0, Number(s.salaryMinor ?? 0));
+      const annualized = perGameDay * 360;
+      return {
+        kind: 'owner_salary' as const,
+        label: `Lương chủ DN - ${s.companyName}`,
+        companyId: s.companyId,
+        amount: money(perGameDay),
+        period: 'game_day' as const,
+        annualizedAmount: money(annualized),
+      };
+    });
+    const personalIncomeSources = [...employmentSources, ...ownerSalarySources];
+    const annualTaxableIncome = personalIncomeSources.reduce((sum, s) => sum + s.annualizedAmount.amount, 0);
+    const seasonTaxMultiplier = Number(season.multipliers.tax ?? 1);
+    const estimatedTaxDue = Math.round(annualTaxableIncome * TAX_RATE * seasonTaxMultiplier);
+    const hasAssessmentForCurrentYear = assessments.some((a) => a.taxYear === currentYear);
+
     return {
       assessments: assessments.map((a) => ({
         id: a.id,
@@ -116,6 +152,15 @@ export class TaxService {
         ownerCharacterId: c.ownerCharacterId,
         ownerName: c.ownerName,
       })),
+      personalIncome: {
+        sources: personalIncomeSources,
+        annualTaxableIncome: money(annualTaxableIncome),
+        estimatedTaxDue: money(estimatedTaxDue),
+        taxRatePct: TAX_RATE * 100,
+        seasonTaxMultiplier,
+        currentYear,
+        hasAssessmentForCurrentYear,
+      },
     };
   }
 

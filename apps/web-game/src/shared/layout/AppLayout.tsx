@@ -135,15 +135,17 @@ export function AppLayout() {
   const { data: broadcasts = [] } = useQuery<BroadcastItem[]>({
     queryKey: ['broadcasts', 'active'],
     queryFn: () => apiRequest<BroadcastItem[]>('/api/v1/broadcasts/active'),
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
+    staleTime: 30000,
   });
 
   const { data: notifications = [] } = useQuery<NotificationDto[]>({
     queryKey: ['notifications', 'mine'],
     queryFn: () => apiRequest<NotificationDto[]>('/api/v1/notifications?limit=50'),
-    refetchInterval: 30000,
-    staleTime: 10000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
+    staleTime: 20000,
   });
 
   type RestrictionContact = {
@@ -172,8 +174,9 @@ export function AppLayout() {
   }>({
     queryKey: ['game-config'],
     queryFn: () => apiRequest('/api/v1/game-config'),
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: 30000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
   });
 
   const maintenance = gameConfig?.maintenance;
@@ -258,7 +261,6 @@ export function AppLayout() {
     const onNotification = (payload: any) => {
       void queryClient.invalidateQueries({ queryKey: ['notifications'] });
       void queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
-      void queryClient.invalidateQueries({ queryKey: ['game-config'] });
 
       const bodyText = String(payload?.body || '');
       // Khi tài khoản bị khóa/hạn chế giữa chừng: làm mới phiên/trạng thái để hiển thị overlay (không đăng xuất)
@@ -317,7 +319,6 @@ export function AppLayout() {
         period: payload.period,
         tickUpdatedAt: payload.tickUpdatedAt ?? payload.at,
       });
-      void queryClient.invalidateQueries({ queryKey: ['game-config'] });
     };
     socket.on('notification', onNotification as never);
     (socket as any).on('game:time', onGameTime);

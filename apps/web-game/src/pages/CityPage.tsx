@@ -87,14 +87,18 @@ export function CityPage() {
       apiRequest<AuctionOverviewDto>(
         `/api/v1/auctions?province=${encodeURIComponent(activeProvince)}`,
       ),
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    staleTime: 10_000,
   });
 
   // Du lịch & Lưu trú
   const { data: travelOverview, isLoading: travelLoading, refetch: refetchTravel } = useQuery<any>({
     queryKey: ['travel', 'overview'],
     queryFn: () => apiRequest<any>('/api/v1/travel/overview'),
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    staleTime: 10_000,
   });
   const [travelProvince, setTravelProvince] = useState<string>('');
   const [travelDays, setTravelDays] = useState<1 | 2 | 3>(1);

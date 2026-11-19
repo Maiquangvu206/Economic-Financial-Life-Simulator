@@ -100,24 +100,31 @@ export function StockMarketPage() {
   const { data: tickers, isLoading: tickersLoading, isError: tickersError, refetch: refetchTickers } = useQuery<TickerDto[]>({
     queryKey: ['stock-market', 'tickers'],
     queryFn: () => apiRequest<TickerDto[]>('/api/v1/stock-market/tickers'),
-    refetchInterval: 15000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    staleTime: 10000,
   });
 
   const { data: portfolio, isLoading: portfolioLoading, isError: portfolioError, refetch: refetchPortfolio } = useQuery<PortfolioDto>({
     queryKey: ['stock-market', 'portfolio'],
     queryFn: () => apiRequest<PortfolioDto>('/api/v1/stock-market/portfolio'),
-    refetchInterval: 15000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    staleTime: 10000,
   });
 
   const { data: trades, isLoading: tradesLoading, isError: tradesError, refetch: refetchTrades } = useQuery<TradeDto[]>({
     queryKey: ['stock-market', 'trades'],
     queryFn: () => apiRequest<TradeDto[]>('/api/v1/stock-market/trades'),
+    staleTime: 15000,
   });
 
   const { data: banking, isError: bankingError, refetch: refetchBanking } = useQuery<{ cash: { amount: number } }>({
     queryKey: ['banking', 'overview'],
     queryFn: () => apiRequest('/api/v1/banking/overview'),
-    refetchInterval: 15000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    staleTime: 10000,
   });
 
   const marketLoadError = tickersError || portfolioError || tradesError || bankingError;

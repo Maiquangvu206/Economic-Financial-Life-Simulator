@@ -1325,23 +1325,34 @@ export async function processGameTick(): Promise<GameTickResult> {
       logger.warn({ err: e }, 'Mayor term/salary tick step failed (best-effort)');
     }
 
-    // ---- 8. Company auto revenue settlement (every 30 game days / end of month) ----
+    // ---- 8. Company auto revenue settlement (monthly, catch-up for recent completed periods) ----
     await client.query('SAVEPOINT company_settlement_step');
     try {
-      if (nextTime.day === 1) {
-        const prevMonth = nextTime.month === 1 ? 12 : nextTime.month - 1;
-        const prevYear = nextTime.month === 1 ? nextYear - 1 : nextYear;
-        const periodKey = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
-        const revenueMultiplier = Number(seasonEffects.revenue ?? 1);
+      const completedPeriods: Array<{ periodKey: string; gameYear: number; gameMonth: number }> = [];
+      for (let i = 1; i <= 3; i++) {
+        let m = nextTime.month - i;
+        let y = nextYear;
+        while (m <= 0) {
+          m += 12;
+          y -= 1;
+        }
+        completedPeriods.push({ periodKey: `${y}-${String(m).padStart(2, '0')}`, gameYear: y, gameMonth: m });
+      }
 
-        const cfgRes = await client.query<{
-          industry_type: string;
-          monthly_rate_pct: string;
-          min_revenue_minor: string;
-          max_revenue_minor: string;
-        }>(`SELECT industry_type, monthly_rate_pct, min_revenue_minor, max_revenue_minor FROM industry_revenue_configs`);
-        const cfgMap = new Map(cfgRes.rows.map((r) => [r.industry_type, r]));
+      const cfgRes = await client.query<{
+        industry_type: string;
+        monthly_rate_pct: string;
+        min_revenue_minor: string;
+        max_revenue_minor: string;
+      }>(`SELECT industry_type, monthly_rate_pct, min_revenue_minor, max_revenue_minor FROM industry_revenue_configs`);
+      const cfgMap = new Map(cfgRes.rows.map((r) => [r.industry_type, r]));
 
+      let totalSettled = 0;
+      const settledPeriods: string[] = [];
+      const revenueMultiplier = Number(seasonEffects.revenue ?? 1);
+
+      for (const period of completedPeriods) {
+        const { periodKey, gameYear, gameMonth } = period;
         const companiesRes = await client.query<{
           id: string;
           owner_character_id: string;
@@ -1358,30 +1369,32 @@ export async function processGameTick(): Promise<GameTickResult> {
           [periodKey],
         );
 
-        let settled = 0;
+        let settledForPeriod = 0;
         for (const co of companiesRes.rows) {
           const cfg = cfgMap.get(co.industry);
           if (!cfg) continue;
           const ratePct = Number(cfg.monthly_rate_pct ?? 0);
           if (!Number.isFinite(ratePct) || ratePct <= 0) continue;
 
-          const effectiveVal = await client.query<{ v: string }>(`SELECT effective_company_valuation($1::uuid) AS v`, [co.id]).then(r => Number(r.rows[0]?.v ?? 0)).catch(() => Math.max(0, Number(co.valuation_minor ?? 0), Number(co.cash_minor ?? 0))); const baseCapital = Math.max(0, effectiveVal, Number(co.cash_minor ?? 0));
+          const effectiveVal = await client
+            .query<{ v: string }>(`SELECT effective_company_valuation($1::uuid) AS v`, [co.id])
+            .then((r) => Number(r.rows[0]?.v ?? 0))
+            .catch(() => Math.max(0, Number(co.valuation_minor ?? 0), Number(co.cash_minor ?? 0)));
+          const baseCapital = Math.max(0, effectiveVal, Number(co.cash_minor ?? 0));
           let actualRevenue = Math.round(baseCapital * (ratePct / 100) * revenueMultiplier);
           const minRev = Math.max(0, Number(cfg.min_revenue_minor ?? 0));
           const maxRev = Math.max(0, Number(cfg.max_revenue_minor ?? 0));
           if (minRev > 0) actualRevenue = Math.max(actualRevenue, minRev);
           if (maxRev > 0) actualRevenue = Math.min(actualRevenue, maxRev);
-          if (!Number.isFinite(actualRevenue) || actualRevenue <= 0) {
-            // vẫn ghi nhận kỳ (0) để tránh lặp tính? bỏ qua nếu 0
-            continue;
-          }
+          if (!Number.isFinite(actualRevenue) || actualRevenue < 0) actualRevenue = 0;
 
           try {
             const retainPct = Math.max(0, Math.min(100, Number(co.revenue_retain_pct ?? 0)));
-            const retainedMinor = Math.min(actualRevenue, Math.max(0, Math.round(actualRevenue * (retainPct / 100))));
+            const retainedMinor =
+              actualRevenue > 0 ? Math.min(actualRevenue, Math.max(0, Math.round(actualRevenue * (retainPct / 100)))) : 0;
             const ownerPayoutMinor = Math.max(0, actualRevenue - retainedMinor);
 
-            // 1) Phân bổ doanh thu thực tế: một phần giữ lại quỹ công ty (2B), phần còn lại về ví chủ sở hữu
+            // 1) Phân bổ doanh thu thực tế (chỉ khi > 0): một phần giữ lại quỹ công ty, phần còn lại về ví chủ sở hữu
             if (ownerPayoutMinor > 0) {
               await postLedger(client, {
                 kind: 'COMPANY_REVENUE_PAYOUT',
@@ -1407,7 +1420,7 @@ export async function processGameTick(): Promise<GameTickResult> {
               });
             }
 
-            // 2) Bút toán đối chiếu ACTUAL trong sổ cái công ty (ghi nhận tổng doanh thu thực tế của kỳ)
+            // 2) Bút toán đối chiếu ACTUAL trong sổ cái công ty (ghi nhận tổng doanh thu thực tế của kỳ, kể cả 0)
             await client.query(
               `INSERT INTO company_ledger_entries
                  (company_id, entry_type, amount_minor, declared_amount_minor, description, is_evasion, meta, ledger_kind, period_key)
@@ -1416,35 +1429,76 @@ export async function processGameTick(): Promise<GameTickResult> {
                 co.id,
                 actualRevenue,
                 `Doanh thu thực tế tự động kỳ ${periodKey} (trả chủ sở hữu ${ownerPayoutMinor}, giữ lại quỹ ${retainedMinor}, tỉ lệ giữ ${retainPct}%)`,
-                JSON.stringify({ source: 'auto_30d', periodKey, baseCapitalMinor: baseCapital, monthlyRatePct: ratePct, seasonMultiplier: revenueMultiplier, retainPct, retainedMinor, ownerPayoutMinor }),
+                JSON.stringify({
+                  source: 'auto_30d',
+                  periodKey,
+                  baseCapitalMinor: Math.trunc(baseCapital),
+                  monthlyRatePct: ratePct,
+                  seasonMultiplier: revenueMultiplier,
+                  retainPct,
+                  retainedMinor,
+                  ownerPayoutMinor,
+                }),
                 periodKey,
               ],
             );
 
-            // 3) Đánh dấu đã chốt kỳ (idempotent)
+            // 3) Đánh dấu đã chốt kỳ (idempotent) để kỳ xuất hiện trong bảng thống kê doanh thu
             await client.query(
               `INSERT INTO company_revenue_settlements
                  (id, company_id, owner_character_id, period_key, game_year, game_month, base_capital_minor, monthly_rate_pct, season_multiplier, actual_revenue_minor, retained_minor, owner_payout_minor, status)
                VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'settled')
                ON CONFLICT (company_id, period_key) DO NOTHING`,
-              [co.id, co.owner_character_id, periodKey, prevYear, prevMonth, Math.trunc(baseCapital), ratePct, revenueMultiplier, actualRevenue, retainedMinor, ownerPayoutMinor],
+              [
+                co.id,
+                co.owner_character_id,
+                periodKey,
+                gameYear,
+                gameMonth,
+                Math.trunc(baseCapital),
+                ratePct,
+                revenueMultiplier,
+                actualRevenue,
+                retainedMinor,
+                ownerPayoutMinor,
+              ],
             );
 
             await enqueueDomainEvent(client, {
               type: 'company.revenue.settled.v1',
               aggregateType: 'company',
               aggregateId: co.id,
-              payload: { companyId: co.id, ownerCharacterId: co.owner_character_id, periodKey, actualRevenueMinor: actualRevenue, retainedMinor, ownerPayoutMinor, retainPct },
+              payload: {
+                companyId: co.id,
+                ownerCharacterId: co.owner_character_id,
+                periodKey,
+                actualRevenueMinor: actualRevenue,
+                retainedMinor,
+                ownerPayoutMinor,
+                retainPct,
+              },
             });
-            settled += 1;
+            settledForPeriod += 1;
           } catch (err) {
             logger.warn({ err, companyId: co.id, periodKey }, 'Company auto revenue settlement failed for company');
           }
         }
-        if (settled > 0) applied.push(`companies: auto revenue settled ${settled} for ${periodKey}`);
+
+        if (settledForPeriod > 0) {
+          totalSettled += settledForPeriod;
+          settledPeriods.push(`${periodKey}:${settledForPeriod}`);
+        }
+      }
+
+      if (totalSettled > 0) {
+        applied.push(`companies: auto revenue settled ${totalSettled} (${settledPeriods.join(', ')})`);
       }
     } catch (e) {
-      try { await client.query('ROLLBACK TO SAVEPOINT company_settlement_step'); } catch { /* ignore */ }
+      try {
+        await client.query('ROLLBACK TO SAVEPOINT company_settlement_step');
+      } catch {
+        /* ignore */
+      }
       logger.warn({ err: e }, 'Company auto revenue settlement step failed (best-effort)');
     }
 

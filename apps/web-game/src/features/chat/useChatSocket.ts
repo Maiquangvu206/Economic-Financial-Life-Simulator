@@ -94,7 +94,9 @@ export function useChatSocket() {
   const { data: conversationsApi = [], refetch: refetchConversations } = useQuery<Conversation[]>({
     queryKey: ['chat', 'conversations'],
     queryFn: () => apiRequest<Conversation[]>('/api/v1/chat/conversations'),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    staleTime: 30_000,
   });
 
   const upsertMessage = useCallback((incoming: UiChatMessage, opts?: { countUnread?: boolean }) => {

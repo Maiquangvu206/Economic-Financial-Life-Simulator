@@ -136,6 +136,9 @@ export function RealEstatePage() {
   } = useQuery<AuctionOverviewDto>({
     queryKey: ['auctions', 'overview'],
     queryFn: () => apiRequest<AuctionOverviewDto>('/api/v1/auctions'),
+    staleTime: 10000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: provinces = [] } = useQuery<ProvinceDto[]>({
