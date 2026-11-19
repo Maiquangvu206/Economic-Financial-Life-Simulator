@@ -173,10 +173,9 @@ export class SuccessionService {
       await client.query(`UPDATE loans SET status='repaid', outstanding_minor=0, updated_at=now() WHERE borrower_id=$1 AND collateral_property_id IS NULL`, [oldChar.id]);
 
       // Bước 4: XÓA CỨNG nhân vật cũ: gỡ tham chiếu có thể chặn xóa
-      const sysSeller = '${SYSTEM_SELLER_ID}';
       await client.query(`UPDATE stock_trades SET buyer_character_id = NULL WHERE buyer_character_id = $1`, [oldChar.id]);
       await client.query(`UPDATE stock_trades SET seller_character_id = NULL WHERE seller_character_id = $1`, [oldChar.id]);
-      await client.query(`UPDATE auctions SET seller_character_id = $2 WHERE seller_character_id = $1`, [oldChar.id, sysSeller]);
+      await client.query(`UPDATE auctions SET seller_character_id = $2 WHERE seller_character_id = $1`, [oldChar.id, SYSTEM_SELLER_ID]);
       await client.query(`UPDATE property_sale_offers SET status = 'cancelled', resolved_at = now(), updated_at = now() WHERE (buyer_character_id = $1 OR seller_character_id = $1) AND status = 'pending'`, [oldChar.id]);
       await client.query(`UPDATE property_sale_offers SET buyer_character_id = NULL WHERE buyer_character_id = $1`, [oldChar.id]);
       await client.query(`UPDATE property_sale_offers SET seller_character_id = NULL WHERE seller_character_id = $1`, [oldChar.id]);

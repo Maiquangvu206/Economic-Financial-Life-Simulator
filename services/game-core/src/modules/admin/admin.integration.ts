@@ -165,14 +165,14 @@ export async function searchPlayers(req: Request, res: Response): Promise<void> 
     where = `(c.full_name ILIKE ${p} OR c.cccd ILIKE ${p} OR c.id::text ILIKE ${p} OR u.email ILIKE ${p} OR u.username ILIKE ${p})`;
   }
   const r = await pool.query(
-    `SELECT c.id, c.user_id AS "userId", c.full_name AS "fullName", c.cccd, c.is_alive AS "isAlive",
+    `SELECT c.id, c.user_id AS "userId", c.full_name AS "fullName", c.cccd, COALESCE(c.is_alive, true) AS "isAlive",
             c.cash_minor AS "cashMinor", c.credit_score AS "creditScore", c.heat_level AS "heatLevel", c.age,
             c.death_age AS "deathAge",
             u.role, u.email, u.username, u.status AS "accountStatus"
      FROM characters c
      LEFT JOIN users u ON u.id = c.user_id
-     WHERE COALESCE(c.is_alive, true) = true AND ${where}
-     ORDER BY c.created_at DESC
+     WHERE ${where}
+     ORDER BY COALESCE(c.is_alive, true) DESC, c.created_at DESC
      LIMIT $1`,
     params,
   );
