@@ -1,8 +1,25 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { UserRole } from '@efls/contracts';
 import { env } from '../../config/env.js';
+import { pool } from '../db/pool.js';
 import { AppError } from './errors.js';
 import { enforceNotRestricted } from './restrictions.js';
+
+function touchCharacterActivity(userId: string): void {
+  // Best-effort, throttled in SQL: mark player character active so world tick doesn't drain health while offline.
+  void pool
+    .query(
+      `UPDATE characters
+          SET last_active_at = now(), updated_at = now()
+        WHERE user_id = $1
+          AND COALESCE(is_alive, true) = true
+          AND (last_active_at IS NULL OR last_active_at < now() - interval '60 seconds')`,
+      [userId],
+    )
+    .catch(() => {
+      /* ignore activity touch errors (e.g. column missing before migration applied) */
+    });
+}
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -34,6 +51,9 @@ export function attachActor(req: Request, res: Response, next: NextFunction): vo
   const role = req.header('x-actor-role');
   req.actorId = actorId;
   req.actorRole = role === 'admin' || role === 'moderator' ? role : 'player';
+  if (req.actorRole === 'player') {
+    touchCharacterActivity(actorId);
+  }
   void enforceNotRestricted(req, res, next);
 }
 

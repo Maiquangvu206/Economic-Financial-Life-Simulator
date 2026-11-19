@@ -391,8 +391,9 @@ export async function processGameTick(): Promise<GameTickResult> {
       birth_game_year: number | null;
       birth_game_day: number | null;
       is_alive: boolean | null;
+      last_active_at: Date | null;
     }>(
-      `SELECT id, age, health_energy, death_age, birth_game_year, birth_game_day, is_alive
+      `SELECT id, age, health_energy, death_age, birth_game_year, birth_game_day, is_alive, last_active_at
        FROM characters WHERE COALESCE(is_alive,true)=true`,
     );
 
@@ -414,9 +415,14 @@ export async function processGameTick(): Promise<GameTickResult> {
       if (nextAge >= deathAge) {
         nextAge = deathAge;
       }
-      // Hao hụt thể lực theo tick/ngày và mùa (nhanh hơn ở mùa khắc nghiệt), hồi phục chậm tự nhiên.
-      const energyDecay = Math.max(1, Math.ceil(1 * Number(seasonEffects.energy ?? 1)));
-      const nextHealth = Math.max(0, Math.min(100, Math.round(Number(c.health_energy) - energyDecay)));
+      // Hao hụt thể lực theo tick/ngày và mùa (nhanh hơn ở mùa khắc nghiệt), chỉ áp dụng khi người chơi đang online/hoạt động gần đây.
+      // Không trừ sức khỏe khi offline để tránh nhân vật chết trong lúc vắng mặt.
+      const lastActiveAt = c.last_active_at ? new Date(c.last_active_at as any).getTime() : 0;
+      const isRecentlyActive = lastActiveAt > 0 && Date.now() - lastActiveAt <= 5 * 60 * 1000;
+      const currentHealth = Math.max(0, Math.min(100, Math.round(Number(c.health_energy) || 0)));
+      const nextHealth = isRecentlyActive
+        ? Math.max(0, Math.min(100, currentHealth - Math.max(1, Math.ceil(1 * Number(seasonEffects.energy ?? 1)))))
+        : currentHealth;
 
       await client.query(
         `UPDATE characters SET age = $1, health_energy = $2, updated_at = now() WHERE id = $3`,
