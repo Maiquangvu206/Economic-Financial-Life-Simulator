@@ -105,6 +105,7 @@ export function BusinessPage() {
   const [buyOfferShares, setBuyOfferShares] = useState<Record<string, string>>({});
   const [suggestionPlan, setSuggestionPlan] = useState<any | null>(null);
   const [detailTab, setDetailTab] = useState<'overview' | 'finance' | 'hr' | 'equity'>('overview');
+  const [revenuePeriodSearch, setRevenuePeriodSearch] = useState('');
   const [editingSalary, setEditingSalary] = useState<
     | { targetType: 'employee' | 'staff'; targetId: string; value: string; reason: string }
     | null
