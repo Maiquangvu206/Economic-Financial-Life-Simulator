@@ -226,7 +226,7 @@ export class BankingRepository {
   async activeSalary(db: Db, characterId: string): Promise<number> {
     const result = await db.query<{ salary_minor: string }>(
       `SELECT salary_minor FROM employments
-       WHERE character_id = $1 AND status = 'active' LIMIT 1`,
+       WHERE character_id = $1 AND status IN ('active','notice_pending') LIMIT 1`,
       [characterId],
     );
     return Number(result.rows[0]?.salary_minor ?? 0);

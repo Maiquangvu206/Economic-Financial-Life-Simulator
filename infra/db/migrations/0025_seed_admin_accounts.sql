@@ -21,7 +21,7 @@ ON CONFLICT (id) DO UPDATE
 
 INSERT INTO characters (
   id, user_id, full_name, age, health_energy, cash_minor, credit_score, heat_level,
-  marital_status, location_x, location_y, cccd, birthplace, account_number, is_alive
+  marital_status, location_x, location_y, cccd, birthplace, account_number
 )
 VALUES (
   '00000000-0000-4000-8000-0000000000c2',
@@ -37,8 +37,7 @@ VALUES (
   5,
   '001000000001',
   '001',
-  '900000000001',
-  true
+  '900000000001'
 )
 ON CONFLICT (id) DO UPDATE
   SET user_id = EXCLUDED.user_id,
@@ -46,7 +45,6 @@ ON CONFLICT (id) DO UPDATE
       cccd = EXCLUDED.cccd,
       birthplace = EXCLUDED.birthplace,
       account_number = EXCLUDED.account_number,
-      is_alive = true,
       updated_at = now();
 
 -- Moderator account
@@ -67,7 +65,7 @@ ON CONFLICT (id) DO UPDATE
 
 INSERT INTO characters (
   id, user_id, full_name, age, health_energy, cash_minor, credit_score, heat_level,
-  marital_status, location_x, location_y, cccd, birthplace, account_number, is_alive
+  marital_status, location_x, location_y, cccd, birthplace, account_number
 )
 VALUES (
   '00000000-0000-4000-8000-0000000000c3',
@@ -83,8 +81,7 @@ VALUES (
   5,
   '001000000002',
   '001',
-  '900000000002',
-  true
+  '900000000002'
 )
 ON CONFLICT (id) DO UPDATE
   SET user_id = EXCLUDED.user_id,
@@ -92,6 +89,5 @@ ON CONFLICT (id) DO UPDATE
       cccd = EXCLUDED.cccd,
       birthplace = EXCLUDED.birthplace,
       account_number = EXCLUDED.account_number,
-      is_alive = true,
       updated_at = now();
 

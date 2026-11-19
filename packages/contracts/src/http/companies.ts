@@ -34,6 +34,13 @@ export const CompanyDtoSchema = z.object({
   isOwner: z.boolean(),
   /** % doanh thu tự động 30 ngày giữ lại trong quỹ công ty (phần còn lại trả về ví chủ sở hữu), áp dụng kỳ tiếp theo. */
   revenueRetainPct: z.number().min(0).max(100).optional().default(0),
+  /** Lương chủ doanh nghiệp (cấu hình, mỗi ngày/tick game). 0 = không nhận lương. */
+  ownerSalary: MoneySchema.optional(),
+  /** Trạng thái vai trò/chức vụ chủ DN như công việc nhận lương. */
+  ownerEmploymentStatus: z
+    .enum(['inactive', 'active', 'blocked_other_employment', 'company_inactive', 'unavailable'])
+    .optional(),
+  ownerEmploymentId: IdSchema.nullable().optional(),
   premises: CompanyPremisesDtoSchema.nullable().optional(),
   /** Cổ đông (chỉ có khi xem chi tiết công ty). */
   shareholders: z
@@ -124,8 +131,11 @@ export const CompanyEmployeeDtoSchema = z.object({
   characterName: z.string(),
   jobTitle: z.string(),
   salary: MoneySchema,
-  status: z.enum(['active', 'resigned', 'fired']),
+  salaryArrears: MoneySchema.optional(),
+  status: z.enum(['active', 'notice_pending', 'resigned', 'fired']),
   hiredAt: z.string().datetime(),
+  isOwnerRole: z.boolean().optional().default(false),
+  salaryLastChangedAt: z.string().datetime().nullable().optional(),
 });
 export type CompanyEmployeeDto = z.infer<typeof CompanyEmployeeDtoSchema>;
 
@@ -181,9 +191,18 @@ export const CompanyStaffDtoSchema = z.object({
   fullName: z.string(),
   roleTitle: z.string(),
   salary: MoneySchema,
-  status: z.enum(['active', 'fired', 'resigned']),
+  salaryArrears: MoneySchema.optional(),
+  status: z.enum(['active', 'notice_pending', 'resigned', 'fired']),
   hiredAt: z.string().datetime(),
   firedAt: z.string().datetime().nullable(),
+  /** Chủ doanh nghiệp / vai trò đặc biệt (không phải nhân sự NPC từ kế hoạch tuyển dụng). */
+  isOwnerRole: z.boolean().optional().default(false),
+  /** Employment id nếu đây là vai trò công việc (chủ DN). */
+  employmentId: IdSchema.nullable().optional(),
+  characterId: IdSchema.nullable().optional(),
+  editableSalary: z.boolean().optional().default(false),
+  note: z.string().nullable().optional(),
+  salaryLastChangedAt: z.string().datetime().nullable().optional(),
 });
 export type CompanyStaffDto = z.infer<typeof CompanyStaffDtoSchema>;
 
@@ -279,6 +298,35 @@ export const CompanyRevenueSettlementDtoSchema = z.object({
 });
 export type CompanyRevenueSettlementDto = z.infer<typeof CompanyRevenueSettlementDtoSchema>;
 
+export const CompanyOwnerRoleDtoSchema = z.object({
+  characterId: IdSchema,
+  characterName: z.string(),
+  roleTitle: z.string(),
+  salary: MoneySchema,
+  status: z.enum(['inactive', 'active', 'blocked_other_employment', 'company_inactive', 'unavailable']),
+  employmentId: IdSchema.nullable().optional(),
+  hiredAt: z.string().datetime().nullable().optional(),
+  editable: z.boolean().optional().default(true),
+  note: z.string().nullable().optional(),
+});
+export type CompanyOwnerRoleDto = z.infer<typeof CompanyOwnerRoleDtoSchema>;
+
+export const CompanyPayrollForecastDtoSchema = z.object({
+  /** Tổng lương dự kiến/tháng game cho nhân viên người chơi (employments, không gồm owner-role employment). */
+  employeeMonthly: MoneySchema,
+  /** Tổng lương dự kiến/tháng game cho nhân sự AI (company_staff). */
+  staffMonthly: MoneySchema,
+  /** Lương chủ DN dự kiến/tháng game (nếu có cấu hình). */
+  ownerMonthly: MoneySchema,
+  /** Tổng lương dự kiến/tháng game (bao gồm chủ DN). */
+  totalMonthly: MoneySchema,
+  /** Tổng nợ lương hiện tại (nhân viên + AI staff). */
+  totalArrears: MoneySchema,
+  employeeArrears: MoneySchema,
+  staffArrears: MoneySchema,
+});
+export type CompanyPayrollForecastDto = z.infer<typeof CompanyPayrollForecastDtoSchema>;
+
 export const CompanyHrAccountingDtoSchema = z.object({
   companyId: IdSchema,
   plans: z.array(HiringPlanDtoSchema),
@@ -286,8 +334,27 @@ export const CompanyHrAccountingDtoSchema = z.object({
   ledger: CompanyLedgerDtoSchema,
   filings: z.array(CompanyTaxFilingDtoSchema),
   revenueSettlements: z.array(CompanyRevenueSettlementDtoSchema).optional().default([]),
+  ownerRole: CompanyOwnerRoleDtoSchema.optional(),
+  payrollForecast: CompanyPayrollForecastDtoSchema.optional(),
 });
 export type CompanyHrAccountingDto = z.infer<typeof CompanyHrAccountingDtoSchema>;
+
+export const SetCompanyOwnerSalaryRequestSchema = z.object({
+  salary: MoneySchema,
+});
+export type SetCompanyOwnerSalaryRequest = z.infer<typeof SetCompanyOwnerSalaryRequestSchema>;
+
+export const UpdateEmployeeSalaryRequestSchema = z.object({
+  salary: MoneySchema,
+  reason: z.string().max(300).optional(),
+});
+export type UpdateEmployeeSalaryRequest = z.infer<typeof UpdateEmployeeSalaryRequestSchema>;
+
+export const UpdateStaffSalaryRequestSchema = z.object({
+  salary: MoneySchema,
+  reason: z.string().max(300).optional(),
+});
+export type UpdateStaffSalaryRequest = z.infer<typeof UpdateStaffSalaryRequestSchema>;
 
 export const RelocateCompanyPremisesRequestSchema = z.object({
   premises: z.object({

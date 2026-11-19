@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IdSchema } from '../common/ids.js';
 import { MoneySchema } from '../common/money.js';
+import { DivorceCustodyTermsSchema } from './family.js';
 
 export const MarriageDtoSchema = z.object({
   id: IdSchema,
@@ -36,6 +37,7 @@ export const DivorceProposalDtoSchema = z.object({
   otherCharacterId: IdSchema,
   otherName: z.string(),
   status: z.enum(['pending', 'accepted', 'rejected', 'cancelled']),
+  custodyTerms: z.any().nullable().optional(),
   createdAt: z.string().datetime(),
   respondedAt: z.string().datetime().nullable(),
 });
@@ -115,7 +117,10 @@ export type MarryRequest = z.infer<typeof MarryRequestSchema>;
 export const ProposeMarriageRequestSchema = MarryRequestSchema;
 export type ProposeMarriageRequest = MarryRequest;
 
-export const DivorceRequestSchema = z.object({ marriageId: IdSchema });
+export const DivorceRequestSchema = z.object({
+  marriageId: IdSchema,
+  custodyTerms: DivorceCustodyTermsSchema.optional(),
+});
 export type DivorceRequest = z.infer<typeof DivorceRequestSchema>;
 
 export const ProposeDivorceRequestSchema = DivorceRequestSchema;

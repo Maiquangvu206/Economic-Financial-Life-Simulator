@@ -2,7 +2,13 @@ import { Router } from 'express';
 import { attachActor } from '../../shared/http/actor.js';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
-import { ConstructPropertyRequestSchema, DemolishPropertyRequestSchema } from '@efls/contracts';
+import {
+  ConstructPropertyRequestSchema,
+  DemolishPropertyRequestSchema,
+  ListPropertyRequestSchema,
+  UnlistPropertyRequestSchema,
+  UpdateRentTermsRequestSchema,
+} from '@efls/contracts';
 import { z } from 'zod';
 import { provinceLandController } from './provinceLand.controller.js';
 
@@ -25,5 +31,8 @@ provinceLandRouter.use(attachActor);
 provinceLandRouter.get('/properties', asyncHandler(provinceLandController.listByProvince));
 provinceLandRouter.post('/construct', validateBody(ConstructPropertyRequestSchema), asyncHandler(provinceLandController.construct));
 provinceLandRouter.post('/demolish', validateBody(DemolishPropertyRequestSchema), asyncHandler(provinceLandController.demolish));
+provinceLandRouter.post('/list', validateBody(ListPropertyRequestSchema), asyncHandler(provinceLandController.listProperty));
+provinceLandRouter.post('/unlist', validateBody(UnlistPropertyRequestSchema), asyncHandler(provinceLandController.unlistProperty));
+provinceLandRouter.post('/rent-terms', validateBody(UpdateRentTermsRequestSchema), asyncHandler(provinceLandController.updateRentTerms));
 provinceLandRouter.post('/offers', validateBody(MakeProvinceLandOfferSchema), asyncHandler(provinceLandController.makeOffer));
 provinceLandRouter.post('/offers/respond', validateBody(RespondProvinceLandOfferSchema), asyncHandler(provinceLandController.respondOffer));

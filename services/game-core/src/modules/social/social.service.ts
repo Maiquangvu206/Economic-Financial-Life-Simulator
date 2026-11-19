@@ -112,6 +112,7 @@ export class SocialService {
         otherCharacterId: p.otherCharacterId,
         otherName: p.otherName,
         status: p.status as 'pending' | 'accepted' | 'rejected' | 'cancelled',
+        custodyTerms: p.custodyTerms ?? null,
         createdAt: p.createdAt.toISOString(),
         respondedAt: p.respondedAt?.toISOString() ?? null,
       })),
@@ -259,7 +260,7 @@ export class SocialService {
   /** Gửi yêu cầu ly hôn (cần người còn lại đồng ý). Đồng thời chụp snapshot & kích hoạt phong tỏa tài sản.
    *  Nếu đối phương bị khóa/không thể xác thực (tài khoản bị khóa/hạn chế, hoặc nhân vật không còn hoạt động),
    *  cho phép người còn lại ly hôn đơn phương ngay (không cần chờ xác thực). */
-  async proposeDivorce(userId: string, marriageId: string): Promise<SocialOverviewDto> {
+  async proposeDivorce(userId: string, marriageId: string, custodyTerms?: any): Promise<SocialOverviewDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
       const marriage = await this.repository.getMarriage(marriageId, client);
@@ -300,8 +301,11 @@ export class SocialService {
           throw AppError.conflict('proposal_exists', 'Đã có yêu cầu ly hôn đang chờ phản hồi.');
         }
         // Đối phương hiện bị khóa/không thể xác thực: cho phép hoàn tất ly hôn đơn phương từ yêu cầu đang chờ.
+        if (custodyTerms) {
+          await this.repository.updateDivorceProposalCustodyTerms(client, pending, custodyTerms);
+        }
       } else {
-        proposalId = await this.repository.createDivorceProposal(client, marriageId, character.id);
+        proposalId = await this.repository.createDivorceProposal(client, marriageId, character.id, custodyTerms);
       }
       if (!proposalId) throw new Error('Không tạo/khởi tạo được yêu cầu ly hôn');
 
@@ -443,6 +447,80 @@ export class SocialService {
 
     let split: { transferred: number; fromCharacterId: string; toCharacterId: string } | null = null;
     let body = '';
+
+    // ---- Custody (quyền nuôi con) ----
+    const custodyParts: string[] = [];
+    try {
+      const childrenRes = await client.query<{
+        id: string; full_name: string; age: number; dependent_status: string; is_dependent: boolean; is_alive: boolean;
+        custodial_parent_id: string | null;
+      }>(
+        `SELECT id, full_name, age, COALESCE(dependent_status,'none') AS dependent_status,
+                COALESCE(is_dependent,false) AS is_dependent, COALESCE(is_alive,true) AS is_alive,
+                custodial_parent_id
+         FROM characters
+         WHERE ((parent_1_id = $1 AND parent_2_id = $2) OR (parent_1_id = $2 AND parent_2_id = $1))
+           AND COALESCE(is_alive,true) = true
+           AND COALESCE(is_dependent,false) = true
+           AND COALESCE(dependent_status,'child') IN ('infant','child')
+           AND age < 18
+         FOR UPDATE`,
+        [characterIdA, characterIdB],
+      );
+      const minorChildren = childrenRes.rows;
+      if (minorChildren.length > 0) {
+        let custodyTerms: any = null;
+        if (proposalId) {
+          const p = await client.query<{ custody_terms: any }>(`SELECT COALESCE(to_jsonb(d)->'custody_terms','{}'::jsonb) AS custody_terms FROM divorce_proposals d WHERE d.id = $1`, [proposalId]);
+          custodyTerms = p.rows[0]?.custody_terms ?? null;
+        }
+        let custodialId: string | null = null;
+        if (custodyTerms && custodyTerms.mode === 'agree' && (custodyTerms.custodialParentId === characterIdA || custodyTerms.custodialParentId === characterIdB)) {
+          custodialId = custodyTerms.custodialParentId;
+        } else {
+          // Hệ thống phán quyết: ưu tiên bên có nhà ở hợp lệ và điều kiện tài chính tốt hơn
+          const hasResidence = async (cid: string) => {
+            const r = await client.query<{ ok: boolean }>(
+              `SELECT (
+                 EXISTS (SELECT 1 FROM properties p WHERE p.owner_character_id = $1 AND p.status IN ('owned','listed') AND p.property_type IN ('apartment','house'))
+                 OR EXISTS (SELECT 1 FROM province_land_properties pl WHERE pl.owner_character_id = $1 AND pl.status = 'owned' AND COALESCE(pl.merged_into_property_id::text,'') = '' AND pl.property_type IN ('apartment','house','mini_apartment'))
+                 OR EXISTS (SELECT 1 FROM leases l JOIN properties p ON p.id = l.property_id WHERE l.tenant_character_id = $1 AND l.status = 'active' AND p.property_type IN ('apartment','house'))
+               ) AS ok`,
+              [cid],
+            );
+            return !!r.rows[0]?.ok;
+          };
+          const [resA, resB] = await Promise.all([hasResidence(characterIdA), hasResidence(characterIdB)]);
+          const cashAcur = Number(a.cash_minor ?? 0);
+          const cashBcur = Number(b.cash_minor ?? 0);
+          const scoreA = (resA ? 1_000_000_000_000 : 0) + cashAcur;
+          const scoreB = (resB ? 1_000_000_000_000 : 0) + cashBcur;
+          custodialId = scoreA >= scoreB ? characterIdA : characterIdB;
+        }
+        const payerId = custodialId === characterIdA ? characterIdB : characterIdA;
+        const gs = await client.query<{ current_year: string; current_day: string }>(`SELECT current_year, current_day FROM game_state WHERE id = 1`);
+        const gy = Number(gs.rows[0]?.current_year ?? 0);
+        const gd = Number(gs.rows[0]?.current_day ?? 0);
+        for (const child of minorChildren) {
+          await client.query(
+            `UPDATE characters
+             SET custodial_parent_id = $2,
+                 child_support_payer_id = $3,
+                 child_support_percent = 20,
+                 child_support_started_game_year = $4,
+                 child_support_started_game_day = $5,
+                 updated_at = now()
+             WHERE id = $1`,
+            [child.id, custodialId, payerId, gy, gd],
+          );
+        }
+        custodyParts.push(
+          `quyền nuôi ${minorChildren.length} con: giao cho bên được chọn${custodyTerms?.mode === 'agree' ? ' (theo thỏa thuận)' : ' (hệ thống phán quyết theo nhà ở/tài chính)'}, bên còn lại cấp dưỡng 20% thu nhập/tháng`,
+        );
+      }
+    } catch {
+      // không làm hỏng ly hôn nếu áp dụng custody thất bại
+    }
 
     if (!prenupEnabled) {
       const propsRes = await client.query<{ id: string; owner_character_id: string; current_value_minor: string; status: string }>(
@@ -599,6 +677,10 @@ export class SocialService {
     await this.repository.endMarriage(client, marriageId, 'divorced');
     await client.query(`UPDATE characters SET marital_status = 'divorced', spouse_id = NULL, updated_at = now() WHERE id = $1`, [characterIdA]);
     await client.query(`UPDATE characters SET marital_status = 'divorced', spouse_id = NULL, updated_at = now() WHERE id = $1`, [characterIdB]);
+
+    if (custodyParts.length > 0) {
+      body = `${body} Quyền nuôi con: ${custodyParts.join('; ')}.`;
+    }
 
     return { body, split };
   }

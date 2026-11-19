@@ -147,11 +147,36 @@ export class TaxRepository {
               e.hired_at AS "hiredAt"
        FROM employments e
        LEFT JOIN jobs j ON j.id = e.job_id
-       WHERE e.character_id = $1 AND e.status = 'active'
+       WHERE e.character_id = $1 AND e.status IN ('active','notice_pending')
        ORDER BY e.hired_at DESC`,
       [characterId],
     );
     return result.rows;
+  }
+
+  /** Lương chủ doanh nghiệp đang cấu hình tại các công ty sở hữu (hỗ trợ đa-công-ty, không phụ thuộc employment slot). */
+  async listActiveOwnerSalarySources(
+    characterId: string,
+    db: Db = this.db,
+  ): Promise<Array<{ companyId: string; companyName: string; salaryMinor: string; companyStatus: string }>> {
+    try {
+      const result = await db.query<{ companyId: string; companyName: string; salaryMinor: string; companyStatus: string }>(
+        `SELECT c.id AS "companyId",
+                c.name AS "companyName",
+                COALESCE(NULLIF(to_jsonb(c)->>'owner_salary_minor','')::bigint, 0)::text AS "salaryMinor",
+                c.status AS "companyStatus"
+         FROM companies c
+         WHERE c.owner_character_id = $1
+           AND c.status IN ('active','ipo')
+           AND COALESCE(NULLIF(to_jsonb(c)->>'owner_salary_minor','')::bigint, 0) > 0
+         ORDER BY c.updated_at DESC`,
+        [characterId],
+      );
+      return result.rows;
+    } catch (e: any) {
+      if (e?.code === '42703') return [];
+      throw e;
+    }
   }
 
   async listAudits(characterId: string, db: Db = this.db): Promise<AuditRow[]> {

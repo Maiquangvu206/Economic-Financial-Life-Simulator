@@ -95,7 +95,7 @@ BEGIN
       'active',
       NULL
     )
-  ON CONFLICT (name) DO NOTHING;
+  ON CONFLICT (id) DO NOTHING;
 
   -- -------------------------------------------------------------------------
   -- 3) Tin tuyển dụng cơ bản cho người chơi mới (không yêu cầu bằng cấp cao)

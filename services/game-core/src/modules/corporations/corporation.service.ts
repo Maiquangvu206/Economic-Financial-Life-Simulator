@@ -60,6 +60,8 @@ function toCompanyDto(
     foundedAt: row.foundedAt.toISOString(),
     isOwner: false, // điền lại ở caller nếu cần
     revenueRetainPct: Number((row as any).revenueRetainPct ?? 0),
+    ownerSalary: money(Number((row as any).ownerSalaryMinor ?? 0)),
+    ownerEmploymentId: ((row as any).ownerEmploymentId ?? null) as any,
     premises: premisesFromRow(row),
   };
 }
@@ -67,6 +69,84 @@ function toCompanyDto(
 /** Dịch vụ doanh nghiệp: thành lập, quản lý công ty, đầu tư vốn. */
 export class CorporationService {
   constructor(private readonly repository = corporationRepository) {}
+
+  private async syncOwnerEmploymentRole(
+    client: any,
+    company: { id: string; name: string; status: string; ownerCharacterId: string; ownerSalaryMinor?: string | number },
+  ): Promise<{
+    status: 'inactive' | 'active' | 'blocked_other_employment' | 'company_inactive' | 'unavailable';
+    employmentId: string | null;
+    hiredAt: Date | null;
+    note: string | null;
+  }> {
+    const salaryMinor = Number(company.ownerSalaryMinor ?? 0);
+
+    // Multi-company: lương chủ DN trả theo cấu hình công ty (không chiếm employment slot),
+    // nên không tạo/khóa employment chủ DN và không chặn bởi việc làm khác.
+    try {
+      const active = await this.repository.getOwnerActiveEmployment(client, company.ownerCharacterId);
+      if (active && active.isOwnerRole && active.companyId === company.id) {
+        await this.repository.endOwnerEmployment(client, company.id).catch(() => {});
+      } else {
+        await client
+          .query(`UPDATE companies SET owner_employment_id = NULL, updated_at = now() WHERE id = $1`, [company.id])
+          .catch(() => {});
+      }
+    } catch (e: any) {
+      if (e?.code !== '42703') throw e;
+    }
+
+    if (company.status === 'bankrupt') {
+      return { status: 'company_inactive', employmentId: null, hiredAt: null, note: 'Công ty không còn hoạt động.' };
+    }
+    if (salaryMinor <= 0) {
+      return { status: 'inactive', employmentId: null, hiredAt: null, note: 'Chưa cấu hình lương chủ doanh nghiệp.' };
+    }
+    return {
+      status: 'active',
+      employmentId: null,
+      hiredAt: null,
+      note: 'Đang nhận lương chủ DN từ quỹ công ty theo mỗi ngày game (hỗ trợ làm chủ nhiều công ty, không chiếm slot việc làm).',
+    };
+  }
+
+  private ownerRoleStatusFromRow(row: any): 'inactive' | 'active' | 'blocked_other_employment' | 'company_inactive' | 'unavailable' {
+    const salary = Number(row?.ownerSalaryMinor ?? 0);
+    if (row?.status === 'bankrupt') return 'company_inactive';
+    if (salary <= 0) return 'inactive';
+    return 'active';
+  }
+
+  private async getOwnerRoleDto(client: any, companyId: string) {
+    const snap = await this.repository.getOwnerRoleSnapshot(client, companyId);
+    if (!snap) return undefined;
+    const salaryMinor = Number(snap.ownerSalaryMinor ?? 0);
+    let status: 'inactive' | 'active' | 'blocked_other_employment' | 'company_inactive' | 'unavailable' = 'inactive';
+    let note: string | null = null;
+
+    if (snap.companyStatus === 'bankrupt') {
+      status = 'company_inactive';
+      note = 'Công ty không còn hoạt động.';
+    } else if (salaryMinor <= 0) {
+      status = 'inactive';
+      note = 'Chưa cấu hình lương chủ doanh nghiệp.';
+    } else {
+      status = 'active';
+      note = 'Đang nhận lương chủ DN từ quỹ công ty theo mỗi ngày game (có thể nhận ở nhiều công ty, không chiếm slot việc làm).';
+    }
+
+    return {
+      characterId: snap.ownerCharacterId,
+      characterName: snap.ownerName,
+      roleTitle: 'Chủ doanh nghiệp',
+      salary: money(salaryMinor),
+      status,
+      employmentId: null,
+      hiredAt: null,
+      editable: true,
+      note,
+    };
+  }
 
   async getOverview(userId: string): Promise<CompanyOverviewDto> {
     const db = this.repository.db;
@@ -80,6 +160,7 @@ export class CorporationService {
       companies: companies.map((c) => ({
         ...toCompanyDto(c),
         isOwner: isOwner.has(c.id),
+        ownerEmploymentStatus: this.ownerRoleStatusFromRow(c),
       })),
     };
   }
@@ -89,12 +170,17 @@ export class CorporationService {
     const character = await requireCharacterByUserId(db, userId);
     const company = await this.repository.getCompany(companyId, db);
     if (!company) throw AppError.notFound('Company');
-    const shareholders = await this.repository.listShareholders(companyId);
+    const [shareholders, ownerRole] = await Promise.all([
+      this.repository.listShareholders(companyId),
+      this.getOwnerRoleDto(db, companyId),
+    ]);
     const totalShares = shareholders.reduce((sum, s) => sum + Number(s.shares || 0), 0);
 
     return {
       ...toCompanyDto(company),
       isOwner: company.ownerCharacterId === character.id,
+      ownerEmploymentStatus: (ownerRole?.status ?? this.ownerRoleStatusFromRow(company)) as any,
+      ownerEmploymentId: ownerRole?.employmentId ?? company.ownerEmploymentId ?? null,
       shareholders: shareholders.map((s) => ({
         characterId: s.characterId,
         characterName: s.characterName,
@@ -563,8 +649,11 @@ export class CorporationService {
         characterName: e.characterName,
         jobTitle: e.jobTitle,
         salary: money(Number(e.salaryMinor)),
+        salaryArrears: money(Number((e as any).salaryArrearsMinor ?? 0)),
         status: e.status,
         hiredAt: e.hiredAt.toISOString(),
+        isOwnerRole: Boolean((e as any).isOwnerRole),
+        salaryLastChangedAt: (e as any).salaryLastChangedAt ? new Date((e as any).salaryLastChangedAt).toISOString() : null,
       })),
     };
   }
@@ -716,7 +805,7 @@ export class CorporationService {
     await client.query(`DELETE FROM company_shareholders WHERE company_id = $1`, [companyId]);
     await client.query(
       `UPDATE employments SET status = 'fired', ended_at = COALESCE(ended_at, now())
-       WHERE company_id = $1 AND status = 'active'`,
+       WHERE company_id = $1 AND status IN ('active','notice_pending')`,
       [companyId],
     );
     await client.query(
@@ -865,26 +954,76 @@ export class CorporationService {
     if (company.ownerCharacterId !== character.id) {
       throw AppError.forbidden('Chỉ chủ sở hữu mới xem HR & kế toán.');
     }
-    const [staff, entries, totals, filings, settlements] = await Promise.all([
+    const [staff, entries, totals, filings, settlements, ownerRole, payrollForecastRaw] = await Promise.all([
       this.repository.listCompanyStaff(companyId, db),
       this.repository.listLedgerEntries(companyId, 100, db),
       this.repository.ledgerTotals(companyId, db),
       this.repository.listTaxFilings(companyId, db),
       this.repository.listRevenueSettlements(companyId, 24, db),
+      this.getOwnerRoleDto(db, companyId),
+      this.repository.getPayrollForecast(companyId, db),
     ]);
+    const ownerStaffEntry = ownerRole
+      ? [{
+          id: `owner-role:${companyId}`,
+          fullName: ownerRole.characterName,
+          roleTitle: ownerRole.roleTitle,
+          salary: ownerRole.salary,
+          salaryArrears: money(0),
+          status: (ownerRole.status === 'active' ? 'active' : 'resigned') as 'active' | 'resigned' | 'fired',
+          hiredAt: ownerRole.hiredAt ?? company.foundedAt.toISOString(),
+          firedAt: null as string | null,
+          isOwnerRole: true,
+          employmentId: ownerRole.employmentId ?? null,
+          characterId: ownerRole.characterId,
+          editableSalary: true,
+          note: ownerRole.note ?? null,
+          salaryLastChangedAt: null as string | null,
+        }]
+      : [];
+
+    const payrollForecast = {
+      employeeMonthly: money(Number(payrollForecastRaw.employeeMonthlyMinor ?? 0)),
+      staffMonthly: money(Number(payrollForecastRaw.staffMonthlyMinor ?? 0)),
+      ownerMonthly: money(Number(payrollForecastRaw.ownerMonthlyMinor ?? 0)),
+      totalMonthly: money(
+        Number(payrollForecastRaw.employeeMonthlyMinor ?? 0) +
+          Number(payrollForecastRaw.staffMonthlyMinor ?? 0) +
+          Number(payrollForecastRaw.ownerMonthlyMinor ?? 0),
+      ),
+      totalArrears: money(
+        Number(payrollForecastRaw.employeeArrearsMinor ?? 0) +
+          Number(payrollForecastRaw.staffArrearsMinor ?? 0),
+      ),
+      employeeArrears: money(Number(payrollForecastRaw.employeeArrearsMinor ?? 0)),
+      staffArrears: money(Number(payrollForecastRaw.staffArrearsMinor ?? 0)),
+    };
+
     return {
       companyId,
       // Gợi ý AI là phiên tạm (hiển thị khi bấm Đề xuất), không lưu trữ lâu dài
       plans: [],
-      staff: staff.map((s: any) => ({
-        id: s.id,
-        fullName: s.fullName ?? s.full_name,
-        roleTitle: s.roleTitle ?? s.role_title,
-        salary: money(Number(s.salaryMinor ?? s.salary_minor ?? 0)),
-        status: s.status,
-        hiredAt: new Date(s.hiredAt ?? s.hired_at).toISOString(),
-        firedAt: s.firedAt || s.fired_at ? new Date(s.firedAt ?? s.fired_at).toISOString() : null,
-      })),
+      staff: [
+        ...ownerStaffEntry,
+        ...staff.map((s: any) => ({
+          id: s.id,
+          fullName: s.fullName ?? s.full_name,
+          roleTitle: s.roleTitle ?? s.role_title,
+          salary: money(Number(s.salaryMinor ?? s.salary_minor ?? 0)),
+          salaryArrears: money(Number(s.salaryArrearsMinor ?? s.salary_arrears_minor ?? 0)),
+          status: s.status,
+          hiredAt: new Date(s.hiredAt ?? s.hired_at).toISOString(),
+          firedAt: s.firedAt || s.fired_at ? new Date(s.firedAt ?? s.fired_at).toISOString() : null,
+          isOwnerRole: false,
+          employmentId: null,
+          characterId: null,
+          editableSalary: true, // owner có thể điều chỉnh lương AI staff (API hỗ trợ)
+          note: null,
+          salaryLastChangedAt: (s.salaryLastChangedAt ?? s.salary_last_changed_at)
+            ? new Date(s.salaryLastChangedAt ?? s.salary_last_changed_at).toISOString()
+            : null,
+        })),
+      ],
       ledger: {
         companyId,
         entries: entries.map((e: any) => ({
@@ -947,6 +1086,8 @@ export class CorporationService {
         declaredRevenue: s.declaredRevenueMinor != null ? money(Number(s.declaredRevenueMinor)) : (s.declared_revenue_minor != null ? money(Number(s.declared_revenue_minor)) : null),
         taxPaid: s.taxPaidMinor != null ? money(Number(s.taxPaidMinor)) : (s.tax_paid_minor != null ? money(Number(s.tax_paid_minor)) : null),
       })),
+      ownerRole,
+      payrollForecast,
     };
   }
 
@@ -1072,6 +1213,84 @@ export class CorporationService {
         body: `Đã chấm dứt hợp đồng nhân sự tại "${company.name}".`,
         payload: { companyId, staffId },
       });
+    });
+  }
+
+  async updateEmployeeSalary(
+    userId: string,
+    companyId: string,
+    employmentId: string,
+    newSalaryMinor: number,
+    reason?: string,
+  ): Promise<CompanyHrAccountingDto> {
+    if (!Number.isFinite(newSalaryMinor)) throw AppError.badRequest('Mức lương không hợp lệ.');
+    const normalized = Math.max(0, Math.floor(newSalaryMinor));
+    if (normalized > 1_000_000_000_000) throw AppError.badRequest('Mức lương vượt quá giới hạn cho phép.');
+
+    return withTransaction(async (client) => {
+      const { character } = await this.assertOwner(client, userId, companyId);
+      const emp = await this.repository.getEmploymentForCompany(client, companyId, employmentId);
+      if (!emp) throw AppError.notFound('Employment');
+      if (emp.status !== 'active') throw AppError.badRequest('Chỉ có thể điều chỉnh lương cho nhân viên đang làm việc.');
+      if (emp.isOwnerRole) {
+        throw AppError.badRequest('Vui lòng sử dụng chức năng cấu hình lương chủ doanh nghiệp.');
+      }
+
+      const oldSalary = Math.max(0, Number(emp.salaryMinor ?? 0));
+      if (normalized > oldSalary && oldSalary > 0 && normalized > oldSalary * 3) {
+        throw AppError.badRequest('Mức tăng lương vượt quá giới hạn cho mỗi lần điều chỉnh (tối đa +200%).');
+      }
+
+      await this.repository.updateEmploymentSalary(client, employmentId, normalized);
+      await this.repository.recordPayrollAdjustment(client, {
+        companyId,
+        targetType: 'employment',
+        targetId: employmentId,
+        oldSalaryMinor: oldSalary,
+        newSalaryMinor: normalized,
+        changedByCharacterId: character.id,
+        reason: reason?.trim() || null,
+        meta: { characterId: emp.characterId },
+      });
+
+      return this.getHrAccounting(userId, companyId);
+    });
+  }
+
+  async updateStaffSalary(
+    userId: string,
+    companyId: string,
+    staffId: string,
+    newSalaryMinor: number,
+    reason?: string,
+  ): Promise<CompanyHrAccountingDto> {
+    if (!Number.isFinite(newSalaryMinor)) throw AppError.badRequest('Mức lương không hợp lệ.');
+    const normalized = Math.max(0, Math.floor(newSalaryMinor));
+    if (normalized > 1_000_000_000_000) throw AppError.badRequest('Mức lương vượt quá giới hạn cho phép.');
+
+    return withTransaction(async (client) => {
+      const { character } = await this.assertOwner(client, userId, companyId);
+      const staff = await this.repository.getStaffForCompany(client, companyId, staffId);
+      if (!staff) throw AppError.notFound('Staff');
+      if (staff.status !== 'active') throw AppError.badRequest('Chỉ có thể điều chỉnh lương cho nhân sự AI đang làm việc.');
+
+      const oldSalary = Math.max(0, Number(staff.salaryMinor ?? 0));
+      if (normalized > oldSalary && oldSalary > 0 && normalized > oldSalary * 3) {
+        throw AppError.badRequest('Mức tăng lương vượt quá giới hạn cho mỗi lần điều chỉnh (tối đa +200%).');
+      }
+
+      await this.repository.updateStaffSalary(client, staffId, normalized);
+      await this.repository.recordPayrollAdjustment(client, {
+        companyId,
+        targetType: 'staff',
+        targetId: staffId,
+        oldSalaryMinor: oldSalary,
+        newSalaryMinor: normalized,
+        changedByCharacterId: character.id,
+        reason: reason?.trim() || null,
+      });
+
+      return this.getHrAccounting(userId, companyId);
     });
   }
 
@@ -1394,6 +1613,47 @@ export class CorporationService {
         })),
       };
     });
+  }
+
+  async setOwnerSalary(userId: string, companyId: string, salaryMinor: number): Promise<CompanyHrAccountingDto> {
+    if (!Number.isFinite(salaryMinor) || salaryMinor < 0) {
+      throw AppError.badRequest('Mức lương chủ doanh nghiệp không hợp lệ.');
+    }
+    const normalized = Math.floor(salaryMinor);
+    try {
+      return await withTransaction(async (client) => {
+        const { company } = await this.assertOwner(client, userId, companyId);
+        if (company.status === 'bankrupt') {
+          throw AppError.badRequest('Công ty đã giải thể/phá sản, không thể cấu hình lương chủ doanh nghiệp.');
+        }
+        await this.repository.setOwnerSalary(client, companyId, normalized);
+        const updated = await this.repository.getCompany(companyId, client);
+        if (!updated) throw AppError.notFound('Company');
+        await this.syncOwnerEmploymentRole(client, {
+          id: updated.id,
+          name: updated.name,
+          status: updated.status,
+          ownerCharacterId: updated.ownerCharacterId,
+          ownerSalaryMinor: normalized,
+        });
+        await notify(client, {
+          userId,
+          kind: 'company',
+          title: normalized > 0 ? 'Đã cập nhật lương chủ doanh nghiệp' : 'Đã tắt lương chủ doanh nghiệp',
+          body:
+            normalized > 0
+              ? `Công ty "${company.name}" đặt lương chủ doanh nghiệp là ${formatMinor(normalized)}/ngày game (chi từ quỹ công ty).`
+              : `Công ty "${company.name}" đã tắt lương chủ doanh nghiệp.`,
+          payload: { companyId, ownerSalaryMinor: normalized },
+        }).catch(() => {});
+        return this.getHrAccounting(userId, companyId);
+      });
+    } catch (e: any) {
+      if (e?.code === '42703') {
+        throw AppError.badRequest('Hệ thống chưa áp dụng migration cho lương chủ doanh nghiệp (0082). Vui lòng áp dụng migration DB rồi thử lại.');
+      }
+      throw e;
+    }
   }
 
   async listShareOfferings(userId: string, companyId?: string): Promise<any[]> {

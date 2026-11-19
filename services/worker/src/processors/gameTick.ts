@@ -5,7 +5,7 @@ import { enqueueDomainEvent } from '../outboxEvents.js';
 import { publishClient } from '../publisher.js';
 import { env } from '../config/env.js';
 import { Rooms } from '@efls/contracts';
-import { accrueSimpleInterest, computeGameAge, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR, normalizeSeasonRanges, resolveSeasonEffects } from '@efls/domain';
+import { accrueSimpleInterest, computeGameAge, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR, generateCccd, normalizeSeasonRanges, resolveSeasonEffects } from '@efls/domain';
 
 type LedgerOwnerType = 'character' | 'company' | 'bank' | 'government' | 'market' | 'escrow';
 type LedgerAccountKind = 'cash' | 'savings' | 'escrow' | 'clearing';
@@ -176,6 +176,150 @@ export interface GameTickResult {
   applied: string[];
 }
 
+async function recordCharacterIncome(
+  client: PoolClient,
+  characterId: string,
+  amountMinor: number,
+  periodKey: string,
+): Promise<void> {
+  if (amountMinor <= 0) return;
+  await client.query(
+    `INSERT INTO character_monthly_income (character_id, period_key, income_minor, support_deducted_minor, updated_at)
+     VALUES ($1, $2, $3::bigint, 0, now())
+     ON CONFLICT (character_id, period_key)
+     DO UPDATE SET income_minor = character_monthly_income.income_minor + EXCLUDED.income_minor, updated_at = now()`,
+    [characterId, periodKey, Math.round(amountMinor)],
+  ).catch(() => {});
+}
+
+async function applyImmediateChildSupportFromIncome(
+  client: PoolClient,
+  payerCharacterId: string,
+  incomeAmountMinor: number,
+  periodKey: string,
+): Promise<number> {
+  const income = Math.max(0, Math.round(incomeAmountMinor));
+  if (income <= 0) return 0;
+  await recordCharacterIncome(client, payerCharacterId, income, periodKey);
+
+  const obligations = await client.query<{
+    custodial_parent_id: string;
+    child_id: string;
+  }>(
+    `SELECT DISTINCT c.custodial_parent_id, c.id AS child_id
+     FROM characters c
+     WHERE c.child_support_payer_id = $1
+       AND COALESCE(c.child_support_percent, 0) = 20
+       AND c.custodial_parent_id IS NOT NULL
+       AND COALESCE(c.is_alive,true) = true
+       AND COALESCE(c.is_dependent,false) = true
+       AND COALESCE(c.dependent_status,'child') IN ('infant','child')
+       AND c.age < 18`,
+    [payerCharacterId],
+  );
+  if (obligations.rows.length === 0) return 0;
+
+  // 20% thu nhập/tháng: trích theo khoản thu nhập ghi nhận (áp dụng ngay khi phát sinh lương/thu nhập tháng)
+  const totalSupport = Math.max(0, Math.floor(income * 0.2));
+  if (totalSupport <= 0) return 0;
+
+  // If multiple custodial parents exist (edge case), split equally.
+  const custodians = Array.from(new Set(obligations.rows.map((r) => r.custodial_parent_id).filter(Boolean))) as string[];
+  if (custodians.length === 0) return 0;
+  const perCustodian = Math.floor(totalSupport / custodians.length);
+  let deducted = 0;
+  for (let i = 0; i < custodians.length; i++) {
+    const custodianId = custodians[i]!;
+    const amount = i === custodians.length - 1 ? (totalSupport - deducted) : perCustodian;
+    if (amount <= 0) continue;
+    try {
+      await postLedger(client, {
+        kind: 'child_support',
+        description: 'Cấp dưỡng con cái (20% thu nhập/tháng)',
+        referenceType: 'character',
+        referenceId: payerCharacterId,
+        legs: [
+          { ownerType: 'character', ownerId: payerCharacterId, kind: 'cash', deltaMinor: -amount },
+          { ownerType: 'character', ownerId: custodianId, kind: 'cash', deltaMinor: amount },
+        ],
+      });
+      deducted += amount;
+    } catch {
+      // insufficient funds or ledger issue: skip this portion
+    }
+  }
+  if (deducted > 0) {
+    await client.query(
+      `INSERT INTO character_monthly_income (character_id, period_key, income_minor, support_deducted_minor, updated_at)
+       VALUES ($1, $2, 0, $3::bigint, now())
+       ON CONFLICT (character_id, period_key)
+       DO UPDATE SET support_deducted_minor = character_monthly_income.support_deducted_minor + EXCLUDED.support_deducted_minor, updated_at = now()`,
+      [payerCharacterId, periodKey, deducted],
+    ).catch(() => {});
+  }
+  return deducted;
+}
+
+async function deductHealthInsuranceFromSalary(
+  client: PoolClient,
+  characterId: string,
+  grossSalaryMinor: number,
+  periodKey: string,
+  nowIso: string,
+): Promise<number> {
+  const gross = Math.max(0, Math.round(Number(grossSalaryMinor ?? 0)));
+  if (gross <= 0) return 0;
+  try {
+    const enr = await client.query<{ is_active: boolean; contribution_rate_pct: string | number }>(
+      `SELECT is_active, contribution_rate_pct
+       FROM health_insurance_enrollments
+       WHERE character_id = $1`,
+      [characterId],
+    ).catch(() => ({ rows: [] as any[] }));
+    const row = enr.rows[0];
+    if (!row || row.is_active === false) return 0;
+    const rate = Math.max(0, Math.min(50, Number(row.contribution_rate_pct ?? 0)));
+    if (rate <= 0) return 0;
+    const contribution = Math.max(0, Math.round(gross * (rate / 100)));
+    if (contribution <= 0) return 0;
+
+    await postLedger(client, {
+      kind: 'health_insurance_contribution',
+      description: `Đóng góp bảo hiểm y tế/an sinh (${rate}% lương, kỳ ${periodKey})`,
+      referenceType: 'character',
+      referenceId: characterId,
+      legs: [
+        { ownerType: 'character', ownerId: characterId, kind: 'cash', deltaMinor: -contribution },
+        { ownerType: 'bank', ownerId: SYSTEM_BANK_ID, kind: 'cash', deltaMinor: contribution },
+      ],
+    });
+
+    await client.query(`INSERT INTO insurance_fund (id, balance_minor) VALUES (1, 0) ON CONFLICT (id) DO NOTHING`).catch(() => {});
+    await client.query(
+      `UPDATE insurance_fund SET balance_minor = balance_minor + $1, updated_at = now() WHERE id = 1`,
+      [contribution],
+    ).catch(() => {});
+    await client.query(
+      `INSERT INTO insurance_fund_transactions
+         (amount_minor, reason_code, description, ref_type, ref_id, actor_type, actor_id, meta)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+      [
+        contribution,
+        'salary_contribution',
+        `Trích ${rate}% lương kỳ ${periodKey}`,
+        'character',
+        characterId,
+        'system',
+        null,
+        JSON.stringify({ periodKey, grossSalaryMinor: gross, ratePct: rate, at: nowIso }),
+      ],
+    ).catch(() => {});
+    return contribution;
+  } catch {
+    return 0;
+  }
+}
+
 let tick = 0;
 
 export async function processGameTick(): Promise<GameTickResult> {
@@ -270,9 +414,9 @@ export async function processGameTick(): Promise<GameTickResult> {
       if (nextAge >= deathAge) {
         nextAge = deathAge;
       }
-      // Tiêu hao thể lực chịu hiệu ứng mùa (seasonEffects.energyPct), áp dụng theo năm game.
-      const rawNextHealth = Number(c.health_energy) + (nextDay === 0 ? -2 * Number(seasonEffects.energy ?? 1) : 0);
-      const nextHealth = Math.max(0, Math.min(100, Math.round(rawNextHealth)));
+      // Hao hụt thể lực theo tick/ngày và mùa (nhanh hơn ở mùa khắc nghiệt), hồi phục chậm tự nhiên.
+      const energyDecay = Math.max(1, Math.ceil(1 * Number(seasonEffects.energy ?? 1)));
+      const nextHealth = Math.max(0, Math.min(100, Math.round(Number(c.health_energy) - energyDecay)));
 
       await client.query(
         `UPDATE characters SET age = $1, health_energy = $2, updated_at = now() WHERE id = $3`,
@@ -281,29 +425,344 @@ export async function processGameTick(): Promise<GameTickResult> {
     }
     applied.push(`characters: ${characters.rows.length} updated`);
 
-    // ---- 3. Salary income from active employments ----
-    const employments = await client.query<{
-      character_id: string;
-      salary_minor: string;
-    }>(`SELECT character_id, salary_minor FROM employments WHERE status = 'active'`);
+    // ---- 2b. Finalize employment resignations (notice period ended) ----
+    // Chuyển notice_pending -> resigned khi đến/qua ngày hiệu lực, giải phóng vị trí tuyển dụng,
+    // và thanh toán lương kỳ dở dang (prorate) nếu kỳ tháng hiện tại chưa được trả.
+    try {
+      const currentAbs = nextYear * GAME_DAYS_PER_YEAR + nextDay;
+      const pendingResigns = await client.query<{
+        id: string;
+        character_id: string;
+        company_id: string | null;
+        company_status: string | null;
+        company_name: string | null;
+        job_id: string;
+        salary_minor: string;
+        salary_arrears_minor: string;
+        last_salary_period_key: string | null;
+        effective_resign_game_year: number | null;
+        effective_resign_game_day: number | null;
+        is_owner_role: boolean;
+      }>(
+        `SELECT e.id, e.character_id, e.company_id, c.status AS company_status, c.name AS company_name, e.job_id, e.salary_minor,
+                COALESCE(NULLIF(to_jsonb(e)->>'salary_arrears_minor','')::bigint, 0)::text AS salary_arrears_minor,
+                NULLIF(to_jsonb(e)->>'last_salary_period_key','') AS last_salary_period_key,
+                NULLIF(to_jsonb(e)->>'effective_resign_game_year','')::int AS effective_resign_game_year,
+                NULLIF(to_jsonb(e)->>'effective_resign_game_day','')::int AS effective_resign_game_day,
+                COALESCE((to_jsonb(e)->>'is_owner_role')::boolean, false) AS is_owner_role
+         FROM employments e
+         LEFT JOIN companies c ON c.id = e.company_id
+         WHERE e.status = 'notice_pending'
+           AND NULLIF(to_jsonb(e)->>'effective_resign_game_year','') IS NOT NULL
+           AND NULLIF(to_jsonb(e)->>'effective_resign_game_day','') IS NOT NULL
+           AND ((NULLIF(to_jsonb(e)->>'effective_resign_game_year','')::int * ${GAME_DAYS_PER_YEAR})
+                + NULLIF(to_jsonb(e)->>'effective_resign_game_day','')::int) <= $1
+         FOR UPDATE OF e`,
+        [currentAbs],
+      );
+
+      let finalized = 0;
+      let proratedPaid = 0;
+      for (const emp of pendingResigns.rows) {
+        const effYear = Number(emp.effective_resign_game_year ?? nextYear);
+        const effDayOfYear = Number(emp.effective_resign_game_day ?? nextDay);
+        const effMonth = Math.floor(effDayOfYear / 30) + 1;
+        const effDayOfMonth = (effDayOfYear % 30) + 1; // 1..30
+        const effPeriodKey = `${effYear}-${String(effMonth).padStart(2, '0')}`;
+        const monthlySalary = Math.max(0, Number(emp.salary_minor ?? 0));
+        const daysWorkedInCurrentMonth = Math.max(1, Math.min(30, effDayOfMonth));
+        const shouldPayProrated = emp.last_salary_period_key !== effPeriodKey;
+        const proratedSalary = shouldPayProrated
+          ? Math.round((monthlySalary / 30) * daysWorkedInCurrentMonth)
+          : 0;
+
+        try {
+          if (proratedSalary > 0) {
+            const canPayFromCompany =
+              !!emp.company_id && (emp.company_status === 'active' || emp.company_status === 'ipo');
+
+            if (canPayFromCompany && emp.company_id) {
+              const companyRes = await client.query<{ cash_minor: string; status: string; name: string }>(
+                `SELECT cash_minor, status, name FROM companies WHERE id = $1 FOR UPDATE`,
+                [emp.company_id],
+              );
+              const company = companyRes.rows[0];
+              if (company && ['active', 'ipo'].includes(company.status)) {
+                const companyCash = Math.max(0, Number(company.cash_minor ?? 0));
+                const payAmount = Math.min(proratedSalary, companyCash);
+                if (payAmount > 0) {
+                  await postLedger(client, {
+                    kind: 'salary_income',
+                    description: 'Lương thôi việc tính theo tỷ lệ số ngày làm việc',
+                    referenceType: 'employment',
+                    referenceId: emp.id,
+                    legs: [
+                      { ownerType: 'company', ownerId: emp.company_id, kind: 'cash', deltaMinor: -payAmount },
+                      { ownerType: 'character', ownerId: emp.character_id, kind: 'cash', deltaMinor: payAmount },
+                    ],
+                  });
+                  await client.query(
+                    `INSERT INTO company_ledger_entries
+                       (id, company_id, entry_type, amount_minor, declared_amount_minor, description, is_evasion, meta, ledger_kind, period_key)
+                     VALUES (gen_random_uuid(), $1, 'payroll', $2::bigint, $2::bigint, $3, false, $4::jsonb, 'ACTUAL', $5)`,
+                    [
+                      emp.company_id,
+                      payAmount,
+                      'Lương thôi việc tính theo tỷ lệ số ngày làm việc',
+                      JSON.stringify({
+                        source: 'employment_resignation_prorated',
+                        employmentId: emp.id,
+                        characterId: emp.character_id,
+                        monthlySalaryMinor: monthlySalary,
+                        daysWorkedInCurrentMonth,
+                        proratedSalaryMinor: proratedSalary,
+                        paidMinor: payAmount,
+                        effectiveGameYear: effYear,
+                        effectiveGameDayOfYear: effDayOfYear,
+                      }),
+                      effPeriodKey,
+                    ],
+                  );
+                  await enqueueDomainEvent(client, {
+                    type: 'character.income.v1',
+                    aggregateType: 'character',
+                    aggregateId: emp.character_id,
+                    payload: {
+                      characterId: emp.character_id,
+                      amountMinor: payAmount,
+                      kind: 'salary',
+                      at: now.toISOString(),
+                    },
+                  });
+                  await applyImmediateChildSupportFromIncome(client, emp.character_id, payAmount, effPeriodKey);
+                  await deductHealthInsuranceFromSalary(client, emp.character_id, payAmount, effPeriodKey, now.toISOString());
+                  proratedPaid += 1;
+                }
+              }
+            } else {
+              await postLedger(client, {
+                kind: 'salary_income',
+                description: 'Lương thôi việc tính theo tỷ lệ số ngày làm việc',
+                referenceType: 'employment',
+                referenceId: emp.id,
+                legs: [
+                  { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID, kind: 'cash', deltaMinor: -proratedSalary },
+                  { ownerType: 'character', ownerId: emp.character_id, kind: 'cash', deltaMinor: proratedSalary },
+                ],
+              });
+              await enqueueDomainEvent(client, {
+                type: 'character.income.v1',
+                aggregateType: 'character',
+                aggregateId: emp.character_id,
+                payload: {
+                  characterId: emp.character_id,
+                  amountMinor: proratedSalary,
+                  kind: 'salary',
+                  at: now.toISOString(),
+                },
+              });
+              await applyImmediateChildSupportFromIncome(client, emp.character_id, proratedSalary, effPeriodKey);
+              await deductHealthInsuranceFromSalary(client, emp.character_id, proratedSalary, effPeriodKey, now.toISOString());
+              proratedPaid += 1;
+            }
+          }
+
+          await client.query(
+            `UPDATE employments
+                SET status = 'resigned',
+                    ended_at = COALESCE(ended_at, now()),
+                    last_salary_period_key = $2
+              WHERE id = $1`,
+            [emp.id, effPeriodKey],
+          );
+          await client.query(`UPDATE jobs SET openings = openings + 1 WHERE id = $1`, [emp.job_id]);
+          finalized += 1;
+        } catch (e) {
+          logger.warn({ err: e, employmentId: emp.id, characterId: emp.character_id }, 'Failed to finalize employment resignation');
+        }
+      }
+
+      if (pendingResigns.rows.length > 0 || finalized > 0) {
+        applied.push(`resignations: ${finalized}/${pendingResigns.rows.length} finalized, prorated-paid=${proratedPaid}`);
+      }
+    } catch (e) {
+      logger.warn({ err: e }, 'Failed to process employment resignations');
+      applied.push('resignations: skipped (error)');
+    }
+
+    // ---- 3. Salary income from active employments (player employees) ----
+    // Tất cả lương trả theo tháng (game): chỉ xử lý vào ngày đầu mỗi tháng game (day === 1).
+    // Phase 1: việc làm gắn công ty được trả từ quỹ công ty (tính chi phí payroll), có hỗ trợ nợ lương (arrears).
+    // Việc làm không gắn công ty (hệ thống) vẫn do government chi trả để giữ tương thích.
+    const gameMonth = nextTime.month;
+    const periodKey = `${nextTime.year}-${String(gameMonth).padStart(2, '0')}`;
+    const isSalaryPayday = nextTime.day === 1;
 
     let salariesPaid = 0;
+    let payrollArrearsAccrued = 0;
+    if (isSalaryPayday) {
+    const employments = await client.query<{
+      id: string;
+      character_id: string;
+      company_id: string | null;
+      company_status: string | null;
+      company_name: string | null;
+      salary_minor: string;
+      salary_arrears_minor: string;
+      last_salary_period_key: string | null;
+      is_owner_role: boolean;
+      status: string;
+    }>(
+      `SELECT e.id, e.character_id, e.company_id, c.status AS company_status, c.name AS company_name, e.salary_minor,
+              COALESCE(NULLIF(to_jsonb(e)->>'salary_arrears_minor','')::bigint, 0)::text AS salary_arrears_minor,
+              NULLIF(to_jsonb(e)->>'last_salary_period_key','') AS last_salary_period_key,
+              COALESCE((to_jsonb(e)->>'is_owner_role')::boolean, false) AS is_owner_role,
+              e.status
+       FROM employments e
+       LEFT JOIN companies c ON c.id = e.company_id
+       WHERE e.status IN ('active','notice_pending')`,
+    );
     for (const emp of employments.rows) {
       // Thu nhập từ việc làm chịu hiệu ứng năng suất của mùa (seasonEffects.productivityPct)
-      const salary = Math.max(0, Math.round(Number(emp.salary_minor) * seasonEffects.productivity));
-      if (salary <= 0) continue;
+      const salaryDue = Math.max(0, Math.round(Number(emp.salary_minor) * seasonEffects.productivity));
+      const arrearsBefore = Math.max(0, Number(emp.salary_arrears_minor ?? 0));
+      const totalOwed = salaryDue + arrearsBefore;
+      if (totalOwed <= 0) continue;
+
+      // Lương chủ DN theo mô hình đa-công-ty được xử lý riêng ở bước 3b (không phụ thuộc employment slot).
+      if (emp.is_owner_role) continue;
+
+      // Kỳ lương tháng này đã xử lý (tránh trả trùng khi có prorate thôi việc)
+      if (emp.last_salary_period_key === periodKey) continue;
 
       try {
+        const canPayFromCompany =
+          !!emp.company_id &&
+          (emp.company_status === 'active' || emp.company_status === 'ipo');
+
+        if (canPayFromCompany && emp.company_id) {
+          const companyRes = await client.query<{ cash_minor: string; status: string; name: string }>(
+            `SELECT cash_minor, status, name FROM companies WHERE id = $1 FOR UPDATE`,
+            [emp.company_id],
+          );
+          const company = companyRes.rows[0];
+          if (!company || !['active', 'ipo'].includes(company.status)) {
+            // Công ty không còn hợp lệ để chi trả: chuyển nợ lương (nếu có) và bỏ qua kỳ
+            if (salaryDue > 0) {
+              await client.query(
+                `UPDATE employments
+                    SET salary_arrears_minor = COALESCE(NULLIF(to_jsonb(employments)->>'salary_arrears_minor','')::bigint, 0) + $2::bigint,
+                        last_salary_period_key = $3
+                  WHERE id = $1`,
+                [emp.id, salaryDue, periodKey],
+              ).catch(() => {});
+              payrollArrearsAccrued += 1;
+            } else {
+              await client.query(
+                `UPDATE employments SET last_salary_period_key = $2 WHERE id = $1`,
+                [emp.id, periodKey],
+              ).catch(() => {});
+            }
+            continue;
+          }
+
+          const companyCash = Math.max(0, Number(company.cash_minor ?? 0));
+          const payAmount = Math.min(totalOwed, companyCash);
+          const arrearsAfter = totalOwed - payAmount;
+
+          if (payAmount > 0) {
+            await postLedger(client, {
+              kind: 'salary_income',
+              description: `Nhận lương (${company.name})`,
+              referenceType: 'employment',
+              referenceId: emp.id,
+              legs: [
+                { ownerType: 'company', ownerId: emp.company_id, kind: 'cash', deltaMinor: -payAmount },
+                { ownerType: 'character', ownerId: emp.character_id, kind: 'cash', deltaMinor: payAmount },
+              ],
+            });
+
+            await client.query(
+              `INSERT INTO company_ledger_entries
+                 (id, company_id, entry_type, amount_minor, declared_amount_minor, description, is_evasion, meta, ledger_kind, period_key)
+               VALUES (gen_random_uuid(), $1, 'payroll', $2::bigint, $2::bigint, $3, false, $4::jsonb, 'ACTUAL', $5)`,
+              [
+                emp.company_id,
+                payAmount,
+                arrearsBefore > 0 || arrearsAfter > 0
+                  ? 'Chi lương nhân viên (bao gồm xử lý nợ lương, tự động)'
+                  : 'Chi lương nhân viên (tự động)',
+                JSON.stringify({
+                  source: 'employment_payroll',
+                  employmentId: emp.id,
+                  characterId: emp.character_id,
+                  dueMinor: salaryDue,
+                  arrearsBefore,
+                  arrearsAfter,
+                }),
+                periodKey,
+              ],
+            );
+
+            await enqueueDomainEvent(client, {
+              type: 'character.income.v1',
+              aggregateType: 'character',
+              aggregateId: emp.character_id,
+              payload: {
+                characterId: emp.character_id,
+                amountMinor: payAmount,
+                kind: 'salary',
+                at: now.toISOString(),
+              },
+            });
+            await applyImmediateChildSupportFromIncome(client, emp.character_id, payAmount, periodKey);
+            await deductHealthInsuranceFromSalary(client, emp.character_id, payAmount, periodKey, now.toISOString());
+
+            salariesPaid += 1;
+          }
+
+          if (arrearsAfter !== arrearsBefore || (arrearsAfter > 0 && payAmount === 0)) {
+            await client.query(
+              `UPDATE employments
+                  SET salary_arrears_minor = $2::bigint,
+                      last_salary_period_key = $3
+                WHERE id = $1`,
+              [emp.id, arrearsAfter, periodKey],
+            ).catch(() => {});
+            if (arrearsAfter > arrearsBefore) payrollArrearsAccrued += 1;
+          } else if (arrearsAfter !== arrearsBefore) {
+            await client.query(
+              `UPDATE employments SET salary_arrears_minor = $2::bigint, last_salary_period_key = $3 WHERE id = $1`,
+              [emp.id, arrearsAfter, periodKey],
+            ).catch(() => {});
+          } else {
+            await client.query(
+              `UPDATE employments SET last_salary_period_key = $2 WHERE id = $1`,
+              [emp.id, periodKey],
+            ).catch(() => {});
+          }
+
+          continue;
+        }
+
+        // Fallback tương thích: việc làm không gắn công ty (hệ thống) do government chi trả
+        const payAmount = salaryDue;
+        if (payAmount <= 0) {
+          await client.query(`UPDATE employments SET last_salary_period_key = $2 WHERE id = $1`, [emp.id, periodKey]).catch(() => {});
+          continue;
+        }
         await postLedger(client, {
           kind: 'salary_income',
           description: 'Nhận lương',
           referenceType: 'employment',
           referenceId: emp.character_id,
           legs: [
-            { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID, kind: 'cash', deltaMinor: -salary },
-            { ownerType: 'character', ownerId: emp.character_id, kind: 'cash', deltaMinor: salary },
+            { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID, kind: 'cash', deltaMinor: -payAmount },
+            { ownerType: 'character', ownerId: emp.character_id, kind: 'cash', deltaMinor: payAmount },
           ],
         });
+
+        await client.query(`UPDATE employments SET last_salary_period_key = $2 WHERE id = $1`, [emp.id, periodKey]).catch(() => {});
         salariesPaid += 1;
 
         await enqueueDomainEvent(client, {
@@ -312,16 +771,224 @@ export async function processGameTick(): Promise<GameTickResult> {
           aggregateId: emp.character_id,
           payload: {
             characterId: emp.character_id,
-            amountMinor: salary,
+            amountMinor: payAmount,
             kind: 'salary',
             at: now.toISOString(),
           },
         });
+        await applyImmediateChildSupportFromIncome(client, emp.character_id, payAmount, periodKey);
+        await deductHealthInsuranceFromSalary(client, emp.character_id, payAmount, periodKey, now.toISOString());
       } catch (e) {
-        logger.warn({ err: e, characterId: emp.character_id }, 'Failed to pay salary');
+        logger.warn({ err: e, characterId: emp.character_id, employmentId: emp.id }, 'Failed to pay salary');
       }
     }
-    applied.push(`employments: ${salariesPaid}/${employments.rows.length} salaries paid`);
+    applied.push(`employments: ${salariesPaid}/${employments.rows.length} paid, arrears-updated=${payrollArrearsAccrued} (owner-role handled separately)`);
+    } else {
+      applied.push('employments payroll: skipped (monthly payday only, day=1)');
+    }
+
+    // ---- 3c. AI staff payroll (company_staff) - paid from company fund as payroll expense ----
+    if (isSalaryPayday) {
+    try {
+      const staffRows = await client.query<{
+        id: string;
+        company_id: string;
+        company_status: string;
+        company_name: string;
+        salary_minor: string;
+        salary_arrears_minor: string;
+      }>(
+        `SELECT s.id, s.company_id, c.status AS company_status, c.name AS company_name, s.salary_minor,
+                COALESCE(NULLIF(to_jsonb(s)->>'salary_arrears_minor','')::bigint, 0)::text AS salary_arrears_minor
+         FROM company_staff s
+         JOIN companies c ON c.id = s.company_id
+         WHERE s.status = 'active'`,
+      );
+
+      let staffPaid = 0;
+      let staffArrearsAccrued = 0;
+      for (const st of staffRows.rows) {
+        const salaryDue = Math.max(0, Math.round(Number(st.salary_minor) * seasonEffects.productivity));
+        const arrearsBefore = Math.max(0, Number(st.salary_arrears_minor ?? 0));
+        const totalOwed = salaryDue + arrearsBefore;
+        if (totalOwed <= 0) continue;
+
+        try {
+          if (!['active', 'ipo'].includes(st.company_status)) {
+            if (salaryDue > 0) {
+              await client.query(
+                `UPDATE company_staff
+                    SET salary_arrears_minor = COALESCE(NULLIF(to_jsonb(company_staff)->>'salary_arrears_minor','')::bigint, 0) + $2::bigint
+                  WHERE id = $1`,
+                [st.id, salaryDue],
+              ).catch(() => {});
+              staffArrearsAccrued += 1;
+            }
+            continue;
+          }
+
+          const companyRes = await client.query<{ cash_minor: string; status: string }>(
+            `SELECT cash_minor, status FROM companies WHERE id = $1 FOR UPDATE`,
+            [st.company_id],
+          );
+          const company = companyRes.rows[0];
+          if (!company || !['active', 'ipo'].includes(company.status)) continue;
+
+          const companyCash = Math.max(0, Number(company.cash_minor ?? 0));
+          const payAmount = Math.min(totalOwed, companyCash);
+          const arrearsAfter = totalOwed - payAmount;
+
+          if (payAmount > 0) {
+            // Nhân sự AI (NPC) không có ví nhân vật: chi từ quỹ công ty như chi phí payroll (sink hệ thống)
+            await postLedger(client, {
+              kind: 'staff_payroll_expense',
+              description: `Chi lương nhân sự AI (${st.company_name})`,
+              referenceType: 'company_staff',
+              referenceId: st.id,
+              legs: [
+                { ownerType: 'company', ownerId: st.company_id, kind: 'cash', deltaMinor: -payAmount },
+                { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID, kind: 'cash', deltaMinor: payAmount },
+              ],
+            });
+
+            await client.query(
+              `INSERT INTO company_ledger_entries
+                 (id, company_id, entry_type, amount_minor, declared_amount_minor, description, is_evasion, meta, ledger_kind, period_key)
+               VALUES (gen_random_uuid(), $1, 'payroll', $2::bigint, $2::bigint, $3, false, $4::jsonb, 'ACTUAL', $5)`,
+              [
+                st.company_id,
+                payAmount,
+                arrearsBefore > 0 || arrearsAfter > 0
+                  ? 'Chi lương nhân sự AI (bao gồm xử lý nợ lương, tự động)'
+                  : 'Chi lương nhân sự AI (tự động)',
+                JSON.stringify({
+                  source: 'company_staff_payroll',
+                  staffId: st.id,
+                  dueMinor: salaryDue,
+                  arrearsBefore,
+                  arrearsAfter,
+                }),
+                periodKey,
+              ],
+            );
+
+            staffPaid += 1;
+          }
+
+          if (arrearsAfter !== arrearsBefore || (arrearsAfter > 0 && payAmount === 0)) {
+            await client.query(
+              `UPDATE company_staff
+                  SET salary_arrears_minor = $2::bigint
+                WHERE id = $1`,
+              [st.id, arrearsAfter],
+            ).catch(() => {});
+            if (arrearsAfter > arrearsBefore) staffArrearsAccrued += 1;
+          } else if (arrearsAfter !== arrearsBefore) {
+            await client.query(
+              `UPDATE company_staff SET salary_arrears_minor = $2::bigint WHERE id = $1`,
+              [st.id, arrearsAfter],
+            ).catch(() => {});
+          }
+        } catch (e) {
+          logger.warn({ err: e, staffId: st.id, companyId: st.company_id }, 'Failed to pay AI staff salary');
+        }
+      }
+
+      applied.push(`ai_staff_payroll: ${staffPaid}/${staffRows.rows.length} paid, arrears-updated=${staffArrearsAccrued}`);
+    } catch (e) {
+      logger.warn({ err: e }, 'Failed to process AI staff payroll');
+      applied.push('ai_staff_payroll: skipped (error)');
+    }
+    } else {
+      applied.push('ai_staff_payroll: skipped (monthly payday only, day=1)');
+    }
+
+    // ---- 3b. Owner salary from companies (multi-company, independent of employment slot) ----
+    if (isSalaryPayday) {
+    try {
+      const ownerSalaryCompanies = await client.query<{
+        id: string;
+        owner_character_id: string;
+        owner_salary_minor: string;
+        cash_minor: string;
+        name: string;
+      }>(
+        `SELECT c.id, c.owner_character_id,
+                COALESCE(NULLIF(to_jsonb(c)->>'owner_salary_minor','')::bigint, 0)::text AS owner_salary_minor,
+                c.cash_minor, c.name
+         FROM companies c
+         JOIN characters ch ON ch.id = c.owner_character_id
+         WHERE c.status IN ('active','ipo')
+           AND COALESCE(ch.is_alive, true) = true
+           AND COALESCE(NULLIF(to_jsonb(c)->>'owner_salary_minor','')::bigint, 0) > 0`,
+      );
+
+      let ownerSalariesPaid = 0;
+      for (const co of ownerSalaryCompanies.rows) {
+        const base = Math.max(0, Number(co.owner_salary_minor ?? 0));
+        const salary = Math.max(0, Math.round(base * seasonEffects.productivity));
+        if (salary <= 0) continue;
+
+        try {
+          const locked = await client.query<{ cash_minor: string; status: string }>(
+            `SELECT cash_minor, status FROM companies WHERE id = $1 FOR UPDATE`,
+            [co.id],
+          );
+          const company = locked.rows[0];
+          if (!company || !['active', 'ipo'].includes(company.status)) continue;
+          if (Number(company.cash_minor ?? 0) < salary) continue;
+
+          await postLedger(client, {
+            kind: 'owner_salary_income',
+            description: `Nhận lương chủ doanh nghiệp (${co.name})`,
+            referenceType: 'company',
+            referenceId: co.id,
+            legs: [
+              { ownerType: 'company', ownerId: co.id, kind: 'cash', deltaMinor: -salary },
+              { ownerType: 'character', ownerId: co.owner_character_id, kind: 'cash', deltaMinor: salary },
+            ],
+          });
+
+          await client.query(
+            `INSERT INTO company_ledger_entries
+               (id, company_id, entry_type, amount_minor, declared_amount_minor, description, is_evasion, meta, ledger_kind, period_key)
+             VALUES (gen_random_uuid(), $1, 'payroll', $2::bigint, $2::bigint, $3, false, $4::jsonb, 'ACTUAL', $5)`,
+            [
+              co.id,
+              salary,
+              'Lương chủ doanh nghiệp (tự động)',
+              JSON.stringify({ source: 'owner_salary', characterId: co.owner_character_id }),
+              periodKey,
+            ],
+          );
+
+          ownerSalariesPaid += 1;
+
+          await enqueueDomainEvent(client, {
+            type: 'character.income.v1',
+            aggregateType: 'character',
+            aggregateId: co.owner_character_id,
+            payload: {
+              characterId: co.owner_character_id,
+              amountMinor: salary,
+              kind: 'salary',
+              at: now.toISOString(),
+            },
+          });
+          await applyImmediateChildSupportFromIncome(client, co.owner_character_id, salary, periodKey);
+          await deductHealthInsuranceFromSalary(client, co.owner_character_id, salary, periodKey, now.toISOString());
+        } catch (e) {
+          logger.warn({ err: e, companyId: co.id, characterId: co.owner_character_id }, 'Failed to pay owner salary');
+        }
+      }
+      applied.push(`owner_salaries: ${ownerSalariesPaid}/${ownerSalaryCompanies.rows.length} paid`);
+    } catch (e) {
+      logger.warn({ err: e }, 'Failed to process owner company salaries');
+      applied.push('owner_salaries: skipped (error)');
+    }
+    } else {
+      applied.push('owner_salaries: skipped (monthly payday only, day=1)');
+    }
 
     // ---- 4. Rent collection ----
     // Chuẩn thời gian: 1 tháng game = 30 ngày game = 30 phút thực
@@ -874,6 +1541,309 @@ export async function processGameTick(): Promise<GameTickResult> {
     } catch (e) {
       try { await client.query('ROLLBACK TO SAVEPOINT audit_step'); } catch { /* ignore */ }
       logger.warn({ err: e }, 'Tax audit step failed (best-effort)');
+    }
+
+    // ---- Travel: complete due retreat trips and grant energy rewards ----
+    await client.query('SAVEPOINT travel_step');
+    try {
+      const currentAbsDay = nextYear * GAME_DAYS_PER_YEAR + nextDay;
+      const dueTrips = await client.query<{
+        id: string; character_id: string; energy_reward: number; reward_applied: boolean; status: string; is_alive: boolean; health_energy: number;
+      }>(
+        `SELECT t.id, t.character_id, t.energy_reward::int AS energy_reward, COALESCE(t.reward_applied,false) AS reward_applied,
+                t.status, COALESCE(c.is_alive,true) AS is_alive, c.health_energy::int AS health_energy
+         FROM travel_trips t
+         JOIN characters c ON c.id = t.character_id
+         WHERE t.status = 'active' AND t.end_abs_day <= $1
+         FOR UPDATE OF t`,
+        [currentAbsDay],
+      );
+      let completedTrips = 0;
+      let tripEnergyGranted = 0;
+      for (const trip of dueTrips.rows) {
+        if (trip.status !== 'active') continue;
+        if (!trip.reward_applied && trip.is_alive) {
+          const gain = Math.max(0, Number(trip.energy_reward ?? 0));
+          const newEnergy = Math.max(0, Math.min(100, Number(trip.health_energy ?? 0) + gain));
+          await client.query(`UPDATE characters SET health_energy = $2, updated_at = now() WHERE id = $1`, [trip.character_id, newEnergy]);
+          tripEnergyGranted += 1;
+        }
+        await client.query(
+          `UPDATE travel_trips SET status = 'completed', reward_applied = true, completed_at = COALESCE(completed_at, now()) WHERE id = $1`,
+          [trip.id],
+        );
+        completedTrips += 1;
+      }
+      if (dueTrips.rows.length > 0) applied.push(`travel: ${completedTrips} completed, energy_granted=${tripEnergyGranted}`);
+    } catch (e) {
+      try { await client.query('ROLLBACK TO SAVEPOINT travel_step'); } catch { /* ignore */ }
+      logger.warn({ err: e }, 'Travel trip completion step failed (best-effort)');
+      applied.push('travel: skipped (error)');
+    }
+
+    // ---- Family & children: pregnancy, adoption, childcare, adulthood (daily) ----
+    await client.query('SAVEPOINT family_step');
+    try {
+      const currentAbsDay = nextYear * GAME_DAYS_PER_YEAR + nextDay;
+      const toAbs = (y: number, d: number) => y * GAME_DAYS_PER_YEAR + ((d % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
+      const fromAbs = (abs: number) => ({ year: Math.floor(abs / GAME_DAYS_PER_YEAR), day: ((abs % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR });
+      const genAccount = () => String(Math.floor(Math.random() * 9_000_000_000) + 1_000_000_000);
+      const ensureUniqueCccdWorker = async (birthplace: string) => {
+        for (let i = 0; i < 30; i++) {
+          const c = generateCccd(birthplace || '001');
+          const ex = await client.query<{ exists: boolean }>(`SELECT EXISTS(SELECT 1 FROM characters WHERE cccd = $1) AS exists`, [c]);
+          if (!ex.rows[0]?.exists) return c;
+        }
+        for (let i = 0; i < 100; i++) {
+          const c = `${(birthplace || '001').padStart(3,'0').slice(0,3)}${String(Date.now()+i).slice(-9).padStart(9,'0')}`.slice(0,12);
+          const ex = await client.query<{ exists: boolean }>(`SELECT EXISTS(SELECT 1 FROM characters WHERE cccd = $1) AS exists`, [c]);
+          if (!ex.rows[0]?.exists) return c;
+        }
+        throw new Error('cccd_exhausted');
+      };
+      const ensureUniqueAccountWorker = async () => {
+        for (let i = 0; i < 30; i++) {
+          const a = genAccount();
+          const ex = await client.query<{ exists: boolean }>(`SELECT EXISTS(SELECT 1 FROM characters WHERE account_number = $1) AS exists`, [a]);
+          if (!ex.rows[0]?.exists) return a;
+        }
+        throw new Error('account_number_exhausted');
+      };
+
+      // 1) Active pregnancies: health warning / miscarriage / birth
+      const pregRes = await client.query<{
+        id: string; pregnant_character_id: string; other_parent_character_id: string;
+        due_game_year: number; due_game_day: number; health_warning_days: number;
+        pregnant_health: number; pregnant_user_id: string | null; pregnant_name: string; pregnant_birthplace: string | null;
+        other_user_id: string | null; other_name: string; other_birthplace: string | null;
+      }>(
+        `SELECT p.id, p.pregnant_character_id, p.other_parent_character_id,
+                p.due_game_year, p.due_game_day, COALESCE(p.health_warning_days,0)::int AS health_warning_days,
+                ch.health_energy::int AS pregnant_health, ch.user_id AS pregnant_user_id, ch.full_name AS pregnant_name, ch.birthplace AS pregnant_birthplace,
+                o.user_id AS other_user_id, o.full_name AS other_name, o.birthplace AS other_birthplace
+         FROM pregnancies p
+         JOIN characters ch ON ch.id = p.pregnant_character_id
+         JOIN characters o ON o.id = p.other_parent_character_id
+         WHERE p.status = 'active'
+         FOR UPDATE OF p`
+      );
+      let births = 0, miscarriages = 0, pregWarnings = 0;
+      for (const p of pregRes.rows) {
+        // miscarriage warning logic based on pregnant character health
+        let warnDays = Number(p.health_warning_days ?? 0);
+        if (Number(p.pregnant_health) < 30) warnDays += 1; else warnDays = 0;
+        await client.query(`UPDATE pregnancies SET health_warning_days = $2, updated_at = now() WHERE id = $1`, [p.id, warnDays]);
+
+        if (Number(p.pregnant_health) < 30 && warnDays === 3) {
+          const title = 'Cảnh báo sức khỏe thai kỳ';
+          const body = 'Sức khỏe của người mang thai đang dưới 30 kéo dài. Có nguy cơ sảy thai nếu không hồi phục.';
+          if (p.pregnant_user_id) await client.query(`INSERT INTO notifications (id,user_id,kind,title,body,payload) VALUES (gen_random_uuid(),$1,'social',$2,$3,$4::jsonb)`, [p.pregnant_user_id, title, body, JSON.stringify({ pregnancyId: p.id, warningDays: warnDays })]).catch(()=>{});
+          if (p.other_user_id) await client.query(`INSERT INTO notifications (id,user_id,kind,title,body,payload) VALUES (gen_random_uuid(),$1,'social',$2,$3,$4::jsonb)`, [p.other_user_id, title, body, JSON.stringify({ pregnancyId: p.id, warningDays: warnDays })]).catch(()=>{});
+          pregWarnings += 1;
+        }
+        if (Number(p.pregnant_health) < 30 && warnDays >= 7) {
+          await client.query(
+            `UPDATE pregnancies SET status='miscarried', miscarriage_reason=$2, completed_at=now(), updated_at=now() WHERE id=$1`,
+            [p.id, 'Sức khỏe người mang thai dưới 30 kéo dài (>= 7 ngày game).'],
+          );
+          const title = 'Sảy thai';
+          const body = 'Thai kỳ đã kết thúc do sức khỏe người mang thai xuống thấp kéo dài.';
+          if (p.pregnant_user_id) await client.query(`INSERT INTO notifications (id,user_id,kind,title,body,payload) VALUES (gen_random_uuid(),$1,'social',$2,$3,$4::jsonb)`, [p.pregnant_user_id, title, body, JSON.stringify({ pregnancyId: p.id })]).catch(()=>{});
+          if (p.other_user_id) await client.query(`INSERT INTO notifications (id,user_id,kind,title,body,payload) VALUES (gen_random_uuid(),$1,'social',$2,$3,$4::jsonb)`, [p.other_user_id, title, body, JSON.stringify({ pregnancyId: p.id })]).catch(()=>{});
+          miscarriages += 1;
+          continue;
+        }
+
+        const dueAbs = toAbs(Number(p.due_game_year), Number(p.due_game_day));
+        if (currentAbsDay >= dueAbs) {
+          // Birth
+          const birthplace = p.pregnant_birthplace || p.other_birthplace || '001';
+          const cccd = await ensureUniqueCccdWorker(birthplace);
+          const accountNumber = await ensureUniqueAccountWorker();
+          const childNames = ['An','Bình','Chi','Dũng','Gia','Hà','Khang','Linh','Minh','Ngọc','Quân','Trang','Tuấn'];
+          const surnames = ['Nguyễn','Trần','Lê','Phạm','Hoàng','Vũ'];
+          const fullName = `${surnames[(births + parseInt(p.id.slice(0, 2), 16)) % surnames.length]} ${childNames[(births * 3 + parseInt(p.id.slice(2, 4), 16)) % childNames.length]}`;
+          const childRes = await client.query<{ id: string }>(
+            `INSERT INTO characters
+               (id,user_id,full_name,account_number,cccd,birthplace,age,health_energy,cash_minor,credit_score,heat_level,
+                is_alive,marital_status,location_x,location_y,birth_game_year,birth_game_day,death_age,
+                is_dependent,parent_1_id,parent_2_id,wellbeing,care_tier,is_adopted,dependent_status,custodial_parent_id,care_debt_minor,unpaid_care_days)
+             VALUES (gen_random_uuid(),NULL,$1,$2,$3,$4,0,100,0,650,0,true,'single',0,0,$5,$6,80,
+                     true,$7,$8,80,'standard',false,'infant',NULL,0,0)
+             RETURNING id`,
+            [fullName, accountNumber, cccd, birthplace, nextYear, nextDay, p.pregnant_character_id, p.other_parent_character_id],
+          );
+          const childId = childRes.rows[0]!.id;
+          // family_trees links for inheritance/succession
+          await client.query(
+            `INSERT INTO family_trees (id, character_id, parent_id, generation_level, inheritance_pct, created_at)
+             VALUES (gen_random_uuid(), $1, $2, 1, 0, now())`,
+            [childId, p.pregnant_character_id],
+          ).catch(()=>{});
+          await client.query(
+            `INSERT INTO family_trees (id, character_id, parent_id, generation_level, inheritance_pct, created_at)
+             VALUES (gen_random_uuid(), $1, $2, 1, 0, now())`,
+            [childId, p.other_parent_character_id],
+          ).catch(()=>{});
+          await client.query(
+            `UPDATE pregnancies SET status='completed', child_character_id=$2, completed_at=now(), updated_at=now() WHERE id=$1`,
+            [p.id, childId],
+          );
+          const title = 'Chào đón thành viên mới';
+          const body = `Con của bạn (${fullName}) đã chào đời.`;
+          if (p.pregnant_user_id) await client.query(`INSERT INTO notifications (id,user_id,kind,title,body,payload) VALUES (gen_random_uuid(),$1,'social',$2,$3,$4::jsonb)`, [p.pregnant_user_id, title, body, JSON.stringify({ pregnancyId: p.id, childId })]).catch(()=>{});
+          if (p.other_user_id) await client.query(`INSERT INTO notifications (id,user_id,kind,title,body,payload) VALUES (gen_random_uuid(),$1,'social',$2,$3,$4::jsonb)`, [p.other_user_id, title, body, JSON.stringify({ pregnancyId: p.id, childId })]).catch(()=>{});
+          births += 1;
+        }
+      }
+      if (pregRes.rows.length > 0) applied.push(`pregnancies: ${pregRes.rows.length} checked, births=${births}, miscarriages=${miscarriages}, warnings=${pregWarnings}`);
+
+      // 2) Adoption applications: auto-complete after 30 game days
+      const adoptRes = await client.query<{
+        id: string; applicant_character_id: string; spouse_character_id: string | null; child_character_id: string;
+        review_complete_game_year: number; review_complete_game_day: number;
+        applicant_user_id: string | null; spouse_user_id: string | null; child_name: string; applicant_name: string;
+      }>(
+        `SELECT a.id, a.applicant_character_id, a.spouse_character_id, a.child_character_id,
+                a.review_complete_game_year, a.review_complete_game_day,
+                ap.user_id AS applicant_user_id, sp.user_id AS spouse_user_id, ch.full_name AS child_name, ap.full_name AS applicant_name
+         FROM adoption_applications a
+         JOIN characters ap ON ap.id = a.applicant_character_id
+         LEFT JOIN characters sp ON sp.id = a.spouse_character_id
+         JOIN characters ch ON ch.id = a.child_character_id
+         WHERE a.status = 'pending_review'
+         FOR UPDATE OF a`
+      );
+      let adoptionsCompleted = 0;
+      for (const a of adoptRes.rows) {
+        const dueAbs = toAbs(Number(a.review_complete_game_year), Number(a.review_complete_game_day));
+        if (currentAbsDay < dueAbs) continue;
+        const parent1 = a.applicant_character_id;
+        const parent2 = a.spouse_character_id;
+        await client.query(
+          `UPDATE characters
+           SET parent_1_id = $2, parent_2_id = $3, is_adopted = true,
+               is_dependent = true, dependent_status = CASE WHEN age >= 18 THEN 'adult' ELSE 'child' END,
+               wellbeing = COALESCE(wellbeing, 70), care_tier = COALESCE(care_tier,'standard'),
+               custodial_parent_id = NULL, updated_at = now()
+           WHERE id = $1`,
+          [a.child_character_id, parent1, parent2],
+        );
+        await client.query(`DELETE FROM family_trees WHERE character_id = $1`, [a.child_character_id]).catch(()=>{});
+        await client.query(`INSERT INTO family_trees (id, character_id, parent_id, generation_level, inheritance_pct, created_at) VALUES (gen_random_uuid(), $1, $2, 1, 0, now())`, [a.child_character_id, parent1]).catch(()=>{});
+        if (parent2) await client.query(`INSERT INTO family_trees (id, character_id, parent_id, generation_level, inheritance_pct, created_at) VALUES (gen_random_uuid(), $1, $2, 1, 0, now())`, [a.child_character_id, parent2]).catch(()=>{});
+        await client.query(`UPDATE adoption_applications SET status='completed', completed_at=now(), updated_at=now() WHERE id=$1`, [a.id]);
+        const title = 'Hoàn tất nhận con nuôi';
+        const body = `Hồ sơ nhận nuôi ${a.child_name} đã được xét duyệt và hoàn tất.`;
+        if (a.applicant_user_id) await client.query(`INSERT INTO notifications (id,user_id,kind,title,body,payload) VALUES (gen_random_uuid(),$1,'social',$2,$3,$4::jsonb)`, [a.applicant_user_id, title, body, JSON.stringify({ applicationId: a.id, childId: a.child_character_id })]).catch(()=>{});
+        if (a.spouse_user_id) await client.query(`INSERT INTO notifications (id,user_id,kind,title,body,payload) VALUES (gen_random_uuid(),$1,'social',$2,$3,$4::jsonb)`, [a.spouse_user_id, title, body, JSON.stringify({ applicationId: a.id, childId: a.child_character_id })]).catch(()=>{});
+        adoptionsCompleted += 1;
+      }
+      if (adoptRes.rows.length > 0) applied.push(`adoptions: ${adoptRes.rows.length} pending_review checked, completed=${adoptionsCompleted}`);
+
+      // 3) Daily childcare costs / wellbeing / lost custody + adulthood
+      const childrenRes = await client.query<{
+        id: string; full_name: string; age: number; wellbeing: number | null; care_tier: string | null;
+        care_debt_minor: string; unpaid_care_days: number; is_dependent: boolean; dependent_status: string;
+        custodial_parent_id: string | null; parent_1_id: string | null; parent_2_id: string | null;
+        p1_user_id: string | null; p2_user_id: string | null; cust_user_id: string | null;
+      }>(
+        `SELECT c.id, c.full_name, c.age, c.wellbeing, c.care_tier,
+                COALESCE(c.care_debt_minor,0)::text AS care_debt_minor,
+                COALESCE(c.unpaid_care_days,0)::int AS unpaid_care_days,
+                COALESCE(c.is_dependent,false) AS is_dependent, COALESCE(c.dependent_status,'none') AS dependent_status,
+                c.custodial_parent_id, c.parent_1_id, c.parent_2_id,
+                p1.user_id AS p1_user_id, p2.user_id AS p2_user_id, cu.user_id AS cust_user_id
+         FROM characters c
+         LEFT JOIN characters p1 ON p1.id = c.parent_1_id
+         LEFT JOIN characters p2 ON p2.id = c.parent_2_id
+         LEFT JOIN characters cu ON cu.id = c.custodial_parent_id
+         WHERE COALESCE(c.is_alive,true)=true
+           AND (COALESCE(c.is_dependent,false)=true OR c.dependent_status IN ('infant','child'))
+         FOR UPDATE OF c`
+      );
+      let careProcessed = 0, lostCustody = 0, becameAdult = 0;
+      for (const ch of childrenRes.rows) {
+        const age = Number(ch.age ?? 0);
+        if (age >= 18) {
+          await client.query(
+            `UPDATE characters
+             SET is_dependent = false, dependent_status = 'adult',
+                 child_support_percent = CASE WHEN custodial_parent_id IS NULL THEN 0 ELSE child_support_percent END,
+                 unpaid_care_days = 0, updated_at = now()
+             WHERE id = $1`,
+            [ch.id],
+          );
+          becameAdult += 1;
+          continue;
+        }
+        if (ch.dependent_status === 'lost_custody' || ch.is_dependent === false) continue;
+
+        const tier = (ch.care_tier === 'economy' || ch.care_tier === 'premium') ? ch.care_tier : 'standard';
+        const cost = tier === 'economy' ? 50_000 : tier === 'premium' ? 400_000 : 150_000;
+        const payerId = ch.custodial_parent_id || ch.parent_1_id || ch.parent_2_id;
+        let paid = false;
+        if (payerId) {
+          try {
+            await postLedger(client, {
+              kind: 'child_care_cost',
+              description: `Chi phí nuôi dưỡng con (${ch.full_name})`,
+              referenceType: 'character',
+              referenceId: ch.id,
+              legs: [
+                { ownerType: 'character', ownerId: payerId, kind: 'cash', deltaMinor: -cost },
+                { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID, kind: 'cash', deltaMinor: cost },
+              ],
+            });
+            paid = true;
+          } catch {
+            paid = false;
+          }
+        }
+        let wellbeing = ch.wellbeing == null ? 70 : Number(ch.wellbeing);
+        let debt = Number(ch.care_debt_minor ?? 0);
+        let unpaidDays = Number(ch.unpaid_care_days ?? 0);
+        if (paid) {
+          unpaidDays = 0;
+          wellbeing = Math.min(100, wellbeing + 1);
+        } else {
+          debt += cost;
+          wellbeing = Math.max(0, wellbeing - 10);
+          unpaidDays += 1;
+        }
+
+        const loseCustody = unpaidDays >= 3 || wellbeing <= 0;
+        if (loseCustody) {
+          await client.query(
+            `UPDATE characters
+             SET wellbeing = $2, care_debt_minor = $3::bigint, unpaid_care_days = $4,
+                 is_dependent = false, dependent_status = 'lost_custody',
+                 custodial_parent_id = NULL, child_support_payer_id = NULL, child_support_percent = 0,
+                 updated_at = now()
+             WHERE id = $1`,
+            [ch.id, wellbeing, debt, unpaidDays],
+          );
+          const title = 'Mất quyền nuôi con';
+          const body = `Do thiếu điều kiện nuôi dưỡng, quyền nuôi ${ch.full_name} đã bị thu hồi.`;
+          for (const uid of [ch.cust_user_id, ch.p1_user_id, ch.p2_user_id]) {
+            if (uid) await client.query(`INSERT INTO notifications (id,user_id,kind,title,body,payload) VALUES (gen_random_uuid(),$1,'social',$2,$3,$4::jsonb)`, [uid, title, body, JSON.stringify({ childId: ch.id })]).catch(()=>{});
+          }
+          lostCustody += 1;
+        } else {
+          await client.query(
+            `UPDATE characters
+             SET wellbeing = $2, care_debt_minor = $3::bigint, unpaid_care_days = $4, updated_at = now()
+             WHERE id = $1`,
+            [ch.id, wellbeing, debt, unpaidDays],
+          );
+        }
+        careProcessed += 1;
+      }
+      if (childrenRes.rows.length > 0) applied.push(`family_care: ${careProcessed} processed, adults=${becameAdult}, lost_custody=${lostCustody}`);
+    } catch (e) {
+      try { await client.query('ROLLBACK TO SAVEPOINT family_step'); } catch { /* ignore */ }
+      logger.warn({ err: e }, 'Family/children tick step failed (best-effort)');
+      applied.push('family: skipped (error)');
     }
 
     await client.query('COMMIT');

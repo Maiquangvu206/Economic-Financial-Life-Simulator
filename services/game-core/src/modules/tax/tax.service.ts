@@ -120,20 +120,33 @@ export class TaxService {
   }
 
   /**
-   * Thu nhập chịu thuế cá nhân = tổng thu nhập năm từ các công việc đang giữ (active employments).
+   * Thu nhập chịu thuế cá nhân = tổng thu nhập năm từ các công việc đang giữ (active employments)
+   * + lương chủ doanh nghiệp đang cấu hình tại các công ty sở hữu (đa công ty, không phụ thuộc employment slot).
    * Không gộp thu nhập/doanh thu doanh nghiệp.
    */
   private async computePersonalTaxableIncomeMinor(
     characterId: string,
     db: Db,
   ): Promise<{ taxable: number; jobsCount: number; annualByJob: Array<{ title: string; annualMinor: number }> }> {
-    const jobs = await this.repository.listActiveEmployments(characterId, db);
+    const [jobs, ownerSources] = await Promise.all([
+      this.repository.listActiveEmployments(characterId, db),
+      this.repository.listActiveOwnerSalarySources(characterId, db),
+    ]);
+
     const annualByJob = jobs.map((j) => {
+      // Giữ nguyên quy ước hiện có của hệ thống: annualize theo 12 tháng từ mức lương lưu trữ.
       const annualMinor = Math.max(0, Number(j.salaryMinor)) * 12;
       return { title: j.title, annualMinor };
     });
+
+    for (const s of ownerSources) {
+      // Lương chủ DN được cấu hình và trả theo ngày game (mỗi tick) -> annualize theo 360 ngày/năm game.
+      const annualMinor = Math.max(0, Number(s.salaryMinor)) * 360;
+      annualByJob.push({ title: `Lương chủ DN - ${s.companyName}`, annualMinor });
+    }
+
     const taxable = annualByJob.reduce((sum, j) => sum + j.annualMinor, 0);
-    return { taxable, jobsCount: jobs.length, annualByJob };
+    return { taxable, jobsCount: jobs.length + ownerSources.length, annualByJob };
   }
 
   /** Tự động quyết toán thuế cá nhân 1 lần/năm. */

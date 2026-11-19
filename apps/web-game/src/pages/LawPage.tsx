@@ -15,12 +15,21 @@ import {
   type SocialOverviewDto,
   type TaxOverviewExtDto,
   type CrimeType,
+  type FamilyOverviewDto,
+  type CareTier,
 } from '@efls/contracts';
 
 function useSocialOverview() {
   return useQuery<SocialOverviewDto>({
     queryKey: ['social', 'overview'],
     queryFn: () => apiRequest<SocialOverviewDto>('/api/v1/social/overview'),
+  });
+}
+
+function useFamilyOverview() {
+  return useQuery<FamilyOverviewDto>({
+    queryKey: ['family', 'overview'],
+    queryFn: () => apiRequest<FamilyOverviewDto>('/api/v1/family/overview'),
   });
 }
 
@@ -53,13 +62,18 @@ const CRIME_LABEL: Record<CrimeType, string> = {
 export function LawPage() {
   const { data: law, isLoading: lawLoading, refetch: refetchLaw } = useLawOverview();
   const { data: social, refetch: refetchSocial } = useSocialOverview();
+  const { data: family, refetch: refetchFamily } = useFamilyOverview();
   const { data: tax, refetch: refetchTax } = useTaxOverview();
   const { data: me } = useQuery<{ id: string }>({ queryKey: ['characters', 'me'], queryFn: () => apiRequest('/api/v1/characters/me') });
   const myCharId = me?.id;
 
   const [activeTab, setActiveTab] = useState<'court' | 'family' | 'tax'>('court');
+  const [familySection, setFamilySection] = useState<'marriage' | 'planning' | 'children' | 'legacy'>('marriage');
   const [trialBusy, setTrialBusy] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [selectedAdoptChildId, setSelectedAdoptChildId] = useState<string>('');
+  const [divorceCustodyOpen, setDivorceCustodyOpen] = useState<{ marriageId: string; spouseCharacterId: string | null } | null>(null);
+  const [divorceCustodyMode, setDivorceCustodyMode] = useState<'agree_me' | 'agree_spouse' | 'system'>('system');
 
   // Modals & forms
   const [evidenceOpen, setEvidenceOpen] = useState<string | null>(null);
@@ -112,6 +126,7 @@ export function LawPage() {
       onDone?.();
       void refetchLaw();
       void refetchSocial();
+      void refetchFamily();
       void refetchTax();
     } catch {
       // lỗi đã xử lý bởi httpClient
@@ -330,6 +345,28 @@ export function LawPage() {
 
       {activeTab === 'family' && (
         <div className="grid gap-4">
+          <div className="flex flex-wrap gap-2">
+            {([
+              { key: 'marriage', label: 'Hôn nhân' },
+              { key: 'planning', label: 'Sinh con & Nhận nuôi' },
+              { key: 'children', label: 'Con cái & Chăm sóc' },
+              { key: 'legacy', label: 'Gia tộc & Di chúc' },
+            ] as const).map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setFamilySection(s.key)}
+                className={`min-h-[44px] px-4 py-2 rounded-xl text-sm font-semibold transition ${familySection === s.key
+                  ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-200'
+                  : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          {familySection === 'marriage' && (
           <Panel title="Hôn nhân" borderColor="amber">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -374,18 +411,34 @@ export function LawPage() {
                         <div className="text-xs text-slate-500">{m.prenupEnabled ? 'Có thỏa thuận tiền hôn nhân' : 'Không thỏa thuận tiền hôn nhân (chia 50/50 tiền mặt + bất động sản khi ly hôn)'} · {(m.status ?? '') === 'active' ? 'Đang hôn nhân' : (m.status ?? '') === 'divorced' ? 'Đã ly hôn' : (m.status ?? '—')}</div>
                       </div>
                       {m.status === 'active' && !(social?.divorceProposals ?? []).some((d) => d.marriageId === m.id) && (
-                        <GameButton variant="danger" size="sm" disabled={actionBusy === `divorce-${m.id}`} onClick={() => void handleAction(`divorce-${m.id}`, () => apiRequest('/api/v1/social/marriage/divorce/propose', { method: 'POST', body: JSON.stringify({ marriageId: m.id }) }))}>
+                        <GameButton
+                          variant="danger"
+                          size="sm"
+                          disabled={actionBusy === `divorce-${m.id}`}
+                          onClick={() => {
+                            const spouseCharacterId = m.characterId === myCharId ? m.spouseId : m.characterId;
+                            setDivorceCustodyMode('system');
+                            setDivorceCustodyOpen({ marriageId: m.id, spouseCharacterId: spouseCharacterId ?? null });
+                          }}
+                        >
                           Gửi yêu cầu ly hôn
                         </GameButton>
                       )}
                     </div>
                     {(social?.divorceProposals ?? []).filter((d) => d.marriageId === m.id).map((d) => {
                       const incoming = myCharId != null && d.otherCharacterId === myCharId;
+                      const ct: any = (d as any).custodyTerms;
+                      const custodyText = ct?.mode === 'agree'
+                        ? `Quyền nuôi con (thỏa thuận): ${ct.custodialParentId === myCharId ? 'Bạn' : (ct.custodialParentId === d.requesterCharacterId ? d.requesterName : ct.custodialParentId === d.otherCharacterId ? d.otherName : 'Đối phương')} trực tiếp nuôi`
+                        : ct?.mode === 'system'
+                          ? 'Quyền nuôi con: để hệ thống phán quyết (bên có điều kiện nhà ở/tài chính tốt hơn nuôi, bên còn lại cấp dưỡng 20% thu nhập/tháng)'
+                          : null;
                       return (
                         <div key={d.id} className="flex items-center justify-between gap-2 p-2 rounded-lg border border-rose-200 bg-rose-50/60">
                           <div className="min-w-0 text-xs">
                             <div className="font-semibold text-slate-800">Yêu cầu ly hôn: {d.requesterName} → {d.otherName}</div>
                             <div className="text-slate-500">{incoming ? 'Bạn cần xác nhận đồng ý ly hôn' : 'Đang chờ đối phương đồng ý ly hôn'}</div>
+                            {custodyText ? <div className="mt-1 text-slate-700">{custodyText}</div> : null}
                           </div>
                           {incoming ? (
                             <div className="flex gap-2 shrink-0">
@@ -410,6 +463,200 @@ export function LawPage() {
             </div>
           </Panel>
 
+          )}
+
+          {familySection === 'planning' && (
+          <Panel title="Sinh con & Nhận nuôi" borderColor="emerald">
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-white/60 p-3 space-y-2">
+                  <div className="text-sm font-semibold text-slate-800">Sinh con</div>
+                  <div className="text-xs text-slate-600">
+                    Điều kiện: đã kết hôn (active), cả hai ≥ 20 tuổi game, sức khỏe ≥ 80, có nhà ở hợp lệ, không sinh con trong 1 năm game gần nhất. Thai kỳ 10 tháng game.
+                  </div>
+                  {family?.birthBlockedReason ? <div className="text-xs text-amber-700">{family.birthBlockedReason}</div> : null}
+                  <GameButton
+                    variant="primary"
+                    size="sm"
+                    disabled={!family?.canProposeBirth || actionBusy === 'birth-propose'}
+                    onClick={() => void handleAction('birth-propose', () => apiRequest('/api/v1/family/birth/propose', { method: 'POST', body: JSON.stringify({}) }))}
+                  >
+                    Đăng ký sinh con (gửi đề xuất)
+                  </GameButton>
+                  {(family?.birthProposals ?? []).length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Đề xuất sinh con</div>
+                      {(family?.birthProposals ?? []).map((p) => {
+                        const incoming = myCharId != null && p.partnerCharacterId === myCharId;
+                        return (
+                          <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2 text-xs">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-800">{p.proposerName} → {p.partnerName}</div>
+                              <div className="text-slate-500">{incoming ? 'Bạn cần xác nhận đồng thuận' : 'Đang chờ vợ/chồng xác nhận'}</div>
+                            </div>
+                            {incoming ? (
+                              <div className="flex gap-1.5 shrink-0">
+                                <GameButton variant="primary" size="sm" disabled={actionBusy === `bp-a-${p.id}`} onClick={() => void handleAction(`bp-a-${p.id}`, () => apiRequest('/api/v1/family/birth/respond', { method: 'POST', body: JSON.stringify({ proposalId: p.id, accept: true }) }))}>Đồng ý</GameButton>
+                                <GameButton variant="outline" size="sm" disabled={actionBusy === `bp-r-${p.id}`} onClick={() => void handleAction(`bp-r-${p.id}`, () => apiRequest('/api/v1/family/birth/respond', { method: 'POST', body: JSON.stringify({ proposalId: p.id, accept: false }) }))}>Từ chối</GameButton>
+                              </div>
+                            ) : <span className="text-emerald-700">Chờ phản hồi</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {(family?.pregnancies ?? []).length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Thai kỳ</div>
+                      {(family?.pregnancies ?? []).map((pr) => (
+                        <div key={pr.id} className="rounded-lg border border-pink-200 bg-pink-50/50 p-2 text-xs">
+                          <div className="font-semibold text-slate-800">{pr.motherName} & {pr.fatherName}</div>
+                          <div className="text-slate-600">Trạng thái: {pr.status === 'active' ? 'Đang mang thai' : pr.status} · Dự sinh: ngày {pr.dueGameDay + 1}/năm {pr.dueGameYear}</div>
+                          {pr.healthWarningDays > 0 ? <div className="text-rose-700">Cảnh báo sức khỏe thai kỳ: {pr.healthWarningDays} ngày (người mang thai sức khỏe &lt; 30)</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white/60 p-3 space-y-2">
+                  <div className="text-sm font-semibold text-slate-800">Nhận con nuôi</div>
+                  <div className="text-xs text-slate-600">
+                    Điều kiện: ≥ 20 tuổi, có nhà ở hợp lệ. Nếu đã kết hôn cần vợ/chồng đồng thuận. Xét duyệt 30 ngày game.
+                  </div>
+                  {family?.adoptionBlockedReason ? <div className="text-xs text-amber-700">{family.adoptionBlockedReason}</div> : null}
+                  <div className="flex flex-col gap-2">
+                    <select
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+                      value={selectedAdoptChildId}
+                      onChange={(e) => setSelectedAdoptChildId(e.target.value)}
+                    >
+                      <option value="">Chọn trẻ NPC do hệ thống cung cấp</option>
+                      {(family?.adoptableChildren ?? []).map((c) => (
+                        <option key={c.id} value={c.id}>{c.fullName} · {c.age} tuổi</option>
+                      ))}
+                    </select>
+                    <GameButton
+                      variant="primary"
+                      size="sm"
+                      disabled={!family?.canApplyAdoption || !selectedAdoptChildId || actionBusy === 'adopt-apply'}
+                      onClick={() => void handleAction('adopt-apply', () => apiRequest('/api/v1/family/adoption/apply', { method: 'POST', body: JSON.stringify({ childId: selectedAdoptChildId }) }), () => setSelectedAdoptChildId(''))}
+                    >
+                      Đăng ký nhận con nuôi
+                    </GameButton>
+                  </div>
+                  {(family?.adoptionApplications ?? []).length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Hồ sơ nhận nuôi</div>
+                      {(family?.adoptionApplications ?? []).map((a) => {
+                        const needSpouseApprove = a.status === 'pending_spouse_approval' && myCharId != null && a.spouseCharacterId === myCharId;
+                        const statusText = a.status === 'pending_spouse_approval' ? 'Chờ vợ/chồng đồng thuận' : a.status === 'pending_review' ? `Chờ xét duyệt (hoàn tất ngày ${a.reviewCompleteGameDay + 1}/năm ${a.reviewCompleteGameYear})` : a.status === 'completed' ? 'Đã hoàn tất' : a.status;
+                        return (
+                          <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50/50 p-2 text-xs">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-800">{a.childName}</div>
+                              <div className="text-slate-600">{a.applicantName}{a.spouseName ? ` & ${a.spouseName}` : ''} · {statusText}</div>
+                            </div>
+                            {needSpouseApprove ? (
+                              <div className="flex gap-1.5 shrink-0">
+                                <GameButton variant="primary" size="sm" disabled={actionBusy === `ad-a-${a.id}`} onClick={() => void handleAction(`ad-a-${a.id}`, () => apiRequest('/api/v1/family/adoption/respond', { method: 'POST', body: JSON.stringify({ applicationId: a.id, accept: true }) }))}>Đồng thuận</GameButton>
+                                <GameButton variant="outline" size="sm" disabled={actionBusy === `ad-r-${a.id}`} onClick={() => void handleAction(`ad-r-${a.id}`, () => apiRequest('/api/v1/family/adoption/respond', { method: 'POST', body: JSON.stringify({ applicationId: a.id, accept: false }) }))}>Từ chối</GameButton>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          </Panel>
+          )}
+
+          {familySection === 'children' && (
+          <Panel title="Con cái & Chăm sóc" borderColor="emerald">
+            <div className="space-y-2">
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-slate-800">Danh sách con cái</div>
+                {(family?.children ?? []).length === 0 ? (
+                  <div className="text-center py-4 text-xs text-slate-500">Chưa có con cái.</div>
+                ) : (
+                  (family?.children ?? []).map((c) => {
+                    const wb = c.wellbeing ?? 0;
+                    const tierLabel = c.careTier === 'economy' ? 'Tiết kiệm (50.000đ/ngày)' : c.careTier === 'premium' ? 'Cao cấp (400.000đ/ngày)' : c.careTier === 'standard' ? 'Tiêu chuẩn (150.000đ/ngày)' : '—';
+                    return (
+                      <div key={c.id} className="rounded-xl border border-slate-200 bg-white/70 p-3 space-y-2">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <div className="font-semibold text-slate-800">{c.fullName} <span className="text-xs font-normal text-slate-500">({c.age} tuổi{c.isAdopted ? ', con nuôi' : ', con ruột'})</span></div>
+                            <div className="text-xs text-slate-600">
+                              Trạng thái: {c.dependentStatus === 'adult' ? 'Trưởng thành (tự lập)' : c.dependentStatus === 'lost_custody' ? 'Mất quyền nuôi' : c.isDependent ? 'Đang nuôi dưỡng' : c.dependentStatus}
+                              {c.custodialParentName ? ` · Người nuôi trực tiếp: ${c.custodialParentName}` : ''}
+                              {c.childSupportPercent > 0 && c.childSupportPayerName ? ` · Cấp dưỡng: ${c.childSupportPayerName} (${c.childSupportPercent}% thu nhập/tháng)` : ''}
+                            </div>
+                          </div>
+                          <Badge variant={c.dependentStatus === 'lost_custody' ? 'error' : c.age >= 18 ? 'default' : 'success'}>
+                            {tierLabel}
+                          </Badge>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-xs text-slate-600">
+                            <span>Sức khỏe / Hạnh phúc (wellbeing)</span>
+                            <span className="font-semibold">{wb}/100</span>
+                          </div>
+                          <div className="h-2.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${wb <= 20 ? 'bg-rose-500' : wb <= 50 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                              style={{ width: `${Math.max(0, Math.min(100, wb))}%` }}
+                            />
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            Nợ chăm sóc: {formatMoney(c.careDebt?.amount ?? 0)} · Ngày thiếu tiền liên tiếp: {c.unpaidCareDays}/3
+                          </div>
+                        </div>
+
+                        {(c.canChangeCareTier || c.canInteract || c.canStudy || c.canMedicalCheckup) && (
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            {c.canChangeCareTier && (
+                              <select
+                                className="h-9 rounded-xl border border-slate-200 bg-white px-2 text-xs"
+                                value={c.careTier ?? 'standard'}
+                                disabled={actionBusy === `care-tier-${c.id}`}
+                                onChange={(e) => void handleAction(`care-tier-${c.id}`, () => apiRequest('/api/v1/family/children/care-tier', { method: 'POST', body: JSON.stringify({ childId: c.id, careTier: e.target.value as CareTier }) }))}
+                              >
+                                <option value="economy">Tiết kiệm (50.000đ/ngày)</option>
+                                <option value="standard">Tiêu chuẩn (150.000đ/ngày)</option>
+                                <option value="premium">Cao cấp (400.000đ/ngày)</option>
+                              </select>
+                            )}
+                            {c.canInteract && (
+                              <GameButton variant="outline" size="sm" disabled={actionBusy === `care-i-${c.id}`} onClick={() => void handleAction(`care-i-${c.id}`, () => apiRequest('/api/v1/family/children/care', { method: 'POST', body: JSON.stringify({ childId: c.id, action: 'interact' }) }))}>Tương tác</GameButton>
+                            )}
+                            {c.canStudy && (
+                              <GameButton variant="outline" size="sm" disabled={actionBusy === `care-s-${c.id}`} onClick={() => void handleAction(`care-s-${c.id}`, () => apiRequest('/api/v1/family/children/care', { method: 'POST', body: JSON.stringify({ childId: c.id, action: 'study' }) }))}>Cho đi học</GameButton>
+                            )}
+                            {c.canMedicalCheckup && (
+                              <GameButton variant="outline" size="sm" disabled={actionBusy === `care-m-${c.id}`} onClick={() => void handleAction(`care-m-${c.id}`, () => apiRequest('/api/v1/family/children/care', { method: 'POST', body: JSON.stringify({ childId: c.id, action: 'medical_checkup' }) }))}>Khám bệnh</GameButton>
+                            )}
+                            {c.canInteract && (
+                              <GameButton variant="primary" size="sm" disabled={actionBusy === `care-e-${c.id}`} onClick={() => void handleAction(`care-e-${c.id}`, () => apiRequest('/api/v1/family/children/care', { method: 'POST', body: JSON.stringify({ childId: c.id, action: 'extra_support', amount: { amount: 100000, currency: 'VND' } }) }))}>Chu cấp thêm (100.000đ)</GameButton>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </Panel>
+          )}
+
+          {familySection === 'legacy' && (
+            <>
           <Panel title="Cây gia tộc">
             <div className="space-y-2">
               {(social?.family ?? []).length > 0 ? (
@@ -431,6 +678,7 @@ export function LawPage() {
               )}
             </div>
           </Panel>
+
 
           <Panel title="Di chúc & Quỹ tín thác (Trust Fund)">
             <div className="space-y-3">
@@ -469,6 +717,8 @@ export function LawPage() {
               </div>
             </div>
           </Panel>
+            </>
+          )}
         </div>
       )}
 
@@ -869,6 +1119,51 @@ export function LawPage() {
             }
           >
             Gửi tố giác
+          </GameButton>
+        </div>
+      </Modal>
+
+      {/* Modal: yêu cầu ly hôn & thỏa thuận quyền nuôi con */}
+      <Modal open={divorceCustodyOpen != null} onClose={() => setDivorceCustodyOpen(null)} title="Yêu cầu ly hôn & quyền nuôi con">
+        <div className="space-y-3">
+          <p className="text-xs text-slate-600">
+            Khi ly hôn, hai bên có thể thỏa thuận người nuôi con trực tiếp. Nếu không thỏa thuận, hệ thống phán quyết giao con cho bên có điều kiện nhà ở/tài chính tốt hơn và tự động trích <b>20% thu nhập/tháng</b> của bên còn lại để cấp dưỡng.
+          </p>
+          <div className="space-y-2">
+            <label className="text-[11px] uppercase tracking-wider text-slate-500">Thỏa thuận quyền nuôi con</label>
+            <select
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+              value={divorceCustodyMode}
+              onChange={(e) => setDivorceCustodyMode(e.target.value as any)}
+            >
+              <option value="system">Không thỏa thuận / Để hệ thống phán quyết</option>
+              <option value="agree_me">Thỏa thuận: Tôi trực tiếp nuôi con</option>
+              <option value="agree_spouse" disabled={!divorceCustodyOpen?.spouseCharacterId}>Thỏa thuận: Vợ/chồng trực tiếp nuôi con</option>
+            </select>
+          </div>
+          <GameButton
+            variant="danger"
+            disabled={!divorceCustodyOpen || actionBusy === `divorce-${divorceCustodyOpen?.marriageId}`}
+            onClick={() => {
+              if (!divorceCustodyOpen) return;
+              const custodyTerms =
+                divorceCustodyMode === 'agree_me' && myCharId
+                  ? { mode: 'agree', custodialParentId: myCharId }
+                  : divorceCustodyMode === 'agree_spouse' && divorceCustodyOpen.spouseCharacterId
+                    ? { mode: 'agree', custodialParentId: divorceCustodyOpen.spouseCharacterId }
+                    : { mode: 'system' };
+              void handleAction(
+                `divorce-${divorceCustodyOpen.marriageId}`,
+                () =>
+                  apiRequest('/api/v1/social/marriage/divorce/propose', {
+                    method: 'POST',
+                    body: JSON.stringify({ marriageId: divorceCustodyOpen.marriageId, custodyTerms }),
+                  }),
+                () => setDivorceCustodyOpen(null),
+              );
+            }}
+          >
+            Gửi yêu cầu ly hôn
           </GameButton>
         </div>
       </Modal>

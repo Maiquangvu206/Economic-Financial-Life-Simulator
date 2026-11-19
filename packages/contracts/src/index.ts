@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @efls/contracts
  *
  * Cross-boundary contracts only:
@@ -23,6 +23,7 @@ export * from './http/stock-market.js';
 export * from './http/real-estate.js';
 export * from './http/law.js';
 export * from './http/social.js';
+export * from './http/family.js';
 export * from './http/observability.js';
 export * from './http/politics.js';
 export * from './http/underworld.js';
@@ -34,6 +35,8 @@ export * from './http/notifications.js';
 export * from './http/game.js';
 export * from './http/admin.js';
 export * from './http/welfare.js';
+export * from './http/health.js';
+export * from './http/travel.js';
 export * from './http/gift-codes.js';
 export * from './http/offline.js';
 export * from './http/ai.js';
