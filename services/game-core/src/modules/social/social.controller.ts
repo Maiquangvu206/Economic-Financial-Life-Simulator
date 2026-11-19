@@ -34,8 +34,8 @@ export class SocialController {
   };
 
   proposeDivorce = async (req: Request, res: Response): Promise<void> => {
-    const { marriageId } = req.body as ProposeDivorceRequest;
-    const overview = await this.service.proposeDivorce(req.actorId!, marriageId);
+    const { marriageId, custodyTerms } = req.body as ProposeDivorceRequest;
+    const overview = await this.service.proposeDivorce(req.actorId!, marriageId, custodyTerms);
     res.status(200).json(overview);
   };
 

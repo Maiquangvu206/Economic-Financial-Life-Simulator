@@ -21,6 +21,7 @@ import { socialRouter } from './modules/social/social.routes.js';
 import { lawRouter } from './modules/law/law.routes.js';
 import { educationRouter } from './modules/education/education.routes.js';
 import { recruitmentRouter } from './modules/recruitment/recruitment.routes.js';
+import { jobsRouter } from './modules/jobs/jobs.routes.js';
 import { taxRouter } from './modules/tax/tax.routes.js';
 import { underworldRouter } from './modules/underworld/underworld.routes.js';
 import { npcRouter } from './modules/npc/npc.routes.js';
@@ -35,6 +36,9 @@ import { broadcastRouter, broadcastAdminRouter } from './modules/broadcast/broad
 import { offlineRouter, offlineAdminRouter } from './modules/offline/offline.routes.js';
 import { provinceLandRouter } from './modules/province-land/provinceLand.routes.js';
 import { chatRouter } from './modules/chat/chat.routes.js';
+import { familyRouter } from './modules/family/family.routes.js';
+import { healthRouter } from './modules/health/health.routes.js';
+import { travelRouter } from './modules/travel/travel.routes.js';
 import { getGameConfigPublic } from './modules/admin/admin.integration.js';
 import { observabilityService } from './modules/observability/observability.service.js';
 
@@ -111,9 +115,13 @@ export function createApp(): Express {
   app.use('/api/v1/corporations', corporationRouter);
   app.use('/api/v1/stock-market', stockMarketRouter);
   app.use('/api/v1/social', socialRouter);
+  app.use('/api/v1/family', familyRouter);
+  app.use('/api/v1/health', healthRouter);
+  app.use('/api/v1/travel', travelRouter);
   app.use('/api/v1/law', lawRouter);
   app.use('/api/v1/education', educationRouter);
   app.use('/api/v1/recruitment', recruitmentRouter);
+  app.use('/api/v1/jobs', jobsRouter);
   app.use('/api/v1/tax', taxRouter);
   app.use('/api/v1/underworld', underworldRouter);
   app.use('/api/v1/npc', npcRouter);

@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import type { CreateRecruitmentJobRequest } from '@efls/contracts';
+import type { CreateRecruitmentJobRequest, DecideRecruitmentApplicationRequest } from '@efls/contracts';
 import { requireActorId } from '../../shared/http/actor.js';
 import { RecruitmentService } from './recruitment.service.js';
 
@@ -46,6 +46,20 @@ export class RecruitmentController {
     const userId = requireActorId(req);
     const { jobId } = req.params as { jobId: string };
     const result = await this.service.apply(userId, jobId);
+    res.status(200).json(result);
+  };
+
+  decideApplication = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { applicationId } = req.params as { applicationId: string };
+    const body = req.body as DecideRecruitmentApplicationRequest;
+    const result = await this.service.decideApplication(userId, applicationId, body.decision, body.note ?? null);
+    res.status(200).json(result);
+  };
+
+  resignCurrentEmployment = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const result = await this.service.resignCurrentEmployment(userId);
     res.status(200).json(result);
   };
 }

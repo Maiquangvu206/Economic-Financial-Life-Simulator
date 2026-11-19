@@ -22,6 +22,11 @@ export interface ProvinceLandPropertyRow {
   constructionBuiltAt: Date | null;
   mergedIntoPropertyId: string | null;
   mergeGroupId: string | null;
+  askingPriceMinor: string | null;
+  saleNotes: string | null;
+  rentListingActive: boolean;
+  rentDepositMinor: string;
+  rentNotes: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,9 +49,8 @@ export interface ProvinceLandPurchaseOfferRow {
 export class ProvinceLandRepository {
   constructor(readonly db: Db = pool) {}
 
-  async listByProvince(provinceCode: string): Promise<ProvinceLandPropertyRow[]> {
-    const r = await this.db.query<ProvinceLandPropertyRow>(
-      `SELECT id,
+  private readonly selectCols = `
+              id,
               province_code AS "provinceCode",
               node_x AS "nodeX",
               node_y AS "nodeY",
@@ -66,8 +70,17 @@ export class ProvinceLandRepository {
               construction_built_at AS "constructionBuiltAt",
               merged_into_property_id AS "mergedIntoPropertyId",
               merge_group_id AS "mergeGroupId",
+              asking_price_minor AS "askingPriceMinor",
+              sale_notes AS "saleNotes",
+              COALESCE(rent_listing_active, false) AS "rentListingActive",
+              COALESCE(rent_deposit_minor, 0)::text AS "rentDepositMinor",
+              rent_notes AS "rentNotes",
               created_at AS "createdAt",
-              updated_at AS "updatedAt"
+              updated_at AS "updatedAt"`;
+
+  async listByProvince(provinceCode: string): Promise<ProvinceLandPropertyRow[]> {
+    const r = await this.db.query<ProvinceLandPropertyRow>(
+      `SELECT ${this.selectCols}
        FROM province_land_properties
        WHERE province_code = $1
        ORDER BY updated_at DESC`,
@@ -79,28 +92,7 @@ export class ProvinceLandRepository {
   async findByIds(db: Db, ids: string[]): Promise<ProvinceLandPropertyRow[]> {
     if (ids.length === 0) return [];
     const r = await db.query<ProvinceLandPropertyRow>(
-      `SELECT id,
-              province_code AS "provinceCode",
-              node_x AS "nodeX",
-              node_y AS "nodeY",
-              zone_type AS "zoneType",
-              node_name AS "nodeName",
-              owner_character_id AS "ownerCharacterId",
-              status,
-              purchase_price_minor AS "purchasePriceMinor",
-              current_value_minor AS "currentValueMinor",
-              monthly_rent_minor AS "monthlyRentMinor",
-              property_type AS "propertyType",
-              construction_option AS "constructionOption",
-              construction_label AS "constructionLabel",
-              construction_tier AS "constructionTier",
-              construction_multiplier AS "constructionMultiplier",
-              construction_cost_minor AS "constructionCostMinor",
-              construction_built_at AS "constructionBuiltAt",
-              merged_into_property_id AS "mergedIntoPropertyId",
-              merge_group_id AS "mergeGroupId",
-              created_at AS "createdAt",
-              updated_at AS "updatedAt"
+      `SELECT ${this.selectCols}
        FROM province_land_properties
        WHERE id = ANY($1::uuid[])`,
       [ids],
@@ -296,9 +288,52 @@ export class ProvinceLandRepository {
            merge_group_id = NULL,
            monthly_rent_minor = 0,
            current_value_minor = purchase_price_minor,
+           asking_price_minor = NULL,
+           sale_notes = NULL,
+           rent_listing_active = false,
+           rent_deposit_minor = 0,
+           rent_notes = NULL,
            updated_at = now()
        WHERE id = ANY($1::uuid[])`,
       [propertyIds],
+    );
+  }
+
+  async listProperty(db: Db, propertyIds: string[], askingPriceMinor: number, saleNotes: string | null): Promise<void> {
+    if (propertyIds.length === 0) return;
+    await db.query(
+      `UPDATE province_land_properties
+       SET status = 'listed', asking_price_minor = $2, sale_notes = $3, updated_at = now()
+       WHERE id = ANY($1::uuid[])`,
+      [propertyIds, askingPriceMinor, saleNotes],
+    );
+  }
+
+  async unlistProperty(db: Db, propertyIds: string[]): Promise<void> {
+    if (propertyIds.length === 0) return;
+    await db.query(
+      `UPDATE province_land_properties
+       SET status = 'owned', asking_price_minor = NULL, sale_notes = NULL, updated_at = now()
+       WHERE id = ANY($1::uuid[])`,
+      [propertyIds],
+    );
+  }
+
+  async updateRentTerms(
+    db: Db,
+    propertyIds: string[],
+    input: { monthlyRentMinor: number; rentDepositMinor: number; rentListingActive: boolean; rentNotes: string | null },
+  ): Promise<void> {
+    if (propertyIds.length === 0) return;
+    await db.query(
+      `UPDATE province_land_properties
+       SET monthly_rent_minor = $2,
+           rent_deposit_minor = $3,
+           rent_listing_active = $4,
+           rent_notes = $5,
+           updated_at = now()
+       WHERE id = ANY($1::uuid[])`,
+      [propertyIds, input.monthlyRentMinor, input.rentDepositMinor, input.rentListingActive, input.rentNotes],
     );
   }
 }

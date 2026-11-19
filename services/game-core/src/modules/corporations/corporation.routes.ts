@@ -16,8 +16,11 @@ import {
   DividendRequestSchema,
   IpoCompanyRequestSchema,
   RelocateCompanyPremisesRequestSchema,
+  SetCompanyOwnerSalaryRequestSchema,
   SetRevenueRetainRequestSchema,
   TakeoverRequestSchema,
+  UpdateEmployeeSalaryRequestSchema,
+  UpdateStaffSalaryRequestSchema,
 } from '@efls/contracts';
 
 const controller = new CorporationController();
@@ -94,6 +97,13 @@ corporationRouter.post(
   asyncHandler(controller.fireEmployee),
 );
 
+/** Điều chỉnh lương nhân viên (người chơi) trong công ty. */
+corporationRouter.put(
+  '/:companyId/employees/:employmentId/salary',
+  validateBody(UpdateEmployeeSalaryRequestSchema),
+  asyncHandler(controller.updateEmployeeSalary),
+);
+
 /** Giải thể/phá sản công ty (chủ sở hữu). */
 corporationRouter.post('/:companyId/dissolve', asyncHandler(controller.dissolveCompany));
 
@@ -142,6 +152,13 @@ corporationRouter.post(
 /** Sa thải nhân sự (AI-tuyển / company_staff). */
 corporationRouter.post('/:companyId/staff/:staffId/fire', asyncHandler(controller.fireStaff));
 
+/** Điều chỉnh lương nhân sự AI (company_staff). */
+corporationRouter.put(
+  '/:companyId/staff/:staffId/salary',
+  validateBody(UpdateStaffSalaryRequestSchema),
+  asyncHandler(controller.updateStaffSalary),
+);
+
 /** Ghi bút toán sổ cái (có thể khai báo lệch thực tế). */
 corporationRouter.post(
   '/:companyId/ledger',
@@ -161,6 +178,13 @@ corporationRouter.put(
   '/:companyId/revenue-retain',
   validateBody(SetRevenueRetainRequestSchema),
   asyncHandler(controller.setRevenueRetain),
+);
+
+/** 1+2+3: Cấu hình lương chủ doanh nghiệp (chi từ quỹ công ty, tính như công việc nhận lương). */
+corporationRouter.put(
+  '/:companyId/owner-salary',
+  validateBody(SetCompanyOwnerSalaryRequestSchema),
+  asyncHandler(controller.setOwnerSalary),
 );
 
 /** 4: Đợt chào bán cổ phần (IPO) - danh sách theo công ty / tạo đợt / thị trường đã có route riêng. */

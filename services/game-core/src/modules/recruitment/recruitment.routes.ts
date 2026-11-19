@@ -3,7 +3,7 @@ import { attachActor } from '../../shared/http/actor.js';
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import { RecruitmentController } from './recruitment.controller.js';
-import { CreateRecruitmentJobRequestSchema } from '@efls/contracts';
+import { CreateRecruitmentJobRequestSchema, DecideRecruitmentApplicationRequestSchema } from '@efls/contracts';
 
 const controller = new RecruitmentController();
 
@@ -15,3 +15,8 @@ recruitmentRouter.post('/jobs', validateBody(CreateRecruitmentJobRequestSchema),
 recruitmentRouter.post('/jobs/:jobId/close', asyncHandler(controller.closeJob));
 recruitmentRouter.delete('/jobs/:jobId', asyncHandler(controller.deleteJob));
 recruitmentRouter.post('/jobs/:jobId/apply', asyncHandler(controller.apply));
+recruitmentRouter.post(
+  '/applications/:applicationId/decide',
+  validateBody(DecideRecruitmentApplicationRequestSchema),
+  asyncHandler(controller.decideApplication),
+);

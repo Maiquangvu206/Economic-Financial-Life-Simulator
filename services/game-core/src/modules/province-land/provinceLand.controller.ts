@@ -1,5 +1,11 @@
 import type { Request, Response } from 'express';
-import type { ConstructPropertyRequest, DemolishPropertyRequest } from '@efls/contracts';
+import type {
+  ConstructPropertyRequest,
+  DemolishPropertyRequest,
+  ListPropertyRequest,
+  UnlistPropertyRequest,
+  UpdateRentTermsRequest,
+} from '@efls/contracts';
 import { provinceLandService } from './provinceLand.service.js';
 
 export class ProvinceLandController {
@@ -41,6 +47,38 @@ export class ProvinceLandController {
     const provinceCode = String(req.query.province ?? req.body?.provinceCode ?? '001');
     const body = req.body as { offerId: string; action: 'accept' | 'reject' | 'cancel' };
     const properties = await provinceLandService.respondOffer(req.actorId!, provinceCode, body.offerId, body.action);
+    res.status(200).json({ provinceCode, properties });
+  };
+
+  listProperty = async (req: Request, res: Response): Promise<void> => {
+    const provinceCode = String(req.query.province ?? req.body?.provinceCode ?? '001');
+    const { propertyId, askingPrice, saleNotes } = req.body as ListPropertyRequest;
+    const properties = await provinceLandService.listProperty(
+      req.actorId!,
+      provinceCode,
+      propertyId,
+      askingPrice.amount,
+      saleNotes,
+    );
+    res.status(200).json({ provinceCode, properties });
+  };
+
+  unlistProperty = async (req: Request, res: Response): Promise<void> => {
+    const provinceCode = String(req.query.province ?? req.body?.provinceCode ?? '001');
+    const { propertyId } = req.body as UnlistPropertyRequest;
+    const properties = await provinceLandService.unlistProperty(req.actorId!, provinceCode, propertyId);
+    res.status(200).json({ provinceCode, properties });
+  };
+
+  updateRentTerms = async (req: Request, res: Response): Promise<void> => {
+    const provinceCode = String(req.query.province ?? req.body?.provinceCode ?? '001');
+    const body = req.body as UpdateRentTermsRequest;
+    const properties = await provinceLandService.updateRentTerms(req.actorId!, provinceCode, body.propertyId, {
+      monthlyRentMinor: body.monthlyRentMinor,
+      rentDepositMinor: body.rentDepositMinor ?? 0,
+      rentListingActive: body.rentListingActive,
+      rentNotes: body.rentNotes ?? null,
+    });
     res.status(200).json({ provinceCode, properties });
   };
 }

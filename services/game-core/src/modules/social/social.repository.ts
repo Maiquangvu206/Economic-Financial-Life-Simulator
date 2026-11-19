@@ -33,6 +33,7 @@ export interface DivorceProposalRow {
   otherCharacterId: string;
   otherName: string;
   status: string;
+  custodyTerms: any | null;
   createdAt: Date;
   respondedAt: Date | null;
 }
@@ -195,7 +196,9 @@ export class SocialRepository {
               d.requester_character_id AS "requesterCharacterId", rc.full_name AS "requesterName",
               CASE WHEN m.character_id = d.requester_character_id THEN m.spouse_id ELSE m.character_id END AS "otherCharacterId",
               oc.full_name AS "otherName",
-              d.status, d.created_at AS "createdAt", d.responded_at AS "respondedAt"
+              d.status,
+              COALESCE(to_jsonb(d)->'custody_terms', '{}'::jsonb) AS "custodyTerms",
+              d.created_at AS "createdAt", d.responded_at AS "respondedAt"
        FROM divorce_proposals d
        JOIN marriage_contracts m ON m.id = d.marriage_id
        JOIN characters rc ON rc.id = d.requester_character_id
@@ -214,7 +217,9 @@ export class SocialRepository {
               d.requester_character_id AS "requesterCharacterId", rc.full_name AS "requesterName",
               CASE WHEN m.character_id = d.requester_character_id THEN m.spouse_id ELSE m.character_id END AS "otherCharacterId",
               oc.full_name AS "otherName",
-              d.status, d.created_at AS "createdAt", d.responded_at AS "respondedAt"
+              d.status,
+              COALESCE(to_jsonb(d)->'custody_terms', '{}'::jsonb) AS "custodyTerms",
+              d.created_at AS "createdAt", d.responded_at AS "respondedAt"
        FROM divorce_proposals d
        JOIN marriage_contracts m ON m.id = d.marriage_id
        JOIN characters rc ON rc.id = d.requester_character_id
@@ -233,12 +238,12 @@ export class SocialRepository {
     return result.rows[0]?.id ?? null;
   }
 
-  async createDivorceProposal(client: Db, marriageId: string, requesterId: string): Promise<string> {
+  async createDivorceProposal(client: Db, marriageId: string, requesterId: string, custodyTerms?: any): Promise<string> {
     const result = await client.query<{ id: string }>(
-      `INSERT INTO divorce_proposals (id, marriage_id, requester_character_id, status)
-       VALUES (gen_random_uuid(), $1, $2, 'pending')
+      `INSERT INTO divorce_proposals (id, marriage_id, requester_character_id, status, custody_terms)
+       VALUES (gen_random_uuid(), $1, $2, 'pending', $3::jsonb)
        RETURNING id`,
-      [marriageId, requesterId],
+      [marriageId, requesterId, JSON.stringify(custodyTerms ?? {})],
     );
     return result.rows[0]!.id;
   }
@@ -247,6 +252,13 @@ export class SocialRepository {
     await client.query(
       `UPDATE divorce_proposals SET status = $2, responded_at = now() WHERE id = $1`,
       [proposalId, status],
+    );
+  }
+
+  async updateDivorceProposalCustodyTerms(client: Db, proposalId: string, custodyTerms: any): Promise<void> {
+    await client.query(
+      `UPDATE divorce_proposals SET custody_terms = $2::jsonb WHERE id = $1`,
+      [proposalId, JSON.stringify(custodyTerms ?? {})],
     );
   }
 

@@ -11,6 +11,8 @@ import type {
   IpoCompanyRequest,
   RelocateCompanyPremisesRequest,
   TakeoverRequest,
+  UpdateEmployeeSalaryRequest,
+  UpdateStaffSalaryRequest,
 } from '@efls/contracts';
 import { requireActorId } from '../../shared/http/actor.js';
 import { CorporationService } from './corporation.service.js';
@@ -176,6 +178,34 @@ export class CorporationController {
     res.status(204).end();
   };
 
+  updateEmployeeSalary = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId, employmentId } = req.params as { companyId: string; employmentId: string };
+    const body = req.body as UpdateEmployeeSalaryRequest;
+    const data = await this.service.updateEmployeeSalary(
+      userId,
+      companyId,
+      employmentId,
+      Number(body.salary?.amount ?? 0),
+      body.reason,
+    );
+    res.status(200).json(data);
+  };
+
+  updateStaffSalary = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId, staffId } = req.params as { companyId: string; staffId: string };
+    const body = req.body as UpdateStaffSalaryRequest;
+    const data = await this.service.updateStaffSalary(
+      userId,
+      companyId,
+      staffId,
+      Number(body.salary?.amount ?? 0),
+      body.reason,
+    );
+    res.status(200).json(data);
+  };
+
   addLedgerEntry = async (req: Request, res: Response): Promise<void> => {
     const userId = requireActorId(req);
     const { companyId } = req.params as { companyId: string };
@@ -218,6 +248,14 @@ export class CorporationController {
     const { retainPct } = req.body as { retainPct: number };
     const company = await this.service.setRevenueRetain(userId, companyId, retainPct);
     res.status(200).json(company);
+  };
+
+  setOwnerSalary = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { companyId } = req.params as { companyId: string };
+    const { salary } = req.body as { salary: { amount: number; currency: string } };
+    const hr = await this.service.setOwnerSalary(userId, companyId, Number(salary?.amount ?? 0));
+    res.status(200).json(hr);
   };
 
   listShareOfferings = async (req: Request, res: Response): Promise<void> => {

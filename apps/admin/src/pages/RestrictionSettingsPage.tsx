@@ -88,10 +88,15 @@ export function RestrictionSettingsPage() {
     },
   });
 
+  const stripUpdatedAt = <T extends { updatedAt?: string }>(obj: T) => {
+    const { updatedAt: _updatedAt, ...rest } = obj;
+    return rest;
+  };
+
   const saveMaintenance = (enabled: boolean) => {
     const nextMaintenance = { ...maintenanceForm, enabled };
     save.mutate(
-      { maintenance: nextMaintenance, restrictionContact: restrictionForm },
+      { maintenance: stripUpdatedAt(nextMaintenance), restrictionContact: stripUpdatedAt(restrictionForm) },
       {
         onSuccess: () => {
           setMaintenanceForm(nextMaintenance);
@@ -100,7 +105,15 @@ export function RestrictionSettingsPage() {
             text: enabled ? 'Đã bật bảo trì và lưu cấu hình.' : 'Đã tắt bảo trì và lưu cấu hình.',
           });
         },
-        onError: () => setNotice({ type: 'error', text: 'Lưu cấu hình bảo trì thất bại. Vui lòng thử lại.' }),
+        onError: (err: any) =>
+          setNotice({
+            type: 'error',
+            text:
+              err?.problem?.detail ||
+              err?.problem?.title ||
+              err?.message ||
+              'Lưu cấu hình bảo trì thất bại. Vui lòng thử lại.',
+          }),
       },
     );
   };
@@ -108,7 +121,7 @@ export function RestrictionSettingsPage() {
   const saveRestriction = (enabled: boolean) => {
     const nextRestriction = { ...restrictionForm, enabled };
     save.mutate(
-      { maintenance: maintenanceForm, restrictionContact: nextRestriction },
+      { maintenance: stripUpdatedAt(maintenanceForm), restrictionContact: stripUpdatedAt(nextRestriction) },
       {
         onSuccess: () => {
           setRestrictionForm(nextRestriction);
@@ -119,7 +132,15 @@ export function RestrictionSettingsPage() {
               : 'Đã tắt hiển thị thông tin liên hệ và lưu cấu hình.',
           });
         },
-        onError: () => setNotice({ type: 'error', text: 'Lưu cấu hình hạn chế tài khoản thất bại. Vui lòng thử lại.' }),
+        onError: (err: any) =>
+          setNotice({
+            type: 'error',
+            text:
+              err?.problem?.detail ||
+              err?.problem?.title ||
+              err?.message ||
+              'Lưu cấu hình hạn chế tài khoản thất bại. Vui lòng thử lại.',
+          }),
       },
     );
   };

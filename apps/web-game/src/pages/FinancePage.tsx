@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+﻿import { useCallback, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { type ApplyLoanRequest, type BankingOverviewDto } from '@efls/contracts';
 import { monthlyPayment, recommendedInterestRate } from '@efls/domain';
@@ -329,6 +329,8 @@ export function FinancePage() {
   const [loanTerm, setLoanTerm] = useState('12');
   const [loanCollateral, setLoanCollateral] = useState<string>('none'); // none | property:<id> | company:<id>
 
+  const [activeTab, setActiveTab] = useState<'overview' | 'transfer' | 'savings' | 'loans' | 'history'>('overview');
+
   const [confirmTx, setConfirmTx] = useState<
     | null
     | { kind: 'transfer'; targetCccd: string; amount: number; message: string; idempotencyKey: string }
@@ -585,6 +587,13 @@ export function FinancePage() {
 
   const transfers = transfersData?.transfers ?? [];
   const accountHistory = historyData?.items ?? [];
+  const FINANCE_TABS: Array<{ key: 'overview' | 'transfer' | 'savings' | 'loans' | 'history'; label: string }> = [
+    { key: 'overview', label: 'Tổng quan' },
+    { key: 'transfer', label: 'Chuyển khoản' },
+    { key: 'savings', label: 'Tiết kiệm' },
+    { key: 'loans', label: 'Vay & Nợ' },
+    { key: 'history', label: 'Lịch sử' },
+  ];
 
   return (
     <div className="space-y-5">
@@ -601,6 +610,25 @@ export function FinancePage() {
         </GameButton>
       </div>
 
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+        {FINANCE_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              activeTab === tab.key
+                ? 'bg-emerald-600 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'overview' && (
+        <div className="space-y-5">
       <Panel title="Tài khoản của tôi" borderColor="emerald">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
@@ -644,7 +672,7 @@ export function FinancePage() {
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-3">
+          <div className="grid gap-5 xl:grid-cols-2">
         <Panel title="Tín dụng & Hạn mức vay" borderColor="emerald">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -700,88 +728,6 @@ export function FinancePage() {
           </div>
         </Panel>
 
-        <Panel title="Gửi / Rút tiết kiệm" borderColor="default">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">Tiền mặt khả dụng</span>
-              <span className="font-mono font-semibold text-emerald-700">{formatMoney(cash)}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">Tổng tiết kiệm</span>
-              <span className="font-mono font-semibold text-emerald-700">{formatMoney(totalSavings)}</span>
-            </div>
-
-            <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Gửi tiết kiệm</p>
-              <div>
-                <label htmlFor="savings-term-select" className="text-[11px] text-slate-500">Kỳ hạn &amp; lãi suất</label>
-                <select
-                  id="savings-term-select"
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                  value={selectedTerm}
-                  onChange={(e) => setSelectedTerm(Number(e.target.value))}
-                >
-                  {(terms.length ? terms : [{ termMonths: 0, annualRatePct: 0, earlyWithdrawPenaltyPct: 0, label: 'Không kỳ hạn' }]).map((t) => (
-                    <option key={t.termMonths} value={t.termMonths}>
-                      {t.label} — {t.annualRatePct}%/năm{t.termMonths > 0 ? ` (phạt rút trước hạn ${t.earlyWithdrawPenaltyPct}%)` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <GameInput
-                id="savings-deposit-amount"
-                label="Số tiền gửi (đ)"
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(e.target.value)}
-                placeholder={`Tối đa ${formatMoney(cash)}`}
-              />
-              <div className="flex gap-2">
-                <GameButton
-                  variant="primary"
-                  size="sm"
-                  onClick={handleDeposit}
-                  disabled={depositSavings.isPending}
-                >
-                  {depositSavings.isPending ? 'Đang gửi...' : 'Gửi tiết kiệm'}
-                </GameButton>
-                <GameButton variant="outline" size="sm" onClick={() => setDepositAmount(String(cash))}>
-                  Tối đa
-                </GameButton>
-              </div>
-              {selectedTermInfo && (
-                <p className="text-[11px] text-slate-500">
-                  Lãi suất áp dụng: <b>{formatRatePerYear(selectedTermInfo.annualRatePct)}</b> ({selectedTermInfo.label}).
-                  {selectedTermInfo.termMonths > 0 && ' Rút trước hạn sẽ bị giảm lãi theo cấu hình.'}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Rút tiết kiệm</p>
-              <GameInput
-                id="savings-withdraw-amount"
-                label="Số tiền rút (đ)"
-                value={withdrawAmount}
-                onChange={(e) => setWithdrawAmount(e.target.value)}
-                placeholder={`Tối đa ${formatMoney(totalSavings)}`}
-              />
-              <div className="flex gap-2">
-                <GameButton
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleWithdraw()}
-                  disabled={withdrawSavings.isPending || activeDeposits.length === 0}
-                >
-                  {withdrawSavings.isPending ? 'Đang rút...' : 'Rút'}
-                </GameButton>
-                <GameButton variant="outline" size="sm" onClick={() => setWithdrawAmount(String(totalSavings))} disabled={totalSavings <= 0}>
-                  Tối đa
-                </GameButton>
-              </div>
-            </div>
-          </div>
-        </Panel>
-
         <Panel title="Tổng quan khoản vay" borderColor="rose">
           <div className="space-y-2 text-sm">
             <div className="flex items-center justify-between">
@@ -794,9 +740,12 @@ export function FinancePage() {
             </div>
           </div>
         </Panel>
-      </div>
+          </div>
+        </div>
+      )}
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      {activeTab === 'transfer' && (
+        <div className="grid gap-5 xl:grid-cols-2">
         <Panel title="Chuyển khoản nhanh qua CCCD" borderColor="emerald">
           <div className="space-y-3">
             <CCCDLookupInput
@@ -887,164 +836,102 @@ export function FinancePage() {
             </div>
           )}
         </Panel>
-      </div>
+        </div>
+      )}
 
-      <Panel title="Lịch sử biến động tài khoản (30 bản ghi gần nhất)" borderColor="emerald">
-        {historyLoading ? (
-          <p className="text-sm text-slate-500">Đang tải lịch sử biến động...</p>
-        ) : accountHistory.length === 0 ? (
-          <p className="text-sm text-slate-500">Chưa có biến động tài khoản.</p>
-        ) : (
-          <div className="space-y-2 max-h-[480px] overflow-auto pr-1">
-            {accountHistory.map((h) => {
-              const delta = Number(h.delta?.amount ?? 0);
-              const incoming = delta >= 0;
-              const desc = String(h.description || '').trim();
-              const historyTitle = (() => {
-                if (/^Savings withdrawal/i.test(desc)) return 'Rút tiền tiết kiệm';
-                if (/^Savings deposit/i.test(desc)) {
-                  const m = desc.match(/\bterm\s+(\d+)m\b/i);
-                  const term = m ? Number(m[1] || 0) : NaN;
-                  if (!Number.isNaN(term)) return `Gửi tiết kiệm (${term > 0 ? `Kỳ hạn ${term} tháng` : 'Không kỳ hạn'})`;
-                  return 'Gửi tiết kiệm';
-                }
-                if (h.kind === 'auction_bid') return 'Đấu giá đất';
-                if (h.kind === 'mayor_salary') return 'Phụ cấp Thị trưởng';
-                // fallback: strip UUID-like tokens from raw description
-                return desc.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '').replace(/\s{2,}/g, ' ').trim() || (h.kind === 'savings_deposit' ? 'Gửi tiết kiệm' : h.kind === 'savings_withdrawal' ? 'Rút tiền tiết kiệm' : 'Biến động tài khoản');
-              })();
-              const kindRefLabel = (() => {
-                if (h.kind === 'auction_bid' || h.referenceType === 'province_land_auction') return 'Loại: Đấu giá đất · Nguồn: Đấu giá đất tỉnh/thành';
-                if (h.kind === 'savings_withdrawal' || h.kind === 'savings_deposit' || h.referenceType === 'savings_deposit') return h.kind === 'savings_withdrawal' ? 'Loại: Rút tiết kiệm · Nguồn: Sổ tiết kiệm' : 'Loại: Gửi tiết kiệm · Nguồn: Sổ tiết kiệm';
-                if (h.kind === 'mayor_salary' || h.referenceType === 'election') return 'Loại: Phụ cấp Thị trưởng · Nguồn: Nhiệm kỳ Thị trưởng';
-                return `Loại: ${h.kind}${h.referenceType ? ` · Nguồn: ${h.referenceType}` : ''}`;
-              })();
-              return (
-                <div key={h.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 text-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-slate-800 truncate">{historyTitle}</p>
-                        <Badge variant={h.accountKind === 'savings' ? 'warning' : 'default'}>
-                          {h.accountKind === 'savings' ? 'Tiết kiệm' : 'Tiền mặt'}
-                        </Badge>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{kindRefLabel}</p>
-                      <p className="text-[11px] text-slate-500">{fmtDateTime(h.createdAt)}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className={`font-mono font-semibold ${incoming ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        {incoming ? '+' : ''}{formatMoney(delta)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+      {activeTab === 'savings' && (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-2">
+        <Panel title="Gửi / Rút tiết kiệm" borderColor="default">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">Tiền mặt khả dụng</span>
+              <span className="font-mono font-semibold text-emerald-700">{formatMoney(cash)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">Tổng tiết kiệm</span>
+              <span className="font-mono font-semibold text-emerald-700">{formatMoney(totalSavings)}</span>
+            </div>
+
+            <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Gửi tiết kiệm</p>
+              <div>
+                <label htmlFor="savings-term-select" className="text-[11px] text-slate-500">Kỳ hạn &amp; lãi suất</label>
+                <select
+                  id="savings-term-select"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                  value={selectedTerm}
+                  onChange={(e) => setSelectedTerm(Number(e.target.value))}
+                >
+                  {(terms.length ? terms : [{ termMonths: 0, annualRatePct: 0, earlyWithdrawPenaltyPct: 0, label: 'Không kỳ hạn' }]).map((t) => (
+                    <option key={t.termMonths} value={t.termMonths}>
+                      {t.label} — {t.annualRatePct}%/năm{t.termMonths > 0 ? ` (phạt rút trước hạn ${t.earlyWithdrawPenaltyPct}%)` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <GameInput
+                id="savings-deposit-amount"
+                label="Số tiền gửi (đ)"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder={`Tối đa ${formatMoney(cash)}`}
+              />
+              <div className="flex gap-2">
+                <GameButton
+                  variant="primary"
+                  size="sm"
+                  onClick={handleDeposit}
+                  disabled={depositSavings.isPending}
+                >
+                  {depositSavings.isPending ? 'Đang gửi...' : 'Gửi tiết kiệm'}
+                </GameButton>
+                <GameButton variant="outline" size="sm" onClick={() => setDepositAmount(String(cash))}>
+                  Tối đa
+                </GameButton>
+              </div>
+              {selectedTermInfo && (
+                <p className="text-[11px] text-slate-500">
+                  Lãi suất áp dụng: <b>{formatRatePerYear(selectedTermInfo.annualRatePct)}</b> ({selectedTermInfo.label}).
+                  {selectedTermInfo.termMonths > 0 && ' Rút trước hạn sẽ bị giảm lãi theo cấu hình.'}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Rút tiết kiệm</p>
+              <GameInput
+                id="savings-withdraw-amount"
+                label="Số tiền rút (đ)"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                placeholder={`Tối đa ${formatMoney(totalSavings)}`}
+              />
+              <div className="flex gap-2">
+                <GameButton
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleWithdraw()}
+                  disabled={withdrawSavings.isPending || activeDeposits.length === 0}
+                >
+                  {withdrawSavings.isPending ? 'Đang rút...' : 'Rút'}
+                </GameButton>
+                <GameButton variant="outline" size="sm" onClick={() => setWithdrawAmount(String(totalSavings))} disabled={totalSavings <= 0}>
+                  Tối đa
+                </GameButton>
+              </div>
+            </div>
           </div>
-        )}
-      </Panel>
-
-      <Panel title="Sổ khoản vay của bạn" borderColor="rose">
-        {overview.loans.length === 0 ? (
-          <p className="text-sm text-slate-500">Chưa có sổ khoản vay nào (chỉ hiển thị sổ chưa tất toán).</p>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {overview.loans.map((loan) => {
-              const repayVal = repayAmounts[loan.id] ?? '';
-              return (
-                <div key={loan.id} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">
-                        Sổ vay {loan.collateral ? (loan.collateral.kind === 'company' || loan.collateralType === 'company' ? '(thế chấp công ty)' : '(thế chấp BĐS)') : '(tín chấp)'}
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        Mở: {fmtDate(loan.createdAt ?? null)} • Kỳ hạn: {loan.termMonths} tháng
-                      </p>
-                    </div>
-                    <Badge variant={loanStatusVariant(loan.status)}>{loanStatusLabel(loan.status)}</Badge>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
-                    <span className="text-slate-500">Dư nợ</span>
-                    <span className="font-mono font-semibold text-right">{formatMoney(loan.outstanding.amount)}</span>
-                    <span className="text-slate-500">Gốc vay</span>
-                    <span className="font-mono text-right">{formatMoney(loan.principal.amount)}</span>
-                    <span className="text-slate-500">Lãi suất</span>
-                    <span className="font-mono text-right">{formatRatePerYear(loan.interestRatePct)}</span>
-                    <span className="text-slate-500">Trả hàng tháng</span>
-                    <span className="font-mono text-right">{formatMoneyPerMonth(loan.monthlyPayment.amount)}</span>
-                    <span className="text-slate-500">Kỳ trả tiếp</span>
-                    <span className="font-mono text-right">{fmtDate(loan.nextDueAt)}</span>
-                  </div>
-
-                  {loan.collateral ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-2 text-[11px] text-amber-900">
-                      <p className="font-semibold">
-                        {loan.collateral.kind === 'company' || loan.collateralType === 'company'
-                          ? 'Thế chấp công ty'
-                          : 'Thế chấp bất động sản'}
-                      </p>
-                      {loan.collateral.kind === 'company' || loan.collateralType === 'company' ? (
-                        <>
-                          <p>Công ty: {loan.collateral.companyName ?? '—'}</p>
-                          {loan.collateral.companyIndustry && <p>Ngành: {loan.collateral.companyIndustry}</p>}
-                          <p>Định giá tham chiếu: {formatMoney(loan.collateral.currentValue.amount)}</p>
-                          <p className="text-amber-800">Mã công ty: {loan.collateral.companyId ?? loan.collateralCompanyId ?? '—'}</p>
-                        </>
-                      ) : (
-                        <>
-                          <p>Loại: {loan.collateral.propertyType ?? '—'}</p>
-                          <p>Vị trí: {loan.collateral.nodeName ?? '—'}</p>
-                          <p>Giá trị tham chiếu: {formatMoney(loan.collateral.currentValue.amount)}</p>
-                          <p className="text-amber-800">Mã BĐS: {loan.collateral.propertyId ?? loan.collateralPropertyId ?? '—'}</p>
-                        </>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-slate-500">Không có tài sản thế chấp (vay tín chấp).</p>
-                  )}
-
-                  <div className="space-y-1.5 pt-1 border-t border-slate-200">
-                    <GameInput
-                      label="Số tiền trả (VND)"
-                      value={repayVal}
-                      onChange={(e) =>
-                        setRepayAmounts((prev) => ({ ...prev, [loan.id]: e.target.value }))
-                      }
-                      placeholder={String(Math.min(loan.outstanding.amount, cash))}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <GameButton
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setRepayAmounts((prev) => ({
-                            ...prev,
-                            [loan.id]: String(Math.min(loan.outstanding.amount, cash)),
-                          }))
-                        }
-                      >
-                        Tối đa
-                      </GameButton>
-                      <GameButton
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleRepay(loan.id, loan.outstanding.amount)}
-                        disabled={repayLoan.isPending}
-                      >
-                        {repayLoan.isPending ? '...' : 'Trả nợ'}
-                      </GameButton>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        </Panel>
+            <Panel title="Tổng quan tiết kiệm" borderColor="default">
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between"><span className="text-slate-600">Tiền mặt khả dụng</span><span className="font-mono font-semibold text-emerald-700">{formatMoney(cash)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-600">Tổng tiết kiệm</span><span className="font-mono font-semibold text-emerald-700">{formatMoney(totalSavings)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-600">Sổ đang hoạt động</span><span className="font-mono font-semibold">{activeDeposits.length}</span></div>
+                <p className="text-[11px] text-slate-500 pt-1">Quản lý gửi/rút và thao tác theo từng sổ tiết kiệm bên dưới. Một số hành động sẽ yêu cầu xác nhận trước khi thực hiện.</p>
+              </div>
+            </Panel>
           </div>
-        )}
-      </Panel>
-
       <Panel title="Sổ tiết kiệm của bạn" borderColor="default">
         {deposits.length === 0 ? (
           <p className="text-sm text-slate-500">Chưa có sổ tiết kiệm đang hoạt động. Hãy gửi tiền để mở sổ theo kỳ hạn.</p>
@@ -1157,6 +1044,194 @@ export function FinancePage() {
           </div>
         )}
       </Panel>
+        </div>
+      )}
+
+      {activeTab === 'loans' && (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-2">
+        <Panel title="Tổng quan khoản vay" borderColor="rose">
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-600">Sổ đang vay</span>
+              <span className="font-mono font-semibold">{activeLoans.length} sổ</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-600">Dư nợ hiện tại</span>
+              <span className="font-mono font-semibold text-rose-700">{formatMoney(overview.totalDebt.amount)}</span>
+            </div>
+          </div>
+        </Panel>
+            <Panel title="Tín dụng & Hạn mức vay" borderColor="emerald">
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between"><span className="text-slate-600">Điểm tín dụng</span><span className="font-mono font-bold text-emerald-700">{overview.creditScore}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-600">Hạn mức vay tối đa</span><span className="font-mono font-semibold text-emerald-700">{formatMoney(overview.maxLoanAmount.amount)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-600">Dòng nợ/tháng</span><span className="font-mono font-semibold">{monthlyDebt > 0 ? formatMoney(monthlyDebt) : formatMoney(0)}</span></div>
+                <div className="pt-1"><GameButton variant="primary" size="sm" onClick={() => { setLoanCollateral('none'); setLoanModal(true); }} disabled={applyLoan.isPending}>Vay ngân hàng</GameButton></div>
+              </div>
+            </Panel>
+          </div>
+      <Panel title="Sổ khoản vay của bạn" borderColor="rose">
+        {overview.loans.length === 0 ? (
+          <p className="text-sm text-slate-500">Chưa có sổ khoản vay nào (chỉ hiển thị sổ chưa tất toán).</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {overview.loans.map((loan) => {
+              const repayVal = repayAmounts[loan.id] ?? '';
+              return (
+                <div key={loan.id} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">
+                        Sổ vay {loan.collateral ? (loan.collateral.kind === 'company' || loan.collateralType === 'company' ? '(thế chấp công ty)' : '(thế chấp BĐS)') : '(tín chấp)'}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Mở: {fmtDate(loan.createdAt ?? null)} • Kỳ hạn: {loan.termMonths} tháng
+                      </p>
+                    </div>
+                    <Badge variant={loanStatusVariant(loan.status)}>{loanStatusLabel(loan.status)}</Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
+                    <span className="text-slate-500">Dư nợ</span>
+                    <span className="font-mono font-semibold text-right">{formatMoney(loan.outstanding.amount)}</span>
+                    <span className="text-slate-500">Gốc vay</span>
+                    <span className="font-mono text-right">{formatMoney(loan.principal.amount)}</span>
+                    <span className="text-slate-500">Lãi suất</span>
+                    <span className="font-mono text-right">{formatRatePerYear(loan.interestRatePct)}</span>
+                    <span className="text-slate-500">Trả hàng tháng</span>
+                    <span className="font-mono text-right">{formatMoneyPerMonth(loan.monthlyPayment.amount)}</span>
+                    <span className="text-slate-500">Kỳ trả tiếp</span>
+                    <span className="font-mono text-right">{fmtDate(loan.nextDueAt)}</span>
+                  </div>
+
+                  {loan.collateral ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-2 text-[11px] text-amber-900">
+                      <p className="font-semibold">
+                        {loan.collateral.kind === 'company' || loan.collateralType === 'company'
+                          ? 'Thế chấp công ty'
+                          : 'Thế chấp bất động sản'}
+                      </p>
+                      {loan.collateral.kind === 'company' || loan.collateralType === 'company' ? (
+                        <>
+                          <p>Công ty: {loan.collateral.companyName ?? '—'}</p>
+                          {loan.collateral.companyIndustry && <p>Ngành: {loan.collateral.companyIndustry}</p>}
+                          <p>Định giá tham chiếu: {formatMoney(loan.collateral.currentValue.amount)}</p>
+                          <p className="text-amber-800">Mã công ty: {loan.collateral.companyId ?? loan.collateralCompanyId ?? '—'}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p>Loại: {loan.collateral.propertyType ?? '—'}</p>
+                          <p>Vị trí: {loan.collateral.nodeName ?? '—'}</p>
+                          <p>Giá trị tham chiếu: {formatMoney(loan.collateral.currentValue.amount)}</p>
+                          <p className="text-amber-800">Mã BĐS: {loan.collateral.propertyId ?? loan.collateralPropertyId ?? '—'}</p>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500">Không có tài sản thế chấp (vay tín chấp).</p>
+                  )}
+
+                  <div className="space-y-1.5 pt-1 border-t border-slate-200">
+                    <GameInput
+                      label="Số tiền trả (VND)"
+                      value={repayVal}
+                      onChange={(e) =>
+                        setRepayAmounts((prev) => ({ ...prev, [loan.id]: e.target.value }))
+                      }
+                      placeholder={String(Math.min(loan.outstanding.amount, cash))}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <GameButton
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setRepayAmounts((prev) => ({
+                            ...prev,
+                            [loan.id]: String(Math.min(loan.outstanding.amount, cash)),
+                          }))
+                        }
+                      >
+                        Tối đa
+                      </GameButton>
+                      <GameButton
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleRepay(loan.id, loan.outstanding.amount)}
+                        disabled={repayLoan.isPending}
+                      >
+                        {repayLoan.isPending ? '...' : 'Trả nợ'}
+                      </GameButton>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
+        </div>
+      )}
+
+      {activeTab === 'history' && (
+        <div className="space-y-5">
+      <Panel title="Lịch sử biến động tài khoản (30 bản ghi gần nhất)" borderColor="emerald">
+        {historyLoading ? (
+          <p className="text-sm text-slate-500">Đang tải lịch sử biến động...</p>
+        ) : accountHistory.length === 0 ? (
+          <p className="text-sm text-slate-500">Chưa có biến động tài khoản.</p>
+        ) : (
+          <div className="space-y-2 max-h-[480px] overflow-auto pr-1">
+            {accountHistory.map((h) => {
+              const delta = Number(h.delta?.amount ?? 0);
+              const incoming = delta >= 0;
+              const desc = String(h.description || '').trim();
+              const historyTitle = (() => {
+                if (/^Savings withdrawal/i.test(desc)) return 'Rút tiền tiết kiệm';
+                if (/^Savings deposit/i.test(desc)) {
+                  const m = desc.match(/\bterm\s+(\d+)m\b/i);
+                  const term = m ? Number(m[1] || 0) : NaN;
+                  if (!Number.isNaN(term)) return `Gửi tiết kiệm (${term > 0 ? `Kỳ hạn ${term} tháng` : 'Không kỳ hạn'})`;
+                  return 'Gửi tiết kiệm';
+                }
+                if (h.kind === 'auction_bid') return 'Đấu giá đất';
+                if (h.kind === 'mayor_salary') return 'Phụ cấp Thị trưởng';
+                // fallback: strip UUID-like tokens from raw description
+                return desc.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '').replace(/\s{2,}/g, ' ').trim() || (h.kind === 'savings_deposit' ? 'Gửi tiết kiệm' : h.kind === 'savings_withdrawal' ? 'Rút tiền tiết kiệm' : 'Biến động tài khoản');
+              })();
+              const kindRefLabel = (() => {
+                if (h.kind === 'auction_bid' || h.referenceType === 'province_land_auction') return 'Loại: Đấu giá đất · Nguồn: Đấu giá đất tỉnh/thành';
+                if (h.kind === 'savings_withdrawal' || h.kind === 'savings_deposit' || h.referenceType === 'savings_deposit') return h.kind === 'savings_withdrawal' ? 'Loại: Rút tiết kiệm · Nguồn: Sổ tiết kiệm' : 'Loại: Gửi tiết kiệm · Nguồn: Sổ tiết kiệm';
+                if (h.kind === 'mayor_salary' || h.referenceType === 'election') return 'Loại: Phụ cấp Thị trưởng · Nguồn: Nhiệm kỳ Thị trưởng';
+                return `Loại: ${h.kind}${h.referenceType ? ` · Nguồn: ${h.referenceType}` : ''}`;
+              })();
+              return (
+                <div key={h.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-slate-800 truncate">{historyTitle}</p>
+                        <Badge variant={h.accountKind === 'savings' ? 'warning' : 'default'}>
+                          {h.accountKind === 'savings' ? 'Tiết kiệm' : 'Tiền mặt'}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{kindRefLabel}</p>
+                      <p className="text-[11px] text-slate-500">{fmtDateTime(h.createdAt)}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`font-mono font-semibold ${incoming ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {incoming ? '+' : ''}{formatMoney(delta)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
+        </div>
+      )}
 
       <Modal open={loanModal} onClose={() => setLoanModal(false)} title="Đơn vay ngân hàng" size="2xl">
         <form onSubmit={handleApplyLoan} className="space-y-4">
@@ -1326,6 +1401,7 @@ export function FinancePage() {
         </form>
       </Modal>
 
+
       <TransactionConfirmModal
         open={confirmTx?.kind === 'transfer'}
         onClose={() => { if (!confirmTxBusy) setConfirmTx(null); }}
@@ -1413,3 +1489,4 @@ export function FinancePage() {
     </div>
   );
 }
+

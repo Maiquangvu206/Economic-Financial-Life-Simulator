@@ -14,6 +14,7 @@ import { enqueueDomainEvent } from '../../shared/events/eventBus.js';
 import { notify } from '../notifications/notification.service.js';
 import { callAiService } from '../../shared/ai/aiClient.js';
 import { writeActionLog } from '../../shared/audit/actionLog.js';
+import { assertNotOnActiveTrip } from '../../shared/wellness/activeTrip.js';
 import {
   type CrimeType,
   type CrimeResultDto,
@@ -212,6 +213,7 @@ export class UnderworldService {
   async commitCrime(userId: string, crimeType: CrimeType): Promise<CrimeResultDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      await assertNotOnActiveTrip(client, character.id, 'thực hiện thao tác chợ đen');
       const cfg = CRIME_CATALOG[crimeType];
 
       // Cân bằng ngầm: bị bắt nếu roll < risk + heat/4
@@ -311,6 +313,7 @@ export class UnderworldService {
   async buyCredential(userId: string, kind: string): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      await assertNotOnActiveTrip(client, character.id, 'thực hiện thao tác chợ đen');
       const price = CREDENTIAL_PRICES[kind];
       if (price == null) throw AppError.badRequest('Loại giấy tờ không hợp lệ.');
       const balance = await ledger.getBalance(client, 'character', character.id);
@@ -346,6 +349,7 @@ export class UnderworldService {
   ): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      await assertNotOnActiveTrip(client, character.id, 'thực hiện thao tác chợ đen');
       const targetRef = target.targetCccd
         ? await resolveCharacterByCccd(client, target.targetCccd, { requireAlive: false })
         : null;
@@ -403,6 +407,7 @@ export class UnderworldService {
   async sellEvidence(userId: string, evidenceId: string): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      await assertNotOnActiveTrip(client, character.id, 'thực hiện thao tác chợ đen');
       const evidence = await this.repository.getEvidence(evidenceId, client);
       if (!evidence) throw AppError.notFound('Evidence');
       if (evidence.status !== 'held') {
@@ -434,6 +439,7 @@ export class UnderworldService {
   async submitEvidence(userId: string, evidenceId: string): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      await assertNotOnActiveTrip(client, character.id, 'thực hiện thao tác chợ đen');
       const evidence = await this.repository.getEvidence(evidenceId, client);
       if (!evidence) throw AppError.notFound('Evidence');
       if (evidence.status === 'submitted') {
@@ -473,6 +479,7 @@ export class UnderworldService {
   ): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      await assertNotOnActiveTrip(client, character.id, 'thực hiện thao tác chợ đen');
       const targetRef = target.targetCccd ? await resolveCharacterByCccd(client, target.targetCccd, { requireAlive: false }) : null;
       const targetCharacterId = targetRef?.id ?? target.targetCharacterId;
       if (!targetCharacterId) throw AppError.badRequest('Thiếu mục tiêu.');
@@ -506,6 +513,7 @@ export class UnderworldService {
   async collectBlackmail(userId: string, blackmailId: string): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      await assertNotOnActiveTrip(client, character.id, 'thực hiện thao tác chợ đen');
       const blackmail = await this.repository.getBlackmail(blackmailId, client);
       if (!blackmail) throw AppError.notFound('Blackmail contract');
       if (blackmail.blackmailerId !== character.id) {
@@ -548,6 +556,7 @@ export class UnderworldService {
   ): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      await assertNotOnActiveTrip(client, character.id, 'thực hiện thao tác chợ đen');
       const targetRef = target.targetCccd ? await resolveCharacterByCccd(client, target.targetCccd, { requireAlive: false }) : null;
       const targetCharacterId = targetRef?.id ?? target.targetCharacterId;
       if (!targetCharacterId) throw AppError.badRequest('Thiếu mục tiêu.');
@@ -637,6 +646,7 @@ export class UnderworldService {
   ): Promise<UnderworldOverviewExtDto> {
     return withTransaction(async (client) => {
       const character = await requireLivingCharacterByUserId(client, userId);
+      await assertNotOnActiveTrip(client, character.id, 'thực hiện thao tác chợ đen');
       const premium = kind === 'bodyguard' ? 5_000_000 : 10_000_000;
       const coverage = kind === 'bodyguard' ? 20_000_000 : 100_000_000;
       const balance = await ledger.getBalance(client, 'character', character.id);

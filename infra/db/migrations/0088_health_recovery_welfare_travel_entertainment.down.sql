@@ -1,0 +1,1 @@
+﻿-- Down migration intentionally omitted for safety in this environment (forward-only/idempotent policy).

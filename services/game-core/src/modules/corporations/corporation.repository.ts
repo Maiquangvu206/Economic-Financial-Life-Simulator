@@ -25,6 +25,9 @@ export interface CompanyRow {
   premisesNeedsReselection: boolean;
   premisesInvalidReason: string | null;
   revenueRetainPct: number;
+  ownerSalaryMinor: string;
+  ownerJobTitle: string | null;
+  ownerEmploymentId: string | null;
 }
 
 export interface CompanyEmployeeRow {
@@ -33,8 +36,11 @@ export interface CompanyEmployeeRow {
   characterName: string;
   jobTitle: string;
   salaryMinor: string;
-  status: 'active' | 'resigned' | 'fired';
+  salaryArrearsMinor?: string;
+  status: 'active' | 'notice_pending' | 'resigned' | 'fired';
   hiredAt: Date;
+  isOwnerRole?: boolean;
+  salaryLastChangedAt?: Date | null;
 }
 
 interface CreateCompanyInput {
@@ -107,7 +113,10 @@ export class CorporationRepository {
            host.name AS "premisesHostCompanyName",
            COALESCE(c.premises_needs_reselection, false) AS "premisesNeedsReselection",
            c.premises_invalid_reason AS "premisesInvalidReason",
-            COALESCE(c.revenue_retain_pct, 0)::float AS "revenueRetainPct"
+            COALESCE(c.revenue_retain_pct, 0)::float AS "revenueRetainPct",
+            COALESCE(NULLIF(to_jsonb(c)->>'owner_salary_minor','')::bigint, 0)::text AS "ownerSalaryMinor",
+            (to_jsonb(c)->>'owner_job_title') AS "ownerJobTitle",
+            NULLIF(to_jsonb(c)->>'owner_employment_id','')::uuid::text AS "ownerEmploymentId"
      FROM companies c
     JOIN characters ch ON ch.id = c.owner_character_id
     LEFT JOIN properties cp ON cp.id = c.premises_core_property_id
@@ -454,12 +463,16 @@ export class CorporationRepository {
     const result = await db.query<CompanyEmployeeRow>(
       `SELECT e.id AS "employmentId", e.character_id AS "characterId",
               ch.full_name AS "characterName", j.title AS "jobTitle",
-              e.salary_minor AS "salaryMinor", e.status, e.hired_at AS "hiredAt"
+              e.salary_minor AS "salaryMinor",
+              COALESCE(NULLIF(to_jsonb(e)->>'salary_arrears_minor','')::bigint, 0)::text AS "salaryArrearsMinor",
+              e.status, e.hired_at AS "hiredAt",
+              COALESCE((to_jsonb(e)->>'is_owner_role')::boolean, false) AS "isOwnerRole",
+              NULLIF(to_jsonb(e)->>'salary_last_changed_at','')::timestamptz AS "salaryLastChangedAt"
        FROM employments e
        JOIN characters ch ON ch.id = e.character_id
        JOIN jobs j ON j.id = e.job_id
        WHERE e.company_id = $1
-       ORDER BY e.hired_at DESC`,
+       ORDER BY COALESCE((to_jsonb(e)->>'is_owner_role')::boolean, false) DESC, e.hired_at DESC`,
       [companyId],
     );
     return result.rows;
@@ -469,7 +482,7 @@ export class CorporationRepository {
     const result = await db.query<{ id: string }>(
       `UPDATE employments
        SET status = 'fired', ended_at = now()
-       WHERE id = $1 AND company_id = $2 AND status = 'active'
+       WHERE id = $1 AND company_id = $2 AND status IN ('active','notice_pending') AND COALESCE((to_jsonb(employments)->>'is_owner_role')::boolean, false) = false
        RETURNING id`,
       [employmentId, companyId],
     );
@@ -670,7 +683,10 @@ export class CorporationRepository {
   async listCompanyStaff(companyId: string, db: Db = this.db): Promise<any[]> {
     const r = await db.query(
       `SELECT id, full_name AS "fullName", role_title AS "roleTitle",
-              salary_minor AS "salaryMinor", status, hired_at AS "hiredAt", fired_at AS "firedAt"
+              salary_minor AS "salaryMinor",
+              COALESCE(NULLIF(to_jsonb(company_staff)->>'salary_arrears_minor','')::bigint, 0)::text AS "salaryArrearsMinor",
+              status, hired_at AS "hiredAt", fired_at AS "firedAt",
+              NULLIF(to_jsonb(company_staff)->>'salary_last_changed_at','')::timestamptz AS "salaryLastChangedAt"
        FROM company_staff WHERE company_id = $1 ORDER BY hired_at DESC`,
       [companyId],
     );
@@ -836,6 +852,32 @@ export class CorporationRepository {
               opex_total_minor AS "opexTotalMinor"
        FROM company_tax_filings WHERE company_id = $1 ORDER BY created_at DESC LIMIT 30`,
       [companyId],
+    );
+    return r.rows;
+  }
+
+  async listRevenueSettlements(companyId: string, limit = 24, db: Db = this.db): Promise<any[]> {
+    const r = await db.query(
+      `SELECT s.id,
+              s.period_key AS "periodKey",
+              s.game_year AS "gameYear",
+              s.game_month AS "gameMonth",
+              s.base_capital_minor AS "baseCapitalMinor",
+              s.monthly_rate_pct AS "monthlyRatePct",
+              s.season_multiplier AS "seasonMultiplier",
+              s.actual_revenue_minor AS "actualRevenueMinor",
+              s.status,
+              s.settled_at AS "settledAt",
+              (f.id IS NOT NULL) AS "filed",
+              f.status AS "filingStatus",
+              f.declared_revenue_minor AS "declaredRevenueMinor",
+              f.tax_paid_minor AS "taxPaidMinor"
+       FROM company_revenue_settlements s
+       LEFT JOIN company_tax_filings f ON f.company_id = s.company_id AND f.period_key = s.period_key
+       WHERE s.company_id = $1
+       ORDER BY s.game_year DESC, s.game_month DESC, s.settled_at DESC
+       LIMIT $2`,
+      [companyId, limit],
     );
     return r.rows;
   }
@@ -1118,6 +1160,341 @@ export class CorporationRepository {
         WHERE id = $1`,
       [input.offeringId, input.shares],
     );
+  }
+
+  async setOwnerSalary(db: Db, companyId: string, salaryMinor: number): Promise<void> {
+    await db.query(
+      `UPDATE companies SET owner_salary_minor = $2::bigint, updated_at = now() WHERE id = $1`,
+      [companyId, salaryMinor],
+    );
+  }
+
+  async getOwnerActiveEmployment(db: Db, characterId: string): Promise<{
+    id: string; jobId: string; companyId: string | null; salaryMinor: string; isOwnerRole: boolean; status: string;
+  } | null> {
+    const r = await db.query<{ id: string; jobId: string; companyId: string | null; salaryMinor: string; isOwnerRole: boolean; status: string }>(
+      `SELECT id, job_id AS "jobId", company_id AS "companyId", salary_minor AS "salaryMinor",
+              COALESCE((to_jsonb(employments)->>'is_owner_role')::boolean, false) AS "isOwnerRole", status
+       FROM employments
+       WHERE character_id = $1 AND status IN ('active','notice_pending')
+       LIMIT 1`,
+      [characterId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async getEmploymentById(db: Db, employmentId: string): Promise<{
+    id: string; characterId: string; jobId: string; companyId: string | null; salaryMinor: string; isOwnerRole: boolean; status: string; hiredAt: Date;
+  } | null> {
+    const r = await db.query<any>(
+      `SELECT id, character_id AS "characterId", job_id AS "jobId", company_id AS "companyId",
+              salary_minor AS "salaryMinor", COALESCE((to_jsonb(employments)->>'is_owner_role')::boolean, false) AS "isOwnerRole",
+              status, hired_at AS "hiredAt"
+       FROM employments WHERE id = $1`,
+      [employmentId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async ensureOwnerJob(db: Db, companyId: string, companyName: string, jobTitle: string): Promise<string> {
+    const existing = await db.query<{ id: string }>(
+      `SELECT id FROM jobs WHERE employer_company_id = $1 AND COALESCE(is_owner_role,false) = true LIMIT 1`,
+      [companyId],
+    );
+    if (existing.rows[0]) {
+      await db.query(
+        `UPDATE jobs
+            SET title = $2, is_owner_role = true, openings = 0, posting_status = 'closed', base_salary_minor = 0
+          WHERE id = $1`,
+        [existing.rows[0].id, jobTitle],
+      ).catch(async () => {
+        // posting_status column may not exist in older schema; fallback minimal update
+        await db.query(
+          `UPDATE jobs SET title = $2, is_owner_role = true, openings = 0, base_salary_minor = 0 WHERE id = $1`,
+          [existing.rows[0]!.id, jobTitle],
+        );
+      });
+      return existing.rows[0].id;
+    }
+    try {
+      const ins = await db.query<{ id: string }>(
+        `INSERT INTO jobs (id, title, industry, employer_company_id, base_salary_minor, required_degree, min_credit_score, energy_cost, openings, is_owner_role, posting_status)
+         VALUES (gen_random_uuid(), $1, (SELECT industry FROM companies WHERE id = $2), $2, 0, NULL, 0, 0, 0, true, 'closed')
+         RETURNING id`,
+        [jobTitle, companyId],
+      );
+      return ins.rows[0]!.id;
+    } catch {
+      const ins = await db.query<{ id: string }>(
+        `INSERT INTO jobs (id, title, industry, employer_company_id, base_salary_minor, required_degree, min_credit_score, energy_cost, openings, is_owner_role)
+         VALUES (gen_random_uuid(), $1, (SELECT industry FROM companies WHERE id = $2), $2, 0, NULL, 0, 0, 0, true)
+         RETURNING id`,
+        [jobTitle, companyId],
+      );
+      return ins.rows[0]!.id;
+    }
+  }
+
+  async upsertOwnerEmployment(
+    db: Db,
+    input: { companyId: string; ownerCharacterId: string; jobId: string; salaryMinor: number },
+  ): Promise<{ employmentId: string; created: boolean } | null> {
+    // If owner already has an active employment that is NOT this company's owner role, cannot create (unique active per character).
+    const active = await this.getOwnerActiveEmployment(db, input.ownerCharacterId);
+    if (active && !(active.isOwnerRole && active.companyId === input.companyId)) {
+      return null;
+    }
+
+    if (active && active.isOwnerRole && active.companyId === input.companyId) {
+      await db.query(
+        `UPDATE employments
+            SET salary_minor = $2::bigint, job_id = $3, company_id = $4, is_owner_role = true, status = 'active', ended_at = NULL
+          WHERE id = $1`,
+        [active.id, input.salaryMinor, input.jobId, input.companyId],
+      );
+      await db.query(`UPDATE companies SET owner_employment_id = $2, updated_at = now() WHERE id = $1`, [input.companyId, active.id]);
+      return { employmentId: active.id, created: false };
+    }
+
+    try {
+      const ins = await db.query<{ id: string }>(
+        `INSERT INTO employments (id, character_id, job_id, company_id, salary_minor, status, is_owner_role)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4::bigint, 'active', true)
+         RETURNING id`,
+        [input.ownerCharacterId, input.jobId, input.companyId, input.salaryMinor],
+      );
+      const employmentId = ins.rows[0]!.id;
+      await db.query(`UPDATE companies SET owner_employment_id = $2, updated_at = now() WHERE id = $1`, [input.companyId, employmentId]);
+      return { employmentId, created: true };
+    } catch {
+      // race/constraint fallback: if owner active employment now exists for this company, update it
+      const again = await this.getOwnerActiveEmployment(db, input.ownerCharacterId);
+      if (again && again.isOwnerRole && again.companyId === input.companyId) {
+        await db.query(
+          `UPDATE employments SET salary_minor = $2::bigint, job_id = $3, company_id = $4, is_owner_role = true, status = 'active', ended_at = NULL WHERE id = $1`,
+          [again.id, input.salaryMinor, input.jobId, input.companyId],
+        );
+        await db.query(`UPDATE companies SET owner_employment_id = $2, updated_at = now() WHERE id = $1`, [input.companyId, again.id]);
+        return { employmentId: again.id, created: false };
+      }
+      return null;
+    }
+  }
+
+  async endOwnerEmployment(db: Db, companyId: string): Promise<void> {
+    await db.query(
+      `UPDATE employments
+          SET status = 'resigned', ended_at = now()
+        WHERE company_id = $1 AND COALESCE(is_owner_role,false) = true AND status IN ('active','notice_pending')`,
+      [companyId],
+    );
+    await db.query(`UPDATE companies SET owner_employment_id = NULL, updated_at = now() WHERE id = $1`, [companyId]);
+  }
+
+  async getOwnerRoleSnapshot(db: Db, companyId: string): Promise<{
+    ownerCharacterId: string;
+    ownerName: string;
+    ownerSalaryMinor: string;
+    ownerJobTitle: string | null;
+    ownerEmploymentId: string | null;
+    companyStatus: string;
+    activeEmploymentId: string | null;
+    activeEmploymentIsOwnerRole: boolean | null;
+    activeEmploymentCompanyId: string | null;
+    activeEmploymentHiredAt: Date | null;
+  } | null> {
+    const r = await db.query<any>(
+      `SELECT c.owner_character_id AS "ownerCharacterId",
+              ch.full_name AS "ownerName",
+              COALESCE(NULLIF(to_jsonb(c)->>'owner_salary_minor','')::bigint, 0)::text AS "ownerSalaryMinor",
+              (to_jsonb(c)->>'owner_job_title') AS "ownerJobTitle",
+              NULLIF(to_jsonb(c)->>'owner_employment_id','')::uuid::text AS "ownerEmploymentId",
+              c.status AS "companyStatus",
+              ae.id AS "activeEmploymentId",
+              COALESCE((to_jsonb(ae)->>'is_owner_role')::boolean, false) AS "activeEmploymentIsOwnerRole",
+              ae.company_id AS "activeEmploymentCompanyId",
+              ae.hired_at AS "activeEmploymentHiredAt"
+       FROM companies c
+       JOIN characters ch ON ch.id = c.owner_character_id
+       LEFT JOIN employments ae ON ae.character_id = c.owner_character_id AND ae.status IN ('active','notice_pending')
+       WHERE c.id = $1`,
+      [companyId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async getEmploymentForCompany(
+    db: Db,
+    companyId: string,
+    employmentId: string,
+  ): Promise<{
+    id: string;
+    characterId: string;
+    companyId: string | null;
+    salaryMinor: string;
+    salaryArrearsMinor: string;
+    salaryLastChangedAt: Date | null;
+    status: string;
+    isOwnerRole: boolean;
+  } | null> {
+    const r = await db.query<any>(
+      `SELECT id,
+              character_id AS "characterId",
+              company_id AS "companyId",
+              salary_minor AS "salaryMinor",
+              COALESCE(NULLIF(to_jsonb(employments)->>'salary_arrears_minor','')::bigint, 0)::text AS "salaryArrearsMinor",
+              NULLIF(to_jsonb(employments)->>'salary_last_changed_at','')::timestamptz AS "salaryLastChangedAt",
+              status,
+              COALESCE((to_jsonb(employments)->>'is_owner_role')::boolean, false) AS "isOwnerRole"
+       FROM employments
+       WHERE id = $1 AND company_id = $2`,
+      [employmentId, companyId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async updateEmploymentSalary(
+    db: Db,
+    employmentId: string,
+    newSalaryMinor: number,
+  ): Promise<void> {
+    try {
+      await db.query(
+        `UPDATE employments
+            SET salary_minor = $2::bigint,
+                salary_last_changed_at = now(),
+                salary_change_count = COALESCE(NULLIF(to_jsonb(employments)->>'salary_change_count','')::int, 0) + 1
+          WHERE id = $1`,
+        [employmentId, newSalaryMinor],
+      );
+    } catch (e: any) {
+      if (e?.code === '42703') {
+        await db.query(`UPDATE employments SET salary_minor = $2::bigint WHERE id = $1`, [employmentId, newSalaryMinor]);
+        return;
+      }
+      throw e;
+    }
+  }
+
+  async getStaffForCompany(
+    db: Db,
+    companyId: string,
+    staffId: string,
+  ): Promise<{
+    id: string;
+    companyId: string;
+    salaryMinor: string;
+    salaryArrearsMinor: string;
+    salaryLastChangedAt: Date | null;
+    status: string;
+  } | null> {
+    const r = await db.query<any>(
+      `SELECT id, company_id AS "companyId", salary_minor AS "salaryMinor",
+              COALESCE(NULLIF(to_jsonb(company_staff)->>'salary_arrears_minor','')::bigint, 0)::text AS "salaryArrearsMinor",
+              NULLIF(to_jsonb(company_staff)->>'salary_last_changed_at','')::timestamptz AS "salaryLastChangedAt",
+              status
+       FROM company_staff
+       WHERE id = $1 AND company_id = $2`,
+      [staffId, companyId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async updateStaffSalary(db: Db, staffId: string, newSalaryMinor: number): Promise<void> {
+    try {
+      await db.query(
+        `UPDATE company_staff
+            SET salary_minor = $2::bigint,
+                salary_last_changed_at = now(),
+                salary_change_count = COALESCE(NULLIF(to_jsonb(company_staff)->>'salary_change_count','')::int, 0) + 1
+          WHERE id = $1`,
+        [staffId, newSalaryMinor],
+      );
+    } catch (e: any) {
+      if (e?.code === '42703') {
+        await db.query(`UPDATE company_staff SET salary_minor = $2::bigint WHERE id = $1`, [staffId, newSalaryMinor]);
+        return;
+      }
+      throw e;
+    }
+  }
+
+  async recordPayrollAdjustment(
+    db: Db,
+    input: {
+      companyId: string;
+      targetType: 'employment' | 'staff';
+      targetId: string;
+      oldSalaryMinor: number;
+      newSalaryMinor: number;
+      changedByCharacterId?: string | null;
+      reason?: string | null;
+      meta?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    try {
+      await db.query(
+        `INSERT INTO company_payroll_adjustments
+           (company_id, target_type, target_id, old_salary_minor, new_salary_minor, changed_by_character_id, reason, meta)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+        [
+          input.companyId,
+          input.targetType,
+          input.targetId,
+          input.oldSalaryMinor,
+          input.newSalaryMinor,
+          input.changedByCharacterId ?? null,
+          input.reason ?? null,
+          JSON.stringify(input.meta ?? {}),
+        ],
+      );
+    } catch (e: any) {
+      // Backward-compatible if migration not applied yet
+      if (e?.code === '42P01' || e?.code === '42703') return;
+      throw e;
+    }
+  }
+
+  async getPayrollForecast(companyId: string, db: Db = this.db): Promise<{
+    employeeMonthlyMinor: number;
+    staffMonthlyMinor: number;
+    ownerMonthlyMinor: number;
+    employeeArrearsMinor: number;
+    staffArrearsMinor: number;
+  }> {
+    const [emp, staff, company] = await Promise.all([
+      db.query<any>(
+        `SELECT
+           COALESCE(SUM(CASE WHEN status IN ('active','notice_pending') AND COALESCE((to_jsonb(employments)->>'is_owner_role')::boolean,false)=false THEN salary_minor ELSE 0 END), 0)::bigint::text AS "monthlyMinor",
+           COALESCE(SUM(COALESCE(NULLIF(to_jsonb(employments)->>'salary_arrears_minor','')::bigint, 0)), 0)::bigint::text AS "arrearsMinor"
+         FROM employments
+         WHERE company_id = $1`,
+        [companyId],
+      ),
+      db.query<any>(
+        `SELECT
+           COALESCE(SUM(CASE WHEN status = 'active' THEN salary_minor ELSE 0 END), 0)::bigint::text AS "monthlyMinor",
+           COALESCE(SUM(COALESCE(NULLIF(to_jsonb(company_staff)->>'salary_arrears_minor','')::bigint, 0)), 0)::bigint::text AS "arrearsMinor"
+         FROM company_staff
+         WHERE company_id = $1`,
+        [companyId],
+      ),
+      db.query<any>(
+        `SELECT COALESCE(NULLIF(to_jsonb(c)->>'owner_salary_minor','')::bigint, 0)::bigint::text AS "ownerMonthlyMinor",
+                c.status AS status
+         FROM companies c WHERE c.id = $1`,
+        [companyId],
+      ),
+    ]);
+
+    const ownerMonthlyMinor = company.rows[0] && company.rows[0].status !== 'bankrupt' ? Number(company.rows[0].ownerMonthlyMinor ?? 0) : 0;
+    return {
+      employeeMonthlyMinor: Number(emp.rows[0]?.monthlyMinor ?? 0),
+      staffMonthlyMinor: Number(staff.rows[0]?.monthlyMinor ?? 0),
+      ownerMonthlyMinor,
+      employeeArrearsMinor: Number(emp.rows[0]?.arrearsMinor ?? 0),
+      staffArrearsMinor: Number(staff.rows[0]?.arrearsMinor ?? 0),
+    };
   }
 }
 

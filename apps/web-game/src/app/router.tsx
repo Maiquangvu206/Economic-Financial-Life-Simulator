@@ -3,6 +3,8 @@ import { RedirectIfAuthenticated, RequireAuth } from '../features/auth/guards';
 import { AppLayout } from '../shared/layout/AppLayout';
 import { BusinessPage } from '../pages/BusinessPage';
 import { CharacterPage } from '../pages/CharacterPage';
+import { CharacterWellnessPage } from '../pages/CharacterWellnessPage';
+import { CharacterAccountPage } from '../pages/CharacterAccountPage';
 import { CityPage } from '../pages/CityPage';
 import { FinancePage } from '../pages/FinancePage';
 import { GiftCodesPage } from '../pages/GiftCodesPage';
@@ -34,6 +36,8 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <CityPage /> },
           { path: 'character', element: <CharacterPage /> },
+          { path: 'character/wellness', element: <CharacterWellnessPage /> },
+          { path: 'character/account', element: <CharacterAccountPage /> },
           { path: 'education', element: <EducationPage /> },
           { path: 'recruitment', element: <RecruitmentPage /> },
           { path: 'finance', element: <FinancePage /> },

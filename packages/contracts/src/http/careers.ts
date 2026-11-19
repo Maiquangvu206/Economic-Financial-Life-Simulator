@@ -49,10 +49,34 @@ export const EmploymentDtoSchema = z.object({
   title: z.string(),
   industry: IndustryTypeSchema,
   salary: MoneySchema,
-  status: z.enum(['active', 'resigned', 'fired']),
+  status: z.enum(['active', 'notice_pending', 'resigned', 'fired']),
   hiredAt: z.string().datetime(),
+  companyId: IdSchema.nullable().optional(),
+  companyName: z.string().nullable().optional(),
+  isOwnerRole: z.boolean().optional(),
+  /** Nhân vật hiện tại có phải chủ sở hữu công ty của việc làm này không. */
+  isCompanyOwner: z.boolean().optional(),
+  resignRequestedAt: z.string().datetime().nullable().optional(),
+  effectiveResignGameYear: z.number().int().nullable().optional(),
+  effectiveResignGameDay: z.number().int().nullable().optional(),
+  /** Số ngày game còn lại đến khi nghỉ việc chính thức (tính theo thời gian game hiện tại, nếu có). */
+  daysUntilResign: z.number().int().nullable().optional(),
 });
 export type EmploymentDto = z.infer<typeof EmploymentDtoSchema>;
+
+export const ResignEmploymentRequestSchema = z.object({});
+export type ResignEmploymentRequest = z.infer<typeof ResignEmploymentRequestSchema>;
+
+export const ResignEmploymentResponseSchema = z.object({
+  ok: z.boolean(),
+  employmentId: IdSchema,
+  status: z.literal('notice_pending'),
+  effectiveResignGameYear: z.number().int(),
+  effectiveResignGameDay: z.number().int(),
+  daysRemaining: z.number().int(),
+  message: z.string(),
+});
+export type ResignEmploymentResponse = z.infer<typeof ResignEmploymentResponseSchema>;
 
 export const CareersOverviewDtoSchema = z.object({
   jobs: z.array(JobDtoSchema),
@@ -194,6 +218,9 @@ export type CareersOverviewExtDto = z.infer<typeof CareersOverviewExtDtoSchema>;
 export const RecruitmentJobPostingStatusSchema = z.enum(['open', 'closed', 'deleted']);
 export type RecruitmentJobPostingStatus = z.infer<typeof RecruitmentJobPostingStatusSchema>;
 
+export const RecruitmentApplicationStatusSchema = z.enum(['pending', 'approved', 'rejected', 'cancelled']);
+export type RecruitmentApplicationStatus = z.infer<typeof RecruitmentApplicationStatusSchema>;
+
 export const RecruitmentJobDtoSchema = z.object({
   id: IdSchema,
   title: z.string(),
@@ -218,8 +245,31 @@ export const RecruitmentJobDtoSchema = z.object({
   blocker: z.string().nullable(),
   canApply: z.boolean(),
   isMine: z.boolean(),
+  hasPendingApplication: z.boolean().optional().default(false),
+  pendingApplicationsCount: z.number().int().nonnegative().optional().default(0),
 });
 export type RecruitmentJobDto = z.infer<typeof RecruitmentJobDtoSchema>;
+
+export const RecruitmentJobApplicationDtoSchema = z.object({
+  id: IdSchema,
+  jobId: IdSchema,
+  jobTitle: z.string(),
+  companyId: IdSchema.nullable().optional(),
+  companyName: z.string().nullable().optional(),
+  applicantCharacterId: IdSchema,
+  applicantName: z.string().nullable().optional(),
+  applicantCccd: z.string().nullable().optional(),
+  status: RecruitmentApplicationStatusSchema,
+  note: z.string().nullable().optional(),
+  decisionNote: z.string().nullable().optional(),
+  decidedByCharacterId: IdSchema.nullable().optional(),
+  decidedAt: z.string().datetime().nullable().optional(),
+  employmentId: IdSchema.nullable().optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime().nullable().optional(),
+  salary: MoneySchema.nullable().optional(),
+});
+export type RecruitmentJobApplicationDto = z.infer<typeof RecruitmentJobApplicationDtoSchema>;
 
 export const RecruitmentOverviewDtoSchema = z.object({
   jobs: z.array(RecruitmentJobDtoSchema),
@@ -234,6 +284,8 @@ export const RecruitmentOverviewDtoSchema = z.object({
       dayOfYear: z.number().int(),
     })
     .optional(),
+  myApplications: z.array(RecruitmentJobApplicationDtoSchema).optional().default([]),
+  incomingApplications: z.array(RecruitmentJobApplicationDtoSchema).optional().default([]),
 });
 export type RecruitmentOverviewDto = z.infer<typeof RecruitmentOverviewDtoSchema>;
 
@@ -251,3 +303,9 @@ export type CreateRecruitmentJobRequest = z.infer<typeof CreateRecruitmentJobReq
 
 export const ApplyRecruitmentJobRequestSchema = z.object({ jobId: IdSchema });
 export type ApplyRecruitmentJobRequest = z.infer<typeof ApplyRecruitmentJobRequestSchema>;
+
+export const DecideRecruitmentApplicationRequestSchema = z.object({
+  decision: z.enum(['approve', 'reject']),
+  note: z.string().max(300).optional(),
+});
+export type DecideRecruitmentApplicationRequest = z.infer<typeof DecideRecruitmentApplicationRequestSchema>;

@@ -76,11 +76,11 @@ function toDto(
     purchasePrice: money(Number(row.purchasePriceMinor)),
     currentValue: money(Number(row.currentValueMinor)),
     monthlyRent: money(Number(row.monthlyRentMinor)),
-    rentListingActive: false,
-    rentDeposit: money(0),
-    rentNotes: null,
-    askingPrice: null,
-    saleNotes: null,
+    rentListingActive: !!row.rentListingActive,
+    rentDeposit: money(Number(row.rentDepositMinor ?? 0)),
+    rentNotes: row.rentNotes ?? null,
+    askingPrice: row.askingPriceMinor != null ? money(Number(row.askingPriceMinor)) : null,
+    saleNotes: row.saleNotes ?? null,
     status: row.status as PropertyDto['status'],
     ownerCharacterId: row.ownerCharacterId,
     ownerCompanyId: null,
@@ -416,6 +416,65 @@ export class ProvinceLandService {
         payload: { propertyId: offer.propertyId, offerId, provinceCode, amountMinor: amount },
       });
 
+      return this.listByProvince(userId, provinceCode);
+    });
+  }
+
+  private async resolveGroupIds(client: any, propertyId: string): Promise<string[]> {
+    const ids = await this.repo.getTransferGroupPropertyIds(client, propertyId);
+    return ids.length > 0 ? ids : [propertyId];
+  }
+
+  async listProperty(userId: string, provinceCode: string, propertyId: string, askingPriceMinor: number, saleNotes?: string): Promise<PropertyDto[]> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const rows = await this.repo.findByIds(client, [propertyId]);
+      const property = rows[0];
+      if (!property || property.provinceCode !== provinceCode) throw AppError.notFound('Property');
+      if (property.ownerCharacterId !== character.id) throw AppError.forbidden('Chỉ chủ sở hữu mới được đặt bán.');
+      if (property.status !== 'owned') throw AppError.badRequest('Chỉ có thể đặt bán bất động sản đang sở hữu.');
+      const groupIds = await this.resolveGroupIds(client, propertyId);
+      await this.repo.listProperty(client, groupIds, askingPriceMinor, saleNotes?.trim() || null);
+      return this.listByProvince(userId, provinceCode);
+    });
+  }
+
+  async unlistProperty(userId: string, provinceCode: string, propertyId: string): Promise<PropertyDto[]> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const rows = await this.repo.findByIds(client, [propertyId]);
+      const property = rows[0];
+      if (!property || property.provinceCode !== provinceCode) throw AppError.notFound('Property');
+      if (property.ownerCharacterId !== character.id) throw AppError.forbidden('Chỉ chủ sở hữu mới được ngưng bán.');
+      if (property.status !== 'listed') throw AppError.badRequest('Bất động sản này hiện không ở trạng thái đang bán.');
+      const groupIds = await this.resolveGroupIds(client, propertyId);
+      await this.repo.unlistProperty(client, groupIds);
+      return this.listByProvince(userId, provinceCode);
+    });
+  }
+
+  async updateRentTerms(
+    userId: string,
+    provinceCode: string,
+    propertyId: string,
+    input: { monthlyRentMinor: number; rentDepositMinor: number; rentListingActive: boolean; rentNotes?: string | null },
+  ): Promise<PropertyDto[]> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const rows = await this.repo.findByIds(client, [propertyId]);
+      const property = rows[0];
+      if (!property || property.provinceCode !== provinceCode) throw AppError.notFound('Property');
+      if (property.ownerCharacterId !== character.id) throw AppError.forbidden('Chỉ chủ sở hữu mới được cập nhật bảng giá cho thuê.');
+      if (input.rentListingActive && input.monthlyRentMinor <= 0) {
+        throw AppError.badRequest('Cần đặt giá thuê/tháng lớn hơn 0 để mở cho thuê.');
+      }
+      const groupIds = await this.resolveGroupIds(client, propertyId);
+      await this.repo.updateRentTerms(client, groupIds, {
+        monthlyRentMinor: input.monthlyRentMinor,
+        rentDepositMinor: input.rentDepositMinor ?? 0,
+        rentListingActive: input.rentListingActive,
+        rentNotes: input.rentNotes?.trim() || null,
+      });
       return this.listByProvince(userId, provinceCode);
     });
   }

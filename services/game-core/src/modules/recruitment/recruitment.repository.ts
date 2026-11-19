@@ -31,11 +31,40 @@ export interface EmploymentRow {
   salaryMinor: string;
   status: string;
   hiredAt: Date;
+  companyId: string | null;
+  companyName: string | null;
+  companyOwnerCharacterId: string | null;
+  isOwnerRole: boolean;
+  resignRequestedAt: Date | null;
+  effectiveResignGameYear: number | null;
+  effectiveResignGameDay: number | null;
 }
 
 export interface GameDayState {
   year: number;
   dayOfYear: number;
+}
+
+export type JobApplicationStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface JobApplicationRow {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  companyId: string | null;
+  companyName: string | null;
+  applicantCharacterId: string;
+  applicantName: string | null;
+  applicantCccd: string | null;
+  status: JobApplicationStatus;
+  note: string | null;
+  decisionNote: string | null;
+  decidedByCharacterId: string | null;
+  decidedAt: Date | null;
+  employmentId: string | null;
+  createdAt: Date;
+  updatedAt: Date | null;
+  baseSalaryMinor: string | number | null;
 }
 
 const JOB_SELECT = `
@@ -110,14 +139,59 @@ export class RecruitmentRepository {
     return res.rows;
   }
 
-  async getActiveEmployment(characterId: string, db: Db = this.db): Promise<EmploymentRow | null> {
+  async getCurrentEmployment(characterId: string, db: Db = this.db): Promise<EmploymentRow | null> {
     const res = await db.query<EmploymentRow>(
-      `SELECT e.id, e.job_id AS "jobId", j.title, j.industry, e.salary_minor AS "salaryMinor", e.status, e.hired_at AS "hiredAt"
+      `SELECT e.id, e.job_id AS "jobId", j.title, j.industry, e.salary_minor AS "salaryMinor", e.status, e.hired_at AS "hiredAt",
+              e.company_id AS "companyId",
+              c.name AS "companyName",
+              c.owner_character_id AS "companyOwnerCharacterId",
+              COALESCE((to_jsonb(e)->>'is_owner_role')::boolean, false) AS "isOwnerRole",
+              NULLIF(to_jsonb(e)->>'resign_requested_at','')::timestamptz AS "resignRequestedAt",
+              NULLIF(to_jsonb(e)->>'effective_resign_game_year','')::int AS "effectiveResignGameYear",
+              NULLIF(to_jsonb(e)->>'effective_resign_game_day','')::int AS "effectiveResignGameDay"
        FROM employments e
        JOIN jobs j ON j.id = e.job_id
-       WHERE e.character_id = $1 AND e.status = 'active'
+       LEFT JOIN companies c ON c.id = e.company_id
+       WHERE e.character_id = $1 AND e.status IN ('active', 'notice_pending')
+       ORDER BY CASE e.status WHEN 'notice_pending' THEN 0 ELSE 1 END, e.hired_at DESC
        LIMIT 1`,
       [characterId],
+    );
+    return res.rows[0] ?? null;
+  }
+
+  /** @deprecated Use getCurrentEmployment */
+  async getActiveEmployment(characterId: string, db: Db = this.db): Promise<EmploymentRow | null> {
+    return this.getCurrentEmployment(characterId, db);
+  }
+
+  async requestResign(
+    db: Db,
+    employmentId: string,
+    characterId: string,
+    effectiveYear: number,
+    effectiveDayOfYear: number,
+  ): Promise<EmploymentRow | null> {
+    const res = await db.query<EmploymentRow>(
+      `UPDATE employments e
+          SET status = 'notice_pending',
+              resign_requested_at = now(),
+              effective_resign_game_year = $3::int,
+              effective_resign_game_day = $4::int
+        FROM jobs j
+        LEFT JOIN companies c ON c.id = e.company_id
+       WHERE e.id = $1
+         AND e.character_id = $2
+         AND e.status = 'active'
+       RETURNING e.id, e.job_id AS "jobId", j.title, j.industry, e.salary_minor AS "salaryMinor", e.status, e.hired_at AS "hiredAt",
+                 e.company_id AS "companyId",
+                 c.name AS "companyName",
+                 c.owner_character_id AS "companyOwnerCharacterId",
+                 COALESCE((to_jsonb(e)->>'is_owner_role')::boolean, false) AS "isOwnerRole",
+                 NULLIF(to_jsonb(e)->>'resign_requested_at','')::timestamptz AS "resignRequestedAt",
+                 NULLIF(to_jsonb(e)->>'effective_resign_game_year','')::int AS "effectiveResignGameYear",
+                 NULLIF(to_jsonb(e)->>'effective_resign_game_day','')::int AS "effectiveResignGameDay"`,
+      [employmentId, characterId, effectiveYear, effectiveDayOfYear],
     );
     return res.rows[0] ?? null;
   }
@@ -205,6 +279,172 @@ export class RecruitmentRepository {
     }
     await this.markJobDeleted(db, jobId);
     return 'soft';
+  }
+
+  // --- Player job applications (approval workflow) ---
+
+  async hasPendingApplication(jobId: string, applicantCharacterId: string, db: Db = this.db): Promise<boolean> {
+    const res = await db.query(
+      `SELECT 1 FROM job_applications WHERE job_id = $1 AND applicant_character_id = $2 AND status = 'pending' LIMIT 1`,
+      [jobId, applicantCharacterId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async getPendingApplicationIdsForApplicant(applicantCharacterId: string, jobIds: string[], db: Db = this.db): Promise<Set<string>> {
+    if (jobIds.length === 0) return new Set();
+    const res = await db.query<{ job_id: string }>(
+      `SELECT job_id FROM job_applications WHERE applicant_character_id = $1 AND status = 'pending' AND job_id = ANY($2::uuid[])`,
+      [applicantCharacterId, jobIds],
+    );
+    return new Set(res.rows.map((r) => r.job_id));
+  }
+
+  async getPendingApplicationCountsForJobs(jobIds: string[], db: Db = this.db): Promise<Map<string, number>> {
+    if (jobIds.length === 0) return new Map();
+    const res = await db.query<{ job_id: string; c: string }>(
+      `SELECT job_id, COUNT(*)::text AS c FROM job_applications WHERE status = 'pending' AND job_id = ANY($1::uuid[]) GROUP BY job_id`,
+      [jobIds],
+    );
+    const map = new Map<string, number>();
+    for (const r of res.rows) map.set(r.job_id, Number(r.c));
+    return map;
+  }
+
+  async createJobApplication(db: Db, input: { jobId: string; companyId: string | null; applicantCharacterId: string; note?: string | null }): Promise<string> {
+    const res = await db.query<{ id: string }>(
+      `INSERT INTO job_applications (id, job_id, company_id, applicant_character_id, status, note)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'pending', $4)
+       RETURNING id`,
+      [input.jobId, input.companyId, input.applicantCharacterId, input.note ?? null],
+    );
+    return res.rows[0]!.id;
+  }
+
+  async listApplicationsByApplicant(applicantCharacterId: string, db: Db = this.db): Promise<JobApplicationRow[]> {
+    const res = await db.query<JobApplicationRow>(
+      `SELECT a.id, a.job_id AS "jobId", j.title AS "jobTitle",
+              a.company_id AS "companyId", c.name AS "companyName",
+              a.applicant_character_id AS "applicantCharacterId",
+              ach.full_name AS "applicantName",
+              ach.cccd AS "applicantCccd",
+              a.status, a.note, a.decision_note AS "decisionNote",
+              a.decided_by_character_id AS "decidedByCharacterId",
+              a.decided_at AS "decidedAt",
+              a.employment_id AS "employmentId",
+              a.created_at AS "createdAt",
+              a.updated_at AS "updatedAt",
+              j.base_salary_minor AS "baseSalaryMinor"
+       FROM job_applications a
+       JOIN jobs j ON j.id = a.job_id
+       LEFT JOIN companies c ON c.id = a.company_id
+       LEFT JOIN characters ach ON ach.id = a.applicant_character_id
+       WHERE a.applicant_character_id = $1
+       ORDER BY a.created_at DESC
+       LIMIT 100`,
+      [applicantCharacterId],
+    );
+    return res.rows;
+  }
+
+  async listIncomingApplicationsForOwner(ownerCharacterId: string, db: Db = this.db): Promise<JobApplicationRow[]> {
+    const res = await db.query<JobApplicationRow>(
+      `SELECT a.id, a.job_id AS "jobId", j.title AS "jobTitle",
+              a.company_id AS "companyId", c.name AS "companyName",
+              a.applicant_character_id AS "applicantCharacterId",
+              ach.full_name AS "applicantName",
+              ach.cccd AS "applicantCccd",
+              a.status, a.note, a.decision_note AS "decisionNote",
+              a.decided_by_character_id AS "decidedByCharacterId",
+              a.decided_at AS "decidedAt",
+              a.employment_id AS "employmentId",
+              a.created_at AS "createdAt",
+              a.updated_at AS "updatedAt",
+              j.base_salary_minor AS "baseSalaryMinor"
+       FROM job_applications a
+       JOIN jobs j ON j.id = a.job_id
+       JOIN companies c ON c.id = COALESCE(a.company_id, j.employer_company_id)
+       LEFT JOIN characters ach ON ach.id = a.applicant_character_id
+       WHERE c.owner_character_id = $1
+         AND a.status IN ('pending','approved','rejected','cancelled')
+       ORDER BY CASE a.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END,
+                a.created_at DESC
+       LIMIT 200`,
+      [ownerCharacterId],
+    );
+    return res.rows;
+  }
+
+  async getApplicationForDecision(db: Db, applicationId: string): Promise<{
+    id: string;
+    jobId: string;
+    companyId: string | null;
+    applicantCharacterId: string;
+    applicantUserId: string | null;
+    applicantName: string | null;
+    status: JobApplicationStatus;
+    jobTitle: string;
+    jobIndustry: string;
+    jobBaseSalaryMinor: string;
+    jobRequiredDegree: string | null;
+    jobMinCreditScore: number;
+    jobOpenings: number;
+    jobPostingStatus: string;
+    jobCompanyId: string | null;
+    jobCompanyStatus: string | null;
+    jobCompanyName: string | null;
+    ownerCharacterId: string | null;
+  } | null> {
+    const res = await db.query<any>(
+      `SELECT a.id, a.job_id AS "jobId", a.company_id AS "companyId",
+              a.applicant_character_id AS "applicantCharacterId",
+              ach.user_id AS "applicantUserId",
+              ach.full_name AS "applicantName",
+              a.status,
+              j.title AS "jobTitle",
+              j.industry AS "jobIndustry",
+              j.base_salary_minor AS "jobBaseSalaryMinor",
+              j.required_degree AS "jobRequiredDegree",
+              j.min_credit_score AS "jobMinCreditScore",
+              j.openings AS "jobOpenings",
+              COALESCE(j.posting_status,'open') AS "jobPostingStatus",
+              j.employer_company_id AS "jobCompanyId",
+              c.status AS "jobCompanyStatus",
+              c.name AS "jobCompanyName",
+              c.owner_character_id AS "ownerCharacterId"
+       FROM job_applications a
+       JOIN jobs j ON j.id = a.job_id
+       JOIN characters ach ON ach.id = a.applicant_character_id
+       LEFT JOIN companies c ON c.id = COALESCE(a.company_id, j.employer_company_id)
+       WHERE a.id = $1
+       FOR UPDATE OF a, j`,
+      [applicationId],
+    );
+    return res.rows[0] ?? null;
+  }
+
+  async decideApplication(db: Db, applicationId: string, input: { status: 'approved' | 'rejected'; decidedByCharacterId: string; decisionNote?: string | null; employmentId?: string | null }): Promise<void> {
+    await db.query(
+      `UPDATE job_applications
+          SET status = $2,
+              decided_by_character_id = $3,
+              decision_note = $4,
+              decided_at = now(),
+              employment_id = $5,
+              updated_at = now()
+        WHERE id = $1 AND status = 'pending'`,
+      [applicationId, input.status, input.decidedByCharacterId, input.decisionNote ?? null, input.employmentId ?? null],
+    );
+  }
+
+  async cancelPendingApplicationsForJob(db: Db, jobId: string): Promise<number> {
+    const res = await db.query(
+      `UPDATE job_applications
+          SET status = 'cancelled', updated_at = now(), decided_at = now(), decision_note = COALESCE(decision_note, 'Đợt tuyển đã đóng hoặc không còn hiệu lực.')
+        WHERE job_id = $1 AND status = 'pending'`,
+      [jobId],
+    );
+    return res.rowCount ?? 0;
   }
 }
 
