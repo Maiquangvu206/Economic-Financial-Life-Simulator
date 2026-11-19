@@ -1,0 +1,119 @@
+name: Diagnose project-1 (read-only)
+
+# Read-only diagnostics for the running production stack.
+# Nothing here restarts services, touches volumes or writes to the database:
+# it only prints container state, recent logs and a few grep results so the
+# real stack trace can be copied out of the Actions log.
+on:
+  workflow_dispatch:
+    inputs:
+      since_minutes:
+        description: 'How many minutes of logs to inspect'
+        required: false
+        default: '90'
+      tail_lines:
+        description: 'Max log lines to print per service'
+        required: false
+        default: '400'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project-1-diagnose
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Inspect production stack
+        shell: bash
+        run: |
+          set -uo pipefail
+          if ! cd /srv/apps/project-1; then
+            echo "::error::/srv/apps/project-1 not found on this runner"
+            exit 1
+          fi
+
+          SINCE="${{ inputs.since_minutes }}"
+          TAIL="${{ inputs.tail_lines }}"
+          SINCE="${SINCE:-90}"
+          TAIL="${TAIL:-400}"
+
+          echo "::group::git revision"
+          git log -1 --format='HEAD %H%n%cd%n%s' || true
+          echo "::endgroup::"
+
+          echo "::group::docker compose ps"
+          docker compose ps || true
+          echo "::endgroup::"
+
+          echo "::group::container health"
+          for svc in postgres redis game-core api-gateway worker web-app realtime ai; do
+            id="$(docker compose ps -q "$svc" 2>/dev/null | head -n1)"
+            if [[ -z "$id" ]]; then
+              echo "$svc: (no container)"
+              continue
+            fi
+            state="$(docker inspect --format '{{.State.Status}}' "$id" 2>/dev/null || echo unknown)"
+            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id" 2>/dev/null || echo unknown)"
+            restarts="$(docker inspect --format '{{.RestartCount}}' "$id" 2>/dev/null || echo '?')"
+            echo "$svc: status=$state health=$health restarts=$restarts"
+          done
+          echo "::endgroup::"
+
+          echo "::group::game-core: unhandled errors (last ${SINCE}m)"
+          docker compose logs --no-color --since "${SINCE}m" --tail "$TAIL" game-core 2>&1 \
+            | grep -n -i -E -A 40 'Unhandled error|Unhandled promise|ERROR' | tail -200 || echo '(no matching lines)'
+          echo "::endgroup::"
+
+          echo "::group::game-core: succession traces (last ${SINCE}m)"
+          docker compose logs --no-color --since "${SINCE}m" --tail "$TAIL" game-core 2>&1 \
+            | grep -n -i -E 'succession|settleEstate|inheritance|estate' | tail -120 || echo '(no matching lines)'
+          echo "::endgroup::"
+
+          echo "::group::worker: errors (last ${SINCE}m)"
+          docker compose logs --no-color --since "${SINCE}m" --tail "$TAIL" worker 2>&1 \
+            | grep -n -i -E -A 20 'Unhandled error|Unhandled promise|ERROR' | tail -120 || echo '(no matching lines)'
+          echo "::endgroup::"
+
+          echo "::group::deployed build sanity check"
+          echo "-- loaded source of succession.service.js --"
+          docker compose exec -T game-core grep -n 'SYSTEM_SELLER_ID' /app/dist/modules/succession/succession.service.js 2>&1 || echo '(grep failed)'
+          echo "-- literal \${SYSTEM_SELLER_ID} occurrences (should be none) --"
+          docker compose exec -T game-core grep -n 'SYSTEM_SELLER_ID}' /app/dist/modules/succession/succession.service.js 2>&1 || echo '(none)'
+          echo "::endgroup::"
+
+          echo "::group::schema_migrations (last 10 applied)"
+          docker compose exec -T postgres sh -c \
+            'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT filename FROM schema_migrations ORDER BY filename DESC LIMIT 10;"' 2>&1 || echo '(query failed)'
+          echo "::endgroup::"
+
+          echo "::group::succession data snapshot (read-only)"
+          docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=0 <<'"'"'SQL'"'"'
+\echo == dead characters (unowned / owned) ==
+SELECT c.id, c.full_name, c.age, c.is_alive, u.email, u.role, c.updated_at
+FROM characters c LEFT JOIN users u ON u.id = c.user_id
+WHERE COALESCE(c.is_alive, true) = false
+ORDER BY c.updated_at DESC NULLS LAST
+LIMIT 10;
+
+\echo == last inheritance settlements ==
+SELECT id, deceased_character_id, successor_character_id, status,
+       estate_cash_minor, inherited_cash_minor, unclaimed_cash_minor, tax_minor,
+       processed_at, created_at
+FROM inheritance_settlements
+ORDER BY created_at DESC
+LIMIT 10;
+
+\echo == unclaimed estate assets by status ==
+SELECT status, count(*) FROM unclaimed_estate_assets GROUP BY status ORDER BY status;
+
+\echo == open auctions by source ==
+SELECT source, status, count(*) FROM auctions GROUP BY source, status ORDER BY source, status;
+SQL' 2>&1 || echo '(query failed)'
+          echo "::endgroup::"
+
+          echo "Done. Copy the sections above into the chat."

@@ -6,6 +6,7 @@ import { requireCharacterByUserId, requireLivingCharacterByUserId } from '../../
 import { ledger, SYSTEM_GOVERNMENT_ID } from '../../shared/ledger/ledger.service.js';
 import { notify } from '../notifications/notification.service.js';
 import { CharactersRepository } from '../characters/characters.repository.js';
+import { logger } from '../../shared/logger.js';
 import { generateCccd } from '@efls/domain';
 
 const SYSTEM_SELLER_ID = '00000000-0000-4000-8000-0000000000c1'; // AI/Market Maker character
@@ -152,36 +153,86 @@ export class SuccessionService {
         activeCharacterId = created.rows[0]!.id;
       }
 
-      // Bước 3: thanh lý ràng buộc đời trước
-      // vợ/chồng cũ -> độc thân
-      await client.query(`UPDATE characters SET marital_status='widowed', spouse_id=NULL, updated_at=now() WHERE spouse_id=$1`, [oldChar.id]);
-      await client.query(`UPDATE characters SET marital_status='widowed', spouse_id=NULL, updated_at=now() WHERE id=$1`, [oldChar.id]);
-      await client.query(`UPDATE marriage_contracts SET status='widowed', ended_at=now(), updated_at=now() WHERE (character_id=$1 OR spouse_id=$1) AND status='active'`, [oldChar.id]);
-      // ngắt liên kết cha mẹ trên cây (con của người chết giữ cây nhưng parent_id tham chiếu có thể giữ để lịch sử; theo spec: ngắt liên kết parent_id = NULL)
-      await client.query(`UPDATE family_trees SET parent_id = NULL WHERE parent_id = $1`, [oldChar.id]);
+      // Bước 3: thanh lý ràng buộc đời trước.
+      // Mỗi nhóm là một SAVEPOINT riêng: một lỗi dữ liệu ở bước phụ (hôn nhân, công ty, nợ...)
+      // chỉ rollback bước đó, không làm abort toàn bộ transaction kế thừa.
+      await this.savepoint(
+        client,
+        'release_marriage',
+        async () => {
+          // vợ/chồng cũ -> độc thân
+          await client.query(`UPDATE characters SET marital_status='widowed', spouse_id=NULL, updated_at=now() WHERE spouse_id=$1`, [oldChar.id]);
+          await client.query(`UPDATE characters SET marital_status='widowed', spouse_id=NULL, updated_at=now() WHERE id=$1`, [oldChar.id]);
+          await client.query(`UPDATE marriage_contracts SET status='widowed', ended_at=now(), updated_at=now() WHERE (character_id=$1 OR spouse_id=$1) AND status='active'`, [oldChar.id]);
+          return true;
+        },
+        false,
+      );
+      // ngắt liên kết cha mẹ trên cây gia tộc (con của người chết giữ cây nhưng parent_id tham chiếu có thể giữ để lịch sử; theo spec: ngắt liên kết parent_id = NULL)
+      await this.savepoint(
+        client,
+        'release_family_tree',
+        async () => {
+          await client.query(`UPDATE family_trees SET parent_id = NULL WHERE parent_id = $1`, [oldChar.id]);
+          return true;
+        },
+        false,
+      );
       // chuyển CEO công ty (nếu là owner) sang cổ đông lớn nhất tiếp theo
       const companies = await (client as any).query(`SELECT id FROM companies WHERE owner_character_id=$1`, [oldChar.id]);
       for (const co of companies.rows) {
-        const top = await (client as any).query(
-          `SELECT holder_character_id FROM company_shareholders WHERE company_id=$1 AND holder_character_id <> $2 ORDER BY shares DESC LIMIT 1`,
-          [co.id, oldChar.id],
+        await this.savepoint(
+          client,
+          'company_owner',
+          async () => {
+            const top = await (client as any).query(
+              `SELECT holder_character_id FROM company_shareholders WHERE company_id=$1 AND holder_character_id <> $2 ORDER BY shares DESC LIMIT 1`,
+              [co.id, oldChar.id],
+            );
+            const newOwner = top.rows[0]?.holder_character_id ?? SYSTEM_SELLER_ID;
+            await client.query(`UPDATE companies SET owner_character_id=$2, updated_at=now() WHERE id=$1`, [co.id, newOwner]);
+            return true;
+          },
+          false,
         );
-        const newOwner = top.rows[0]?.holder_character_id ?? SYSTEM_SELLER_ID;
-        await client.query(`UPDATE companies SET owner_character_id=$2, updated_at=now() WHERE id=$1`, [co.id, newOwner]);
       }
       // xóa nợ tín chấp cá nhân không tài sản đảm bảo (không có collateral_property_id)
-      await client.query(`UPDATE loans SET status='repaid', outstanding_minor=0, updated_at=now() WHERE borrower_id=$1 AND collateral_property_id IS NULL`, [oldChar.id]);
+      await this.savepoint(
+        client,
+        'clear_loans',
+        async () => {
+          await client.query(`UPDATE loans SET status='repaid', outstanding_minor=0, updated_at=now() WHERE borrower_id=$1 AND collateral_property_id IS NULL`, [oldChar.id]);
+          return true;
+        },
+        false,
+      );
 
       // Bước 4: XÓA CỨNG nhân vật cũ: gỡ tham chiếu có thể chặn xóa
-      await client.query(`UPDATE stock_trades SET buyer_character_id = NULL WHERE buyer_character_id = $1`, [oldChar.id]);
-      await client.query(`UPDATE stock_trades SET seller_character_id = NULL WHERE seller_character_id = $1`, [oldChar.id]);
-      await client.query(`UPDATE auctions SET seller_character_id = $2 WHERE seller_character_id = $1`, [oldChar.id, SYSTEM_SELLER_ID]);
-      await client.query(`UPDATE property_sale_offers SET status = 'cancelled', resolved_at = now(), updated_at = now() WHERE (buyer_character_id = $1 OR seller_character_id = $1) AND status = 'pending'`, [oldChar.id]);
-      await client.query(`UPDATE property_sale_offers SET buyer_character_id = NULL WHERE buyer_character_id = $1`, [oldChar.id]);
-      await client.query(`UPDATE property_sale_offers SET seller_character_id = NULL WHERE seller_character_id = $1`, [oldChar.id]);
-      await client.query(`UPDATE loans SET status = 'repaid', outstanding_minor = 0 WHERE borrower_id = $1`, [oldChar.id]);
-      await client.query(`DELETE FROM loans WHERE borrower_id = $1`, [oldChar.id]);
-      await client.query(`DELETE FROM characters WHERE id = $1`, [oldChar.id]);
+      await this.savepoint(
+        client,
+        'detach_references',
+        async () => {
+          await client.query(`UPDATE stock_trades SET buyer_character_id = NULL WHERE buyer_character_id = $1`, [oldChar.id]);
+          await client.query(`UPDATE stock_trades SET seller_character_id = NULL WHERE seller_character_id = $1`, [oldChar.id]);
+          await client.query(`UPDATE auctions SET seller_character_id = $2 WHERE seller_character_id = $1`, [oldChar.id, SYSTEM_SELLER_ID]);
+          await client.query(`UPDATE property_sale_offers SET status = 'cancelled', resolved_at = now(), updated_at = now() WHERE (buyer_character_id = $1 OR seller_character_id = $1) AND status = 'pending'`, [oldChar.id]);
+          await client.query(`UPDATE property_sale_offers SET buyer_character_id = NULL WHERE buyer_character_id = $1`, [oldChar.id]);
+          await client.query(`UPDATE property_sale_offers SET seller_character_id = NULL WHERE seller_character_id = $1`, [oldChar.id]);
+          await client.query(`UPDATE loans SET status = 'repaid', outstanding_minor = 0 WHERE borrower_id = $1`, [oldChar.id]);
+          await client.query(`DELETE FROM loans WHERE borrower_id = $1`, [oldChar.id]);
+          return true;
+        },
+        false,
+      );
+      try {
+        await client.query(`DELETE FROM characters WHERE id = $1`, [oldChar.id]);
+      } catch (error) {
+        logger.error({ err: error, characterId: oldChar.id }, 'Không xoá được nhân vật cũ khi kế thừa');
+        throw AppError.conflict(
+          'succession_blocked',
+          'Không thể hoàn tất kế thừa do dữ liệu ràng buộc của nhân vật cũ. Vui lòng liên hệ quản trị viên.',
+        );
+      }
 
       await client.query(`UPDATE inheritance_settlements SET status='completed', successor_character_id=$2, processed_at=now(), updated_at=now() WHERE id=$1`, [settlementId, activeCharacterId]);
 
@@ -199,7 +250,12 @@ export class SuccessionService {
     const trust = await (client as any).query(`SELECT id, balance_minor FROM trust_funds WHERE character_id=$1 FOR UPDATE`, [oldChar.id]);
     let trustPaid = 0;
     for (const tf of trust.rows) {
-      trustPaid += await this.disburseTrustFund(client, tf, settlementId);
+      trustPaid += await this.savepoint(
+        client,
+        'trust_fund',
+        () => this.disburseTrustFund(client, tf, settlementId),
+        0,
+      );
     }
 
     // Xác định thụ hưởng di chúc
@@ -265,9 +321,26 @@ export class SuccessionService {
     inheritedCash = Math.max(0, successorGross - successorTax);
     if (inheritedCash > 0 && successorId) {
       // chuyển tiền mặt trực tiếp vào cash của successor
-      await client.query(`UPDATE characters SET cash_minor = cash_minor + $2, updated_at=now() WHERE id=$1`, [successorId, inheritedCash]);
+      await this.savepoint(
+        client,
+        'successor_cash',
+        async () => {
+          await client.query(`UPDATE characters SET cash_minor = cash_minor + $2, updated_at=now() WHERE id=$1`, [successorId, inheritedCash]);
+          return true;
+        },
+        false,
+      );
       if (successorTax > 0) {
-        await ledger.transfer(client, { from: { ownerType: 'character', ownerId: successorId }, to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID }, amountMinor: successorTax, kind: 'inheritance_tax', description: 'Thuế thừa kế', referenceType: 'inheritance_settlement', referenceId: settlementId }).catch(() => {});
+        // Thuế thừa kế ghi sổ riêng: lỗi sổ cái không được làm mất phần tiền đã chuyển ở trên.
+        await this.savepoint(
+          client,
+          'inheritance_tax',
+          async () => {
+            await ledger.transfer(client, { from: { ownerType: 'character', ownerId: successorId }, to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID }, amountMinor: successorTax, kind: 'inheritance_tax', description: 'Thuế thừa kế', referenceType: 'inheritance_settlement', referenceId: settlementId });
+            return true;
+          },
+          false,
+        );
       }
     }
 
@@ -278,9 +351,21 @@ export class SuccessionService {
       const v = Number(p.current_value_minor || 0);
       if (successorId && remainingPropValueForSuccessor >= v / 2 && p.status !== 'auction') {
         // chuyển cho successor
-        await client.query(`UPDATE properties SET owner_character_id=$2, owner_company_id=NULL, status='owned', asking_price_minor=NULL, sale_notes=NULL, updated_at=now() WHERE id=$1`, [p.id, successorId]);
-        remainingPropValueForSuccessor -= v;
-        inheritedPropValue += v;
+        const moved = await this.savepoint(
+          client,
+          'property_to_successor',
+          async () => {
+            await client.query(`UPDATE properties SET owner_character_id=$2, owner_company_id=NULL, status='owned', asking_price_minor=NULL, sale_notes=NULL, updated_at=now() WHERE id=$1`, [p.id, successorId]);
+            return true;
+          },
+          false,
+        );
+        if (moved) {
+          remainingPropValueForSuccessor -= v;
+          inheritedPropValue += v;
+        } else {
+          unclaimedProps.push(p);
+        }
       } else {
         unclaimedProps.push(p);
       }
@@ -290,7 +375,17 @@ export class SuccessionService {
     const unclaimedShares: any[] = [];
     for (const sh of shares) {
       if (successorId && successorShare >= 0.999) {
-        await client.query(`UPDATE company_shareholders SET holder_character_id=$2 WHERE id=$1`, [sh.id, successorId]).catch(() => {});
+        // Gộp cổ phần thay vì đổi chủ trực tiếp: tránh vi phạm UNIQUE(company_id, holder_character_id)
+        // khi người thừa kế đã sở hữu cổ phần của chính công ty đó.
+        await this.savepoint(
+          client,
+          'shares_to_successor',
+          async () => {
+            await this.transferShares(client, sh.id, successorId);
+            return true;
+          },
+          false,
+        );
       } else {
         unclaimedShares.push(sh);
       }
@@ -299,23 +394,69 @@ export class SuccessionService {
     // Tiền mặt & tiết kiệm vô chủ -> sung công quỹ
     const unclaimedCash = Math.max(0, (cash + savings) - Math.floor((cash + savings) * successorShare));
     if (unclaimedCash > 0) {
-      await ledger.transfer(client, { from: { ownerType: 'character', ownerId: oldChar.id }, to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID }, amountMinor: unclaimedCash, kind: 'estate_to_treasury', description: 'Tài sản vô chủ sung công quỹ', referenceType: 'inheritance_settlement', referenceId: settlementId }).catch(() => {});
+      // Sổ cái chỉ có phần tiền mặt; phần tiết kiệm được tất toán bằng cách đóng sổ bên dưới,
+      // nếu không ledger.transfer sẽ thiếu tiền và làm hỏng cả transaction.
+      const unclaimedCashOnLedger = Math.max(0, cash - Math.floor(cash * successorShare));
+      if (unclaimedCashOnLedger > 0) {
+        await this.savepoint(
+          client,
+          'estate_to_treasury',
+          async () => {
+            await ledger.transfer(client, { from: { ownerType: 'character', ownerId: oldChar.id }, to: { ownerType: 'government', ownerId: SYSTEM_GOVERNMENT_ID }, amountMinor: unclaimedCashOnLedger, kind: 'estate_to_treasury', description: 'Tài sản vô chủ sung công quỹ', referenceType: 'inheritance_settlement', referenceId: settlementId });
+            return true;
+          },
+          false,
+        );
+      }
     }
 
     // Tạo đấu giá cho BĐS vô chủ (65% base_land_price)
     for (const p of unclaimedProps) {
-      await this.auctionUnclaimedProperty(client, p, settlementId, oldChar.id);
+      await this.savepoint(
+        client,
+        'auction_property',
+        async () => {
+          await this.auctionUnclaimedProperty(client, p, settlementId, oldChar.id);
+          return true;
+        },
+        false,
+      );
     }
     // Tạo bản ghi lô cổ phần vô chủ (đấu giá lô - đơn giản hóa: ghi unclaimed_estate_assets)
     for (const sh of unclaimedShares) {
-      await client.query(
-        `INSERT INTO unclaimed_estate_assets (id, settlement_id, deceased_character_id, asset_type, company_id, quantity_minor, status, details)
-         VALUES (gen_random_uuid(), $1, $2, 'shares', $3, $4, 'pending', $5::jsonb)`,
-        [settlementId, oldChar.id, sh.company_id, Number(sh.shares), JSON.stringify({ shareholderRowId: sh.id })],
+      await this.savepoint(
+        client,
+        'unclaimed_shares',
+        async () => {
+          await client.query(
+            `INSERT INTO unclaimed_estate_assets (id, settlement_id, deceased_character_id, asset_type, company_id, quantity_minor, status, details)
+             VALUES (gen_random_uuid(), $1, $2, 'shares', $3, $4, 'pending', $5::jsonb)`,
+            [settlementId, oldChar.id, sh.company_id, Number(sh.shares), JSON.stringify({ shareholderRowId: sh.id })],
+          );
+          // chuyển cổ phần tạm cho system để phát mại (gộp nếu system đã có cổ phần)
+          await this.transferShares(client, sh.id, SYSTEM_SELLER_ID);
+          return true;
+        },
+        false,
       );
-      // chuyển cổ phần tạm cho system để phát mại
-      await client.query(`UPDATE company_shareholders SET holder_character_id=$2 WHERE id=$1`, [sh.id, SYSTEM_SELLER_ID]).catch(() => {});
     }
+
+    // Tất toán sổ tiết kiệm sau khi đã tính vào di sản: tránh việc CASCADE xoá nhân vật
+    // làm biến mất sổ mà tiền vẫn được cộng cho người thừa kế / ngân sách.
+    await this.savepoint(
+      client,
+      'close_savings',
+      async () => {
+        await client.query(
+          `UPDATE savings_deposits SET status='closed', balance_minor=0, closed_at=now(), updated_at=now()
+           WHERE character_id=$1 AND status='active'`,
+          [oldChar.id],
+        );
+        await client.query(`UPDATE savings_accounts SET balance_minor=0, updated_at=now() WHERE character_id=$1`, [oldChar.id]);
+        return true;
+      },
+      false,
+    );
 
     await client.query(
       `UPDATE inheritance_settlements SET estate_cash_minor=$2, inherited_cash_minor=$3, unclaimed_cash_minor=$4, tax_minor=$5, details=$6::jsonb, updated_at=now() WHERE id=$1`,
@@ -377,6 +518,53 @@ export class SuccessionService {
        VALUES (gen_random_uuid(), $1, $2, 'property', $3, $4, 'auctioned', $5)`,
       [settlementId, deceasedId, prop.id, startPrice, auctionId],
     );
+  }
+
+  /**
+   * Chạy một bước phụ trong SAVEPOINT: nếu lỗi (vi phạm UNIQUE, thiếu tiền sổ cái...),
+   * chỉ rollback bước đó + ghi log, để transaction kế thừa không bị abort và trả 500.
+   */
+  private async savepoint<T>(client: any, label: string, work: () => Promise<T>, fallback: T): Promise<T> {
+    const name = `sp_${label.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 40)}`;
+    await client.query(`SAVEPOINT ${name}`);
+    try {
+      const value = await work();
+      await client.query(`RELEASE SAVEPOINT ${name}`);
+      return value;
+    } catch (error) {
+      try {
+        await client.query(`ROLLBACK TO SAVEPOINT ${name}`);
+        await client.query(`RELEASE SAVEPOINT ${name}`);
+      } catch {
+        // Transaction không còn cứu được (mất kết nối...) -> ném lỗi gốc.
+        throw error;
+      }
+      logger.error({ err: error, step: label }, 'Bỏ qua bước kế thừa bị lỗi (đã rollback savepoint)');
+      return fallback;
+    }
+  }
+
+  /**
+   * Chuyển cổ phần sang nhân vật khác, gộp vào dòng sẵn có nếu người nhận đã sở hữu
+   * cổ phần của công ty đó — tránh vi phạm UNIQUE (company_id, holder_character_id).
+   */
+  private async transferShares(client: any, shareholderRowId: string, targetCharacterId: string): Promise<void> {
+    const row = (
+      await client.query(`SELECT company_id, holder_character_id, shares FROM company_shareholders WHERE id = $1`, [
+        shareholderRowId,
+      ])
+    ).rows[0];
+    if (!row) return;
+    if (row.holder_character_id === targetCharacterId) return;
+
+    await client.query(
+      `INSERT INTO company_shareholders (id, company_id, holder_character_id, shares)
+       VALUES (gen_random_uuid(), $1, $2, $3)
+       ON CONFLICT (company_id, holder_character_id)
+       DO UPDATE SET shares = company_shareholders.shares + EXCLUDED.shares`,
+      [row.company_id, targetCharacterId, row.shares],
+    );
+    await client.query(`DELETE FROM company_shareholders WHERE id = $1`, [shareholderRowId]);
   }
 
   private async uniqueCccd(client: any, birthplaceCode: string, birthAge?: number): Promise<string> {
