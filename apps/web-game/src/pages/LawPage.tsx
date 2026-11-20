@@ -17,6 +17,7 @@ import {
   type CrimeType,
   type FamilyOverviewDto,
   type CareTier,
+  type ProvinceDto,
 } from '@efls/contracts';
 
 function useSocialOverview() {
@@ -72,8 +73,15 @@ export function LawPage() {
   const [trialBusy, setTrialBusy] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [selectedAdoptChildId, setSelectedAdoptChildId] = useState<string>('');
+  const [birthProposeBirthplace, setBirthProposeBirthplace] = useState<string>('001');
+  const [adoptBirthplaceCode, setAdoptBirthplaceCode] = useState<string>('001');
   const [divorceCustodyOpen, setDivorceCustodyOpen] = useState<{ marriageId: string; spouseCharacterId: string | null } | null>(null);
   const [divorceCustodyMode, setDivorceCustodyMode] = useState<'agree_me' | 'agree_spouse' | 'system'>('system');
+
+  const { data: provinces = [] } = useQuery<ProvinceDto[]>({
+    queryKey: ['characters', 'provinces'],
+    queryFn: () => apiRequest<ProvinceDto[]>('/api/v1/characters/provinces'),
+  });
 
   // Modals & forms
   const [evidenceOpen, setEvidenceOpen] = useState<string | null>(null);
@@ -475,11 +483,24 @@ export function LawPage() {
                     Điều kiện: đã kết hôn (active), cả hai ≥ 20 tuổi game, sức khỏe ≥ 80, có nhà ở hợp lệ, không sinh con trong 1 năm game gần nhất. Thai kỳ 10 tháng game.
                   </div>
                   {family?.birthBlockedReason ? <div className="text-xs text-amber-700">{family.birthBlockedReason}</div> : null}
+                  <label className="block text-xs font-medium text-slate-700">
+                    Nơi sinh dự kiến của con
+                    <select
+                      className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+                      value={birthProposeBirthplace}
+                      onChange={(e) => setBirthProposeBirthplace(e.target.value)}
+                    >
+                      {provinces.map((p) => (
+                        <option key={p.code} value={p.code}>{p.code} · {p.name}</option>
+                      ))}
+                      {provinces.length === 0 ? <option value="001">001 · Thành phố Hà Nội</option> : null}
+                    </select>
+                  </label>
                   <GameButton
                     variant="primary"
                     size="sm"
                     disabled={!family?.canProposeBirth || actionBusy === 'birth-propose'}
-                    onClick={() => void handleAction('birth-propose', () => apiRequest('/api/v1/family/birth/propose', { method: 'POST', body: JSON.stringify({}) }))}
+                    onClick={() => void handleAction('birth-propose', () => apiRequest('/api/v1/family/birth/propose', { method: 'POST', body: JSON.stringify({ birthplaceCode: birthProposeBirthplace }) }))}
                   >
                     Đăng ký sinh con (gửi đề xuất)
                   </GameButton>
@@ -536,11 +557,24 @@ export function LawPage() {
                         <option key={c.id} value={c.id}>{c.fullName} · {c.age} tuổi</option>
                       ))}
                     </select>
+                    <label className="block text-xs font-medium text-slate-700">
+                      Nơi sinh/đăng ký nơi sinh cho con nuôi
+                      <select
+                        className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
+                        value={adoptBirthplaceCode}
+                        onChange={(e) => setAdoptBirthplaceCode(e.target.value)}
+                      >
+                        {provinces.map((p) => (
+                          <option key={p.code} value={p.code}>{p.code} · {p.name}</option>
+                        ))}
+                        {provinces.length === 0 ? <option value="001">001 · Thành phố Hà Nội</option> : null}
+                      </select>
+                    </label>
                     <GameButton
                       variant="primary"
                       size="sm"
                       disabled={!family?.canApplyAdoption || !selectedAdoptChildId || actionBusy === 'adopt-apply'}
-                      onClick={() => void handleAction('adopt-apply', () => apiRequest('/api/v1/family/adoption/apply', { method: 'POST', body: JSON.stringify({ childId: selectedAdoptChildId }) }), () => setSelectedAdoptChildId(''))}
+                      onClick={() => void handleAction('adopt-apply', () => apiRequest('/api/v1/family/adoption/apply', { method: 'POST', body: JSON.stringify({ childId: selectedAdoptChildId, birthplaceCode: adoptBirthplaceCode }) }), () => setSelectedAdoptChildId(''))}
                     >
                       Đăng ký nhận con nuôi
                     </GameButton>

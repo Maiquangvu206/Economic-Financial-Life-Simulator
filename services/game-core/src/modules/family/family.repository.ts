@@ -58,6 +58,7 @@ export interface BirthProposalRow {
   status: string;
   created_at: Date;
   responded_at: Date | null;
+  planned_birthplace: string | null;
 }
 
 export interface AdoptionApplicationRow {
@@ -172,7 +173,7 @@ export class FamilyRepository {
     const r = await db.query<BirthProposalRow>(
       `SELECT bp.id, bp.proposer_character_id, pr.full_name AS proposer_name,
               bp.partner_character_id, pa.full_name AS partner_name,
-              bp.status, bp.created_at, bp.responded_at
+              bp.status, bp.created_at, bp.responded_at, bp.planned_birthplace
        FROM birth_proposals bp
        JOIN characters pr ON pr.id = bp.proposer_character_id
        JOIN characters pa ON pa.id = bp.partner_character_id
@@ -195,11 +196,11 @@ export class FamilyRepository {
     return r.rows[0] ?? null;
   }
 
-  async createBirthProposal(client: PoolClient, proposerId: string, partnerId: string): Promise<string> {
+  async createBirthProposal(client: PoolClient, proposerId: string, partnerId: string, plannedBirthplace: string | null = null): Promise<string> {
     const r = await client.query<{ id: string }>(
-      `INSERT INTO birth_proposals (id, proposer_character_id, partner_character_id, status)
-       VALUES (gen_random_uuid(), $1, $2, 'pending') RETURNING id`,
-      [proposerId, partnerId],
+      `INSERT INTO birth_proposals (id, proposer_character_id, partner_character_id, status, planned_birthplace)
+       VALUES (gen_random_uuid(), $1, $2, 'pending', $3) RETURNING id`,
+      [proposerId, partnerId, plannedBirthplace],
     );
     return r.rows[0]!.id;
   }
@@ -208,7 +209,7 @@ export class FamilyRepository {
     const r = await db.query<BirthProposalRow>(
       `SELECT bp.id, bp.proposer_character_id, pr.full_name AS proposer_name,
               bp.partner_character_id, pa.full_name AS partner_name,
-              bp.status, bp.created_at, bp.responded_at
+              bp.status, bp.created_at, bp.responded_at, bp.planned_birthplace
        FROM birth_proposals bp
        JOIN characters pr ON pr.id = bp.proposer_character_id
        JOIN characters pa ON pa.id = bp.partner_character_id
@@ -255,14 +256,15 @@ export class FamilyRepository {
     startDay: number;
     dueYear: number;
     dueDay: number;
+    plannedBirthplace?: string | null;
   }): Promise<string> {
     const r = await client.query<{ id: string }>(
       `INSERT INTO pregnancies
         (id, pregnant_character_id, other_parent_character_id, proposer_character_id, partner_character_id,
-         status, start_game_year, start_game_day, due_game_year, due_game_day)
-       VALUES (gen_random_uuid(), $1,$2,$3,$4,'active',$5,$6,$7,$8)
+         status, start_game_year, start_game_day, due_game_year, due_game_day, planned_birthplace)
+       VALUES (gen_random_uuid(), $1,$2,$3,$4,'active',$5,$6,$7,$8,$9)
        RETURNING id`,
-      [input.pregnantId, input.otherParentId, input.proposerId, input.partnerId, input.startYear, input.startDay, input.dueYear, input.dueDay],
+      [input.pregnantId, input.otherParentId, input.proposerId, input.partnerId, input.startYear, input.startDay, input.dueYear, input.dueDay, input.plannedBirthplace ?? null],
     );
     return r.rows[0]!.id;
   }
@@ -420,14 +422,15 @@ export class FamilyRepository {
     completeYear: number;
     completeDay: number;
     spouseApproved: boolean | null;
+    preferredBirthplace?: string | null;
   }): Promise<string> {
     const r = await client.query<{ id: string }>(
       `INSERT INTO adoption_applications
         (id, applicant_character_id, spouse_character_id, child_character_id, status,
-         applied_game_year, applied_game_day, review_complete_game_year, review_complete_game_day, spouse_approved)
-       VALUES (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,$8,$9)
+         applied_game_year, applied_game_day, review_complete_game_year, review_complete_game_day, spouse_approved, preferred_birthplace)
+       VALUES (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        RETURNING id`,
-      [input.applicantId, input.spouseId, input.childId, input.status, input.appliedYear, input.appliedDay, input.completeYear, input.completeDay, input.spouseApproved],
+      [input.applicantId, input.spouseId, input.childId, input.status, input.appliedYear, input.appliedDay, input.completeYear, input.completeDay, input.spouseApproved, input.preferredBirthplace ?? null],
     );
     return r.rows[0]!.id;
   }

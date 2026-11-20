@@ -4,16 +4,23 @@ import { apiRequest } from '../api/httpClient';
 import { GameButton } from '../ui/GameButton';
 
 type Successor = { id: string; cccd: string; full_name: string; age: number; relation: string; generation_level: number; health_energy: number };
+type Province = { code: string; name: string; region: string; isCity: boolean };
 
 export function DeathSuccessionModal({ open, onCompleted }: { open: boolean; onCompleted: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  const [newBirthplaceCode, setNewBirthplaceCode] = useState('001');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { data: successors = [], isLoading } = useQuery<Successor[]>({
     queryKey: ['succession', 'eligible'],
     queryFn: () => apiRequest('/api/v1/succession/eligible-successors'),
+    enabled: open,
+  });
+  const { data: provinces = [] } = useQuery<Province[]>({
+    queryKey: ['characters', 'provinces'],
+    queryFn: () => apiRequest('/api/v1/characters/provinces'),
     enabled: open,
   });
 
@@ -26,11 +33,14 @@ export function DeathSuccessionModal({ open, onCompleted }: { open: boolean; onC
       if (isNewLife && trimmedName.length < 2) {
         throw new Error('Vui lòng nhập họ tên cho nhân vật mới (tối thiểu 2 ký tự).');
       }
+      if (isNewLife && !newBirthplaceCode) {
+        throw new Error('Vui lòng chọn nơi sinh cho nhân vật mới.');
+      }
       await apiRequest('/api/v1/succession/execute', {
         method: 'POST',
         body: JSON.stringify({
           successorId: selected,
-          ...(isNewLife ? { newCharacterFullName: trimmedName } : {}),
+          ...(isNewLife ? { newCharacterFullName: trimmedName, newCharacterBirthplaceCode: newBirthplaceCode } : {}),
         }),
       });
       onCompleted();
@@ -90,21 +100,39 @@ export function DeathSuccessionModal({ open, onCompleted }: { open: boolean; onC
               <div className="text-xs text-slate-500 mt-0.5">Tạo nhân vật 18 tuổi mới với CCCD mới và tài sản khởi điểm cơ bản (không thừa kế trực tiếp hồ sơ nhân vật cũ).</div>
             </button>
             {selected === null && (
-              <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
-                <label className="block text-xs font-medium text-slate-700 mb-1" htmlFor="new-life-name">
-                  Họ và tên nhân vật mới <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  id="new-life-name"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                  placeholder="Nhập họ tên (cố định sau khi tạo)"
-                  minLength={2}
-                  maxLength={80}
-                  autoComplete="name"
-                />
-                <div className="mt-1 text-[11px] text-slate-600">Tên này được đặt khi nhân vật được sinh ra/tạo mới và <b>không thể thay đổi</b> về sau.</div>
+              <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3 space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1" htmlFor="new-life-name">
+                    Họ và tên nhân vật mới <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    id="new-life-name"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                    placeholder="Nhập họ tên (cố định sau khi tạo)"
+                    minLength={2}
+                    maxLength={80}
+                    autoComplete="name"
+                  />
+                  <div className="mt-1 text-[11px] text-slate-600">Tên này được đặt khi nhân vật được sinh ra/tạo mới và <b>không thể thay đổi</b> về sau.</div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1" htmlFor="new-life-birthplace">
+                    Nơi sinh <span className="text-rose-600">*</span>
+                  </label>
+                  <select
+                    id="new-life-birthplace"
+                    value={newBirthplaceCode}
+                    onChange={(e) => setNewBirthplaceCode(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  >
+                    {provinces.map((p) => (
+                      <option key={p.code} value={p.code}>{p.code} · {p.name}</option>
+                    ))}
+                    {provinces.length === 0 ? <option value="001">001 · Thành phố Hà Nội</option> : null}
+                  </select>
+                </div>
               </div>
             )}
           </div>
@@ -115,7 +143,7 @@ export function DeathSuccessionModal({ open, onCompleted }: { open: boolean; onC
           <GameButton
             variant="primary"
             onClick={() => void confirm()}
-            disabled={busy || (selected === null && newName.trim().length < 2)}
+            disabled={busy || (selected === null && (newName.trim().length < 2 || !newBirthplaceCode))}
           >
             {busy ? 'Đang thực hiện...' : 'Xác nhận kế thừa & bắt đầu cuộc đời mới'}
           </GameButton>

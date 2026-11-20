@@ -106,7 +106,8 @@ export const FamilyOverviewDtoSchema = z.object({
 export type FamilyOverviewDto = z.infer<typeof FamilyOverviewDtoSchema>;
 
 export const BirthProposeRequestSchema = z.object({
-  // optional note/metadata reserved
+  /** Mã tỉnh nơi sinh dự kiến cho con (34 tỉnh/thành). */
+  birthplaceCode: z.string().length(3).optional(),
 }).default({});
 export type BirthProposeRequest = z.infer<typeof BirthProposeRequestSchema>;
 
@@ -118,6 +119,8 @@ export type BirthRespondRequest = z.infer<typeof BirthRespondRequestSchema>;
 
 export const AdoptionApplyRequestSchema = z.object({
   childId: IdSchema,
+  /** Mã tỉnh nơi sinh/đăng ký nơi sinh cho con nuôi (34 tỉnh/thành). */
+  birthplaceCode: z.string().length(3).optional(),
 });
 export type AdoptionApplyRequest = z.infer<typeof AdoptionApplyRequestSchema>;
 

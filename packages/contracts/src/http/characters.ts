@@ -57,6 +57,8 @@ export const SuccessionRequestSchema = z
     successorId: IdSchema.nullable().optional(),
     /** Họ tên nhân vật mới khi bắt đầu cuộc đời mới (không chọn hậu duệ). Tên nhân vật được cố định sau khi tạo/sinh. */
     newCharacterFullName: z.string().trim().min(2).max(80).optional(),
+    /** Mã tỉnh nơi sinh (34 tỉnh/thành) khi bắt đầu cuộc đời mới. */
+    newCharacterBirthplaceCode: z.string().length(3).optional(),
   })
   .superRefine((v, ctx) => {
     if ((v.successorId == null || v.successorId === '') && !v.newCharacterFullName) {

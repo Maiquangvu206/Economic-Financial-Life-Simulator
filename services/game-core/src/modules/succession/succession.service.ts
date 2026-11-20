@@ -31,6 +31,24 @@ export class SuccessionService {
       }
       if (!reason) return { died: false };
       await client.query(`UPDATE characters SET is_alive = false, health_energy = 0, updated_at = now() WHERE id = $1`, [characterId]);
+      // Gỡ rao bán/cho thuê và hủy đề nghị mua bán đang chờ của nhân vật đã chết (tránh BĐS "đang đăng bán" treo).
+      await client.query(
+        `UPDATE properties
+         SET status = CASE WHEN status = 'listed' THEN 'owned' ELSE status END,
+             asking_price_minor = NULL,
+             sale_notes = NULL,
+             rent_listing_active = false,
+             updated_at = now()
+         WHERE owner_character_id = $1
+           AND (status = 'listed' OR asking_price_minor IS NOT NULL OR sale_notes IS NOT NULL OR rent_listing_active = true)`,
+        [characterId],
+      );
+      await client.query(
+        `UPDATE property_sale_offers
+         SET status = 'cancelled', resolved_at = now(), updated_at = now()
+         WHERE status = 'pending' AND (seller_character_id = $1 OR buyer_character_id = $1)`,
+        [characterId],
+      );
       // khóa thao tác: is_alive=false sẽ được enforce bởi guard (cần bổ sung ở các luồng)
       if (c.user_id) {
         await notify(client, { userId: c.user_id, kind: 'system', title: 'Nhân vật đã qua đời', body: `Nhân vật của bạn đã qua đời (${reason}). Vui lòng chọn người kế thừa để bắt đầu cuộc đời mới.`, payload: { characterId, reason } });
@@ -72,6 +90,7 @@ export class SuccessionService {
     userId: string,
     successorId?: string | null,
     newCharacterFullName?: string | null,
+    newCharacterBirthplaceCode?: string | null,
   ) {
     return withTransaction(async (client) => {
       const oldChar = await requireCharacterByUserId(client, userId);
@@ -136,7 +155,15 @@ export class SuccessionService {
         if (fullName.length < 2) {
           throw AppError.badRequest('Vui lòng nhập họ tên hợp lệ cho nhân vật mới (tối thiểu 2 ký tự).');
         }
-        const birthplace = '001';
+        const requestedBirthplace = (newCharacterBirthplaceCode ?? '').trim();
+        let birthplace = '001';
+        if (requestedBirthplace) {
+          const prov = await (client as any).query(`SELECT code FROM provinces WHERE code = $1`, [requestedBirthplace]);
+          if (!prov.rows[0]) {
+            throw AppError.badRequest('Nơi sinh (mã tỉnh/thành) không hợp lệ.');
+          }
+          birthplace = requestedBirthplace;
+        }
         const cccd = await this.uniqueCccd(client, birthplace, 18);
         const accountNumber = await this.uniqueAccountNumber(client);
         const gs = await (client as any).query(`SELECT current_year, current_day FROM game_state WHERE id = 1`);

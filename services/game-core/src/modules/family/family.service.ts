@@ -292,7 +292,15 @@ export class FamilyService {
     };
   }
 
-  async proposeBirth(userId: string): Promise<FamilyOverviewDto> {
+  private async resolveBirthplace(client: Db, birthplaceCode: string | null | undefined): Promise<string | null> {
+    const code = (birthplaceCode ?? '').trim();
+    if (!code) return null;
+    const r = await (client as any).query(`SELECT code FROM provinces WHERE code = $1`, [code]);
+    if (!r.rows[0]) throw AppError.badRequest('Nơi sinh (mã tỉnh/thành) không hợp lệ.');
+    return code;
+  }
+
+  async proposeBirth(userId: string, birthplaceCode?: string | null): Promise<FamilyOverviewDto> {
     return withTransaction(async (client) => {
       const me = await requireLivingCharacterByUserId(client, userId);
       const gs = await this.repository.getGameState(client);
@@ -328,7 +336,8 @@ export class FamilyService {
       const pending = await this.repository.getPendingBirthProposalBetween(me.id, spouse.id, client);
       if (pending) throw AppError.conflict('birth_proposal_pending', 'Đã có đề xuất sinh con đang chờ phản hồi.');
 
-      const proposalId = await this.repository.createBirthProposal(client, me.id, spouse.id);
+      const plannedBirthplace = await this.resolveBirthplace(client, birthplaceCode);
+      const proposalId = await this.repository.createBirthProposal(client, me.id, spouse.id, plannedBirthplace);
       if (spouse.user_id) {
         await notify(client, {
           userId: spouse.user_id,
@@ -391,6 +400,7 @@ export class FamilyService {
       const otherParentId = proposal.proposer_character_id;
       const start = { year: gs.current_year, day: gs.current_day };
       const due = addGameDays(start.year, start.day, PREGNANCY_DAYS);
+      const plannedBirthplace = await this.resolveBirthplace(client, (proposal as any).planned_birthplace ?? null);
       const pregnancyId = await this.repository.createPregnancy(client, {
         pregnantId,
         otherParentId,
@@ -400,6 +410,7 @@ export class FamilyService {
         startDay: start.day,
         dueYear: due.year,
         dueDay: due.day,
+        plannedBirthplace,
       });
       await this.repository.markParentsLastBirth(client, a.id, b.id, start.year, start.day);
       await this.repository.setBirthProposalStatus(client, proposalId, 'accepted');
@@ -419,7 +430,7 @@ export class FamilyService {
     });
   }
 
-  async applyAdoption(userId: string, childId: string): Promise<FamilyOverviewDto> {
+  async applyAdoption(userId: string, childId: string, birthplaceCode?: string | null): Promise<FamilyOverviewDto> {
     return withTransaction(async (client) => {
       const me = await requireLivingCharacterByUserId(client, userId);
       const gs = await this.repository.getGameState(client);
@@ -469,6 +480,7 @@ export class FamilyService {
       const complete = spouseId
         ? addGameDays(applied.year, applied.day, ADOPTION_REVIEW_DAYS) // placeholder
         : addGameDays(applied.year, applied.day, ADOPTION_REVIEW_DAYS);
+      const preferredBirthplace = await this.resolveBirthplace(client, birthplaceCode);
       const applicationId = await this.repository.createAdoptionApplication(client, {
         applicantId: me.id,
         spouseId,
@@ -479,6 +491,7 @@ export class FamilyService {
         completeYear: complete.year,
         completeDay: complete.day,
         spouseApproved,
+        preferredBirthplace,
       });
 
       if (spouseId) {

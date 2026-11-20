@@ -1289,6 +1289,25 @@ export async function processGameTick(): Promise<GameTickResult> {
         `UPDATE characters SET is_alive = false, health_energy = 0, updated_at = now() WHERE id = $1`,
         [ch.id],
       );
+      // Gỡ trạng thái rao bán/cho thuê và hủy đề nghị mua bán đang chờ của nhân vật đã chết
+      // để tránh BĐS hiển thị "đang đăng bán" khi chủ sở hữu đã qua đời (trước khi kế thừa/giải quyết di sản).
+      await client.query(
+        `UPDATE properties
+         SET status = CASE WHEN status = 'listed' THEN 'owned' ELSE status END,
+             asking_price_minor = NULL,
+             sale_notes = NULL,
+             rent_listing_active = false,
+             updated_at = now()
+         WHERE owner_character_id = $1
+           AND (status = 'listed' OR asking_price_minor IS NOT NULL OR sale_notes IS NOT NULL OR rent_listing_active = true)`,
+        [ch.id],
+      );
+      await client.query(
+        `UPDATE property_sale_offers
+         SET status = 'cancelled', resolved_at = now(), updated_at = now()
+         WHERE status = 'pending' AND (seller_character_id = $1 OR buyer_character_id = $1)`,
+        [ch.id],
+      );
       if (ch.user_id) {
         await enqueueDomainEvent(client, {
           type: 'character.died',
@@ -1756,11 +1775,13 @@ export async function processGameTick(): Promise<GameTickResult> {
         due_game_year: number; due_game_day: number; health_warning_days: number;
         pregnant_health: number; pregnant_user_id: string | null; pregnant_name: string; pregnant_birthplace: string | null;
         other_user_id: string | null; other_name: string; other_birthplace: string | null;
+        planned_birthplace: string | null;
       }>(
         `SELECT p.id, p.pregnant_character_id, p.other_parent_character_id,
                 p.due_game_year, p.due_game_day, COALESCE(p.health_warning_days,0)::int AS health_warning_days,
                 ch.health_energy::int AS pregnant_health, ch.user_id AS pregnant_user_id, ch.full_name AS pregnant_name, ch.birthplace AS pregnant_birthplace,
-                o.user_id AS other_user_id, o.full_name AS other_name, o.birthplace AS other_birthplace
+                o.user_id AS other_user_id, o.full_name AS other_name, o.birthplace AS other_birthplace,
+                p.planned_birthplace
          FROM pregnancies p
          JOIN characters ch ON ch.id = p.pregnant_character_id
          JOIN characters o ON o.id = p.other_parent_character_id
@@ -1797,7 +1818,7 @@ export async function processGameTick(): Promise<GameTickResult> {
         const dueAbs = toAbs(Number(p.due_game_year), Number(p.due_game_day));
         if (currentAbsDay >= dueAbs) {
           // Birth
-          const birthplace = p.pregnant_birthplace || p.other_birthplace || '001';
+          const birthplace = p.planned_birthplace || p.pregnant_birthplace || p.other_birthplace || '001';
           const cccd = await ensureUniqueCccdWorker(birthplace);
           const accountNumber = await ensureUniqueAccountWorker();
           const childNames = ['An','Bình','Chi','Dũng','Gia','Hà','Khang','Linh','Minh','Ngọc','Quân','Trang','Tuấn'];
@@ -1843,10 +1864,12 @@ export async function processGameTick(): Promise<GameTickResult> {
         id: string; applicant_character_id: string; spouse_character_id: string | null; child_character_id: string;
         review_complete_game_year: number; review_complete_game_day: number;
         applicant_user_id: string | null; spouse_user_id: string | null; child_name: string; applicant_name: string;
+        preferred_birthplace: string | null;
       }>(
         `SELECT a.id, a.applicant_character_id, a.spouse_character_id, a.child_character_id,
                 a.review_complete_game_year, a.review_complete_game_day,
-                ap.user_id AS applicant_user_id, sp.user_id AS spouse_user_id, ch.full_name AS child_name, ap.full_name AS applicant_name
+                ap.user_id AS applicant_user_id, sp.user_id AS spouse_user_id, ch.full_name AS child_name, ap.full_name AS applicant_name,
+                a.preferred_birthplace
          FROM adoption_applications a
          JOIN characters ap ON ap.id = a.applicant_character_id
          LEFT JOIN characters sp ON sp.id = a.spouse_character_id
@@ -1860,14 +1883,22 @@ export async function processGameTick(): Promise<GameTickResult> {
         if (currentAbsDay < dueAbs) continue;
         const parent1 = a.applicant_character_id;
         const parent2 = a.spouse_character_id;
+        let newCccd: string | null = null;
+        const preferredBirthplace = (a.preferred_birthplace ?? '').trim() || null;
+        if (preferredBirthplace) {
+          newCccd = await ensureUniqueCccdWorker(preferredBirthplace);
+        }
         await client.query(
           `UPDATE characters
            SET parent_1_id = $2, parent_2_id = $3, is_adopted = true,
                is_dependent = true, dependent_status = CASE WHEN age >= 18 THEN 'adult' ELSE 'child' END,
                wellbeing = COALESCE(wellbeing, 70), care_tier = COALESCE(care_tier,'standard'),
-               custodial_parent_id = NULL, updated_at = now()
+               custodial_parent_id = NULL,
+               birthplace = COALESCE($4, birthplace),
+               cccd = COALESCE($5, cccd),
+               updated_at = now()
            WHERE id = $1`,
-          [a.child_character_id, parent1, parent2],
+          [a.child_character_id, parent1, parent2, preferredBirthplace, newCccd],
         );
         await client.query(`DELETE FROM family_trees WHERE character_id = $1`, [a.child_character_id]).catch(()=>{});
         await client.query(`INSERT INTO family_trees (id, character_id, parent_id, generation_level, inheritance_pct, created_at) VALUES (gen_random_uuid(), $1, $2, 1, 0, now())`, [a.child_character_id, parent1]).catch(()=>{});
