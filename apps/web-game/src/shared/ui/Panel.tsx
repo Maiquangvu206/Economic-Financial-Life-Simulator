@@ -5,7 +5,7 @@ interface PanelProps {
   children: ReactNode;
   title?: string;
   subtitle?: string;
-  borderColor?: 'default' | 'emerald' | 'amber' | 'rose';
+  borderColor?: 'default' | 'emerald' | 'amber' | 'rose' | 'sky' | 'violet';
 }
 
 const BORDER: Record<string, string> = {
@@ -13,6 +13,8 @@ const BORDER: Record<string, string> = {
   emerald: 'border-emerald-200',
   amber: 'border-amber-200',
   rose: 'border-rose-200',
+  sky: 'border-sky-200',
+  violet: 'border-violet-200',
 };
 
 export function Panel({ children, title, subtitle, borderColor = 'default' }: PanelProps) {

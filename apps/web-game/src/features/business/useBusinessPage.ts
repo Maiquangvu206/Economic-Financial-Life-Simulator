@@ -11,7 +11,7 @@ import type {
 import { apiRequest, createIdempotencyKey } from '../../shared/api/httpClient';
 import { useToast } from '../../shared/ui/Toast';
 import { useDialog } from '../../shared/ui/DialogContext';
-import { money } from './businessPage.shared';
+import { ENTRY_TYPES, money } from './businessPage.shared';
 
 export function useBusinessPage() {
   const queryClient = useQueryClient();

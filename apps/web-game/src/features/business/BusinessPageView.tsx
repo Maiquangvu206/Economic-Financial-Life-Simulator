@@ -1093,7 +1093,7 @@ export function BusinessPageView(props: any) {
                             <div className="text-slate-500">Hết hạn: {new Date(o.endsAt).toLocaleString('vi-VN')}</div>
                             {open && (
                               <div className="flex flex-wrap items-end gap-2">
-                                <div className="w-32"><GameInput label="Số CP mua" type="number" min={1} value={qtyStr} onChange={(e) => setBuyOfferShares(prev => ({ ...prev, [o.id]: e.target.value }))} /></div>
+                                <div className="w-32"><GameInput label="Số CP mua" type="number" min={1} value={qtyStr} onChange={(e) => setBuyOfferShares((prev: Record<string, string>) => ({ ...prev, [o.id]: e.target.value }))} /></div>
                                 <GameButton variant="outline" onClick={() => buyShareOffering.mutate({ offeringId: o.id, shares: Number(qtyStr) || 1 })} disabled={buyShareOffering.isPending}>{buyShareOffering.isPending ? '...' : 'Mua'}</GameButton>
                               </div>
                             )}
@@ -1125,7 +1125,7 @@ export function BusinessPageView(props: any) {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {topShareholders.map((s) => (
+                          {topShareholders.map((s: any) => (
                             <tr key={s.characterId}>
                               <td className="py-1 pr-2">
                                 {s.characterName}
