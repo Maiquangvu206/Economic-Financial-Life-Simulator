@@ -392,8 +392,12 @@ export async function processGameTick(): Promise<GameTickResult> {
       birth_game_day: number | null;
       is_alive: boolean | null;
       last_active_at: Date | null;
+      stamina_month_key: string | null;
+      stamina_month_fully_active: boolean | null;
+      stamina_month_days_count: number | null;
     }>(
-      `SELECT id, age, health_energy, death_age, birth_game_year, birth_game_day, is_alive, last_active_at
+      `SELECT id, age, health_energy, death_age, birth_game_year, birth_game_day, is_alive, last_active_at,
+              stamina_month_key, stamina_month_fully_active, stamina_month_days_count
        FROM characters WHERE COALESCE(is_alive,true)=true`,
     );
 
@@ -415,18 +419,55 @@ export async function processGameTick(): Promise<GameTickResult> {
       if (nextAge >= deathAge) {
         nextAge = deathAge;
       }
-      // Hao hụt thể lực theo tick/ngày và mùa (nhanh hơn ở mùa khắc nghiệt), chỉ áp dụng khi người chơi đang online/hoạt động gần đây.
-      // Không trừ sức khỏe khi offline để tránh nhân vật chết trong lúc vắng mặt.
+
+      // Hao hụt thể lực theo tỉ lệ /tháng game (tỉ lệ 100% = 20 điểm) và mùa.
+      // Chỉ trừ khi nhân vật hoạt động đầy đủ 1 tháng game (mọi ngày trong tháng đều hoạt động gần đây), trừ vào cuối tháng (khi bước sang tháng mới).
+      // Không trừ sức khỏe khi offline/bỏ lỡ hoạt động trong tháng.
       const lastActiveAt = c.last_active_at ? new Date(c.last_active_at as any).getTime() : 0;
       const isRecentlyActive = lastActiveAt > 0 && Date.now() - lastActiveAt <= 5 * 60 * 1000;
-      const currentHealth = Math.max(0, Math.min(100, Math.round(Number(c.health_energy) || 0)));
-      const nextHealth = isRecentlyActive
-        ? Math.max(0, Math.min(100, currentHealth - Math.max(1, Math.ceil(1 * Number(seasonEffects.energy ?? 1)))))
-        : currentHealth;
+      const tickMonthKey = `${nextYear}-${String(nextTime.month).padStart(2, '0')}`;
+      const prevMonthKey = c.stamina_month_key;
+
+      let newHealth = Math.max(0, Math.min(100, Math.round(Number(c.health_energy) || 0)));
+      let trackKey = tickMonthKey;
+      let trackFullyActive = isRecentlyActive;
+      let trackDays = 1;
+
+      if (prevMonthKey !== tickMonthKey) {
+        // Bước sang tháng mới: quyết toán tháng trước (nếu đã hoạt động đầy đủ 30 ngày) rồi bắt đầu theo dõi tháng hiện tại.
+        if (prevMonthKey && c.stamina_month_fully_active && Number(c.stamina_month_days_count ?? 0) === 30) {
+          const [pyStr, pmStr] = String(prevMonthKey).split('-');
+          const prevYearNum = Number(pyStr);
+          const prevMonthNum = Number(pmStr);
+          if (Number.isFinite(prevYearNum) && Number.isFinite(prevMonthNum) && prevMonthNum >= 1 && prevMonthNum <= 12) {
+            const prevDayOfYear = (prevMonthNum - 1) * 30;
+            const prevTime = deriveCanonicalGameTime({ dayOfYear: prevDayOfYear, year: prevYearNum, seasonRanges });
+            const prevEffects = resolveSeasonEffects(prevTime.season, (macro as any)?.seasonEffects);
+            const prevEnergyFactor = Number(prevEffects.energy ?? 1);
+            const monthlyDrain = prevEnergyFactor <= 0 ? 0 : Math.max(1, Math.round(20 * prevEnergyFactor));
+            newHealth = Math.max(0, Math.min(100, newHealth - monthlyDrain));
+          }
+        }
+        trackKey = tickMonthKey;
+        trackFullyActive = isRecentlyActive;
+        trackDays = 1;
+      } else {
+        const prevDays = Number(c.stamina_month_days_count ?? 0);
+        trackKey = tickMonthKey;
+        trackDays = prevDays + 1;
+        trackFullyActive = (prevDays === 0 ? isRecentlyActive : Boolean(c.stamina_month_fully_active)) && isRecentlyActive;
+      }
 
       await client.query(
-        `UPDATE characters SET age = $1, health_energy = $2, updated_at = now() WHERE id = $3`,
-        [nextAge, nextHealth, c.id],
+        `UPDATE characters
+            SET age = $1,
+                health_energy = $2,
+                stamina_month_key = $3,
+                stamina_month_fully_active = $4,
+                stamina_month_days_count = $5,
+                updated_at = now()
+          WHERE id = $6`,
+        [nextAge, newHealth, trackKey, trackFullyActive, trackDays, c.id],
       );
     }
     applied.push(`characters: ${characters.rows.length} updated`);

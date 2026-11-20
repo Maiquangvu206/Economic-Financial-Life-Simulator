@@ -1804,6 +1804,481 @@ export class CorporationService {
       };
     });
   }
+
+  // === Company Groups (Tập đoàn) ===
+  private async buildGroupDto(db: any, group: any, viewerCharacterId: string): Promise<any> {
+    const members = await this.repository.listCompanyGroupMembers(db, group.id);
+    const memberDtos = await Promise.all(
+      members.map(async (m: any) => {
+        const ctrl = await this.repository.getCompanyControlForCharacter(db, m.companyId, viewerCharacterId).catch(() => ({ myShares: 0, totalShares: 0, controlPct: 0 }));
+        const totalCtrl = await this.repository.getCompanyControlForCharacter(db, m.companyId, group.ownerCharacterId).catch(() => ({ myShares: 0, totalShares: 0, controlPct: Number(m.controlPct ?? 0) }));
+        return {
+          companyId: m.companyId,
+          companyName: m.companyName,
+          role: m.role,
+          controlPct: Math.round((Number(totalCtrl.controlPct ?? m.controlPct ?? 0)) * 1000) / 1000,
+          isHolding: m.role === 'holding' || m.companyId === group.holdingCompanyId,
+          status: m.status,
+          cash: money(Number(m.cashMinor ?? 0)),
+          valuation: money(Number(m.valuationMinor ?? 0)),
+          totalShares: totalCtrl.totalShares,
+          myShares: ctrl.myShares,
+        };
+      }),
+    );
+    const totalCash = memberDtos.reduce((s, m) => s + (m.cash?.amount ?? 0), 0);
+    const totalValuation = memberDtos.reduce((s, m) => s + (m.valuation?.amount ?? 0), 0);
+    const isOwner = group.ownerCharacterId === viewerCharacterId;
+    const visibleMembers = isOwner
+      ? memberDtos
+      : memberDtos.filter((m) => (m.myShares ?? 0) > 0 || m.companyId === group.holdingCompanyId && isOwner);
+    // member-company owners can view their own company in this group
+    const visibleForViewer = isOwner ? memberDtos : memberDtos.filter((m) => (m.myShares ?? 0) > 0 || m.isHolding);
+    return {
+      id: group.id,
+      name: group.name,
+      holdingCompanyId: group.holdingCompanyId,
+      holdingCompanyName: group.holdingCompanyName,
+      ownerCharacterId: group.ownerCharacterId,
+      ownerName: group.ownerName ?? '',
+      status: group.status,
+      members: isOwner ? memberDtos : visibleForViewer,
+      summary: {
+        memberCount: memberDtos.length,
+        totalCash: money(isOwner ? totalCash : visibleForViewer.reduce((s, m) => s + (m.cash?.amount ?? 0), 0)),
+        totalValuation: money(isOwner ? totalValuation : visibleForViewer.reduce((s, m) => s + (m.valuation?.amount ?? 0), 0)),
+      },
+      createdAt: new Date(group.createdAt).toISOString(),
+      updatedAt: group.updatedAt ? new Date(group.updatedAt).toISOString() : undefined,
+      dissolvedAt: group.dissolvedAt ? new Date(group.dissolvedAt).toISOString() : null,
+      isOwner,
+    };
+  }
+
+  async getGroupOverview(userId: string): Promise<any> {
+    const db = this.repository.db;
+    const character = await requireCharacterByUserId(db, userId);
+    const groupsRaw = await this.repository.listCompanyGroupsForCharacter(db, character.id);
+    const groups = await Promise.all(groupsRaw.map((g: any) => this.buildGroupDto(db, g, character.id)));
+
+    const eligibleHoldingCompanies = await this.repository.listEligibleHoldingCompanies(db, character.id);
+    // eligible members: companies controlled >50% by character, active/ipo, not in any active group and not same as selected later (client filters), exclude bankrupt/merged
+    const myCompanies = await this.repository.listCompanies();
+    const eligibleMemberCompanies: any[] = [];
+    for (const c of myCompanies as any[]) {
+      if (!['active', 'ipo'].includes(c.status)) continue;
+      const ctrl = await this.repository.getCompanyControlForCharacter(db, c.id, character.id);
+      if (ctrl.controlPct <= 50) continue;
+      const inGroup = await this.repository.findActiveGroupForCompany(db, c.id);
+      if (inGroup) continue;
+      eligibleMemberCompanies.push({ id: c.id, name: c.name, controlPct: Math.round(ctrl.controlPct * 100) / 100, groupId: null });
+    }
+
+    return {
+      groups,
+      eligibleHoldingCompanies: eligibleHoldingCompanies.map((c: any) => ({ id: c.id, name: c.name })),
+      eligibleMemberCompanies,
+    };
+  }
+
+  async getGroupDetail(userId: string, groupId: string): Promise<any> {
+    const db = this.repository.db;
+    const character = await requireCharacterByUserId(db, userId);
+    const group = await this.repository.getCompanyGroupById(db, groupId);
+    if (!group) throw AppError.notFound('Group');
+    // access: owner or owner of any member company
+    if (group.ownerCharacterId !== character.id) {
+      const members = await this.repository.listCompanyGroupMembers(db, groupId);
+      let allowed = false;
+      for (const m of members) {
+        const ctrl = await this.repository.getCompanyControlForCharacter(db, m.companyId, character.id);
+        if (ctrl.myShares > 0) { allowed = true; break; }
+      }
+      if (!allowed) throw AppError.forbidden('Bạn không có quyền xem tập đoàn này.');
+    }
+    return this.buildGroupDto(db, group, character.id);
+  }
+
+  async createCompanyGroup(userId: string, name: string, holdingCompanyId: string): Promise<any> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const holding = await this.repository.getCompany(holdingCompanyId, client);
+      if (!holding) throw AppError.notFound('Company');
+      if (!['active', 'ipo'].includes(holding.status)) throw AppError.badRequest('Công ty mẹ phải đang hoạt động.');
+      if (holding.ownerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ sở hữu công ty mẹ mới được tạo tập đoàn.');
+      }
+      const ctrl = await this.repository.getCompanyControlForCharacter(client, holdingCompanyId, character.id);
+      if (ctrl.controlPct <= 50) throw AppError.badRequest('Cần kiểm soát trên 50% công ty mẹ.');
+      const existing = await this.repository.findActiveGroupForCompany(client, holdingCompanyId);
+      if (existing) throw AppError.conflict('company_in_group', 'Công ty mẹ đã thuộc một tập đoàn khác.');
+      const cleanName = (name || '').trim();
+      if (!cleanName) throw AppError.badRequest('Tên tập đoàn không hợp lệ.');
+      const id = await this.repository.createCompanyGroup(client, {
+        name: cleanName,
+        holdingCompanyId,
+        ownerCharacterId: character.id,
+      });
+      const group = await this.repository.getCompanyGroupById(client, id);
+      return this.buildGroupDto(client, group, character.id);
+    });
+  }
+
+  async renameCompanyGroup(userId: string, groupId: string, name: string): Promise<any> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const group = await this.repository.getCompanyGroupById(client, groupId);
+      if (!group || group.status !== 'active') throw AppError.notFound('Group');
+      if (group.ownerCharacterId !== character.id) throw AppError.forbidden('Chỉ chủ tập đoàn mới được đổi tên.');
+      const cleanName = (name || '').trim();
+      if (!cleanName) throw AppError.badRequest('Tên tập đoàn không hợp lệ.');
+      await this.repository.renameCompanyGroup(client, groupId, cleanName);
+      const updated = await this.repository.getCompanyGroupById(client, groupId);
+      return this.buildGroupDto(client, updated, character.id);
+    });
+  }
+
+  async dissolveCompanyGroup(userId: string, groupId: string): Promise<void> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const group = await this.repository.getCompanyGroupById(client, groupId);
+      if (!group || group.status !== 'active') throw AppError.notFound('Group');
+      if (group.ownerCharacterId !== character.id) throw AppError.forbidden('Chỉ chủ tập đoàn mới được giải tán.');
+      await this.repository.dissolveCompanyGroup(client, groupId);
+    });
+  }
+
+  async addCompanyGroupMember(userId: string, groupId: string, companyId: string): Promise<any> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const group = await this.repository.getCompanyGroupById(client, groupId);
+      if (!group || group.status !== 'active') throw AppError.notFound('Group');
+      if (group.ownerCharacterId !== character.id) throw AppError.forbidden('Chỉ chủ tập đoàn mới được thêm thành viên.');
+      const company = await this.repository.getCompany(companyId, client);
+      if (!company) throw AppError.notFound('Company');
+      if (!['active', 'ipo'].includes(company.status)) throw AppError.badRequest('Công ty phải đang hoạt động.');
+      if (companyId === group.holdingCompanyId) throw AppError.badRequest('Công ty mẹ đã thuộc tập đoàn.');
+      const ctrl = await this.repository.getCompanyControlForCharacter(client, companyId, character.id);
+      if (ctrl.controlPct <= 50) throw AppError.badRequest('Cần kiểm soát trên 50% công ty để đưa vào tập đoàn.');
+      const existing = await this.repository.findActiveGroupForCompany(client, companyId);
+      if (existing) throw AppError.conflict('company_in_group', 'Công ty đã thuộc một tập đoàn.');
+      await this.repository.addCompanyGroupMember(client, { groupId, companyId, controlPct: Math.round(ctrl.controlPct * 1000) / 1000 });
+      const updated = await this.repository.getCompanyGroupById(client, groupId);
+      return this.buildGroupDto(client, updated, character.id);
+    });
+  }
+
+  async removeCompanyGroupMember(userId: string, groupId: string, companyId: string): Promise<any> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const group = await this.repository.getCompanyGroupById(client, groupId);
+      if (!group || group.status !== 'active') throw AppError.notFound('Group');
+      if (group.ownerCharacterId !== character.id) throw AppError.forbidden('Chỉ chủ tập đoàn mới được gỡ thành viên.');
+      if (companyId === group.holdingCompanyId) throw AppError.badRequest('Không thể gỡ công ty mẹ khỏi tập đoàn.');
+      const removed = await this.repository.removeCompanyGroupMember(client, groupId, companyId);
+      if (!removed) throw AppError.notFound('Thành viên');
+      const updated = await this.repository.getCompanyGroupById(client, groupId);
+      return this.buildGroupDto(client, updated, character.id);
+    });
+  }
+
+  // === Buyouts ===
+  private async mapBuyoutOffer(db: any, o: any, viewerCharacterId: string): Promise<any> {
+    const total = await this.repository.getCompanyControlForCharacter(db, o.companyId, '00000000-0000-0000-0000-000000000000').catch(() => ({ myShares: 0, totalShares: 0, controlPct: 0 }));
+    const mine = await this.repository.getCompanyControlForCharacter(db, o.companyId, viewerCharacterId).catch(() => ({ myShares: 0, totalShares: 0, controlPct: 0 }));
+    const acq = await this.repository.getCompanyControlForCharacter(db, o.companyId, o.acquirerCharacterId).catch(() => ({ myShares: 0, totalShares: 0, controlPct: 0 }));
+    const status = (o.status === 'open' && new Date(o.endsAt).getTime() <= Date.now()) ? 'expired' : o.status;
+    return {
+      id: o.id,
+      companyId: o.companyId,
+      companyName: o.companyName,
+      acquirerCharacterId: o.acquirerCharacterId,
+      acquirerName: o.acquirerName ?? '',
+      pricePerShare: money(Number(o.pricePerShareMinor ?? 0)),
+      targetShares: Number(o.targetShares ?? 0),
+      acquiredShares: Number(o.acquiredShares ?? 0),
+      status,
+      allowSqueezeOut: Boolean(o.allowSqueezeOut),
+      startsAt: new Date(o.startsAt).toISOString(),
+      endsAt: new Date(o.endsAt).toISOString(),
+      createdAt: new Date(o.createdAt).toISOString(),
+      closedAt: o.closedAt ? new Date(o.closedAt).toISOString() : null,
+      isAcquirer: o.acquirerCharacterId === viewerCharacterId,
+      myShares: mine.myShares,
+      totalCompanyShares: total.totalShares,
+      acquirerOwnedShares: acq.myShares,
+      acquirerControlPct: Math.round(acq.controlPct * 100) / 100,
+      canMerge: acq.myShares > 0 && total.totalShares > 0 && acq.myShares >= total.totalShares,
+    };
+  }
+
+  async listBuyoutOffers(userId: string, companyId?: string): Promise<any> {
+    const db = this.repository.db;
+    const character = await requireCharacterByUserId(db, userId);
+    const rows = await this.repository.listBuyoutOffers(db, { companyId });
+    const offers = await Promise.all(rows.map((o: any) => this.mapBuyoutOffer(db, o, character.id)));
+    return { offers };
+  }
+
+  async createBuyoutOffer(userId: string, input: { companyId: string; pricePerShareMinor: number; durationHours: number; allowSqueezeOut?: boolean }): Promise<any> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const company = await this.repository.getCompanyAnyStatus(input.companyId, client);
+      if (!company) throw AppError.notFound('Company');
+      if (!['active', 'ipo'].includes(company.status)) throw AppError.badRequest('Chỉ có thể tạo đề nghị mua lại công ty đang hoạt động/IPO.');
+      const price = Math.max(1, Math.trunc(Number(input.pricePerShareMinor)));
+      const hours = Math.max(1, Math.trunc(Number(input.durationHours || 24)));
+      const total = await this.repository.getCompanyControlForCharacter(client, input.companyId, character.id);
+      if (total.totalShares <= 0) throw AppError.badRequest('Công ty chưa có cổ phần để mua lại.');
+      const endsAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+      const id = await this.repository.createBuyoutOffer(client, {
+        companyId: input.companyId,
+        acquirerCharacterId: character.id,
+        pricePerShareMinor: price,
+        targetShares: total.totalShares,
+        endsAt,
+        allowSqueezeOut: input.allowSqueezeOut !== false,
+      });
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Tạo đề nghị mua lại',
+        body: `Đã tạo đề nghị mua lại cổ phần công ty "${company.name}" với giá ${formatMinor(price)}/CP.`,
+        payload: { companyId: input.companyId, offerId: id, pricePerShareMinor: price },
+      });
+      const rows = await this.repository.listBuyoutOffers(client, { companyId: input.companyId });
+      const row = rows.find((r: any) => r.id === id) ?? rows[0];
+      return this.mapBuyoutOffer(client, row, character.id);
+    });
+  }
+
+  async tenderBuyoutOffer(userId: string, offerId: string, shares?: number): Promise<any> {
+    return withTransaction(async (client) => {
+      const seller = await requireLivingCharacterByUserId(client, userId);
+      const offer = await this.repository.getBuyoutOfferForUpdate(client, offerId);
+      if (!offer) throw AppError.notFound('Buyout offer');
+      const status = (offer.status === 'open' && new Date(offer.ends_at ?? offer.endsAt).getTime() <= Date.now()) ? 'expired' : offer.status;
+      if (status !== 'open') throw AppError.badRequest('Đề nghị mua lại không còn mở.');
+      if (String(offer.companyStatus) === 'merged' || String(offer.companyStatus) === 'bankrupt') throw AppError.badRequest('Công ty không còn khả dụng.');
+      const companyId = offer.company_id ?? offer.companyId;
+      const acquirerCharacterId = offer.acquirer_character_id ?? offer.acquirerCharacterId;
+      if (acquirerCharacterId === seller.id) throw AppError.badRequest('Người mua lại không thể tự bán cho chính mình.');
+      const myShares = await this.repository.getShareholderSharesForUpdate(client, companyId, seller.id);
+      if (myShares <= 0) throw AppError.badRequest('Bạn không có cổ phần trong công ty này.');
+      const qty = Math.max(1, Math.trunc(Number(shares ?? myShares)));
+      if (qty > myShares) throw AppError.conflict('insufficient_shares', 'Số cổ phần bán vượt quá số bạn đang sở hữu.');
+      const price = Number(offer.price_per_share_minor ?? offer.pricePerShareMinor);
+      const totalCost = qty * price;
+      // pay seller from acquirer cash
+      await ledger.transfer(client, {
+        from: { ownerType: 'character', ownerId: acquirerCharacterId, kind: 'cash' },
+        to: { ownerType: 'character', ownerId: seller.id, kind: 'cash' },
+        amountMinor: totalCost,
+        kind: 'company_buyout_tender',
+        description: `Bán ${qty} cổ phần theo đề nghị mua lại`,
+        referenceType: 'company_buyout_offer',
+        referenceId: offerId,
+      });
+      await this.repository.transferShares(client, companyId, seller.id, acquirerCharacterId, qty);
+      await this.repository.recordBuyoutPurchase(client, {
+        offerId,
+        companyId,
+        sellerCharacterId: seller.id,
+        buyerCharacterId: acquirerCharacterId,
+        shares: qty,
+        pricePerShareMinor: price,
+        totalCostMinor: totalCost,
+        isSqueezeOut: false,
+      });
+
+      const total = await this.repository.getCompanyControlForCharacter(client, companyId, acquirerCharacterId);
+      const all = await this.repository.getCompanyControlForCharacter(client, companyId, '00000000-0000-0000-0000-000000000000');
+      const complete = all.totalShares > 0 && total.myShares >= all.totalShares;
+      await this.repository.updateBuyoutOfferProgress(client, offerId, qty, complete);
+      if (complete) {
+        // set owner to acquirer
+        await this.repository.transferOwnership(client, companyId, acquirerCharacterId);
+      }
+
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Bán cổ phần (mua lại)',
+        body: `Bạn đã bán ${qty.toLocaleString('vi-VN')} cổ phần và nhận ${formatMinor(totalCost)}.`,
+        payload: { offerId, companyId, shares: qty, totalCost },
+      }).catch(() => {});
+
+      const rows = await this.repository.listBuyoutOffers(client, { companyId });
+      const row = rows.find((r: any) => r.id === offerId) ?? rows[0];
+      return this.mapBuyoutOffer(client, row, seller.id);
+    });
+  }
+
+  async cancelBuyoutOffer(userId: string, offerId: string): Promise<void> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const offer = await this.repository.getBuyoutOfferForUpdate(client, offerId);
+      if (!offer) throw AppError.notFound('Buyout offer');
+      const acquirerCharacterId = offer.acquirer_character_id ?? offer.acquirerCharacterId;
+      if (acquirerCharacterId !== character.id) throw AppError.forbidden('Chỉ người tạo đề nghị mới được hủy.');
+      if (!['open', 'expired'].includes(offer.status)) throw AppError.badRequest('Không thể hủy đề nghị ở trạng thái hiện tại.');
+      await this.repository.setBuyoutOfferStatus(client, offerId, 'cancelled');
+    });
+  }
+
+  async squeezeOutBuyout(userId: string, offerId: string): Promise<any> {
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const offer = await this.repository.getBuyoutOfferForUpdate(client, offerId);
+      if (!offer) throw AppError.notFound('Buyout offer');
+      const acquirerCharacterId = offer.acquirer_character_id ?? offer.acquirerCharacterId;
+      if (acquirerCharacterId !== character.id) throw AppError.forbidden('Chỉ người mua lại mới được thực hiện ép mua.');
+      if (!offer.allow_squeeze_out && !offer.allowSqueezeOut) throw AppError.badRequest('Đề nghị này không cho phép ép mua cổ đông thiểu số.');
+      const status = (offer.status === 'open' && new Date(offer.ends_at ?? offer.endsAt).getTime() <= Date.now()) ? 'expired' : offer.status;
+      if (!['open', 'expired', 'completed'].includes(status)) throw AppError.badRequest('Trạng thái đề nghị không hợp lệ.');
+      const companyId = offer.company_id ?? offer.companyId;
+      const price = Number(offer.price_per_share_minor ?? offer.pricePerShareMinor);
+      const totalInfo = await this.repository.getCompanyControlForCharacter(client, companyId, acquirerCharacterId);
+      const allInfo = await this.repository.getCompanyControlForCharacter(client, companyId, '00000000-0000-0000-0000-000000000000');
+      if (allInfo.totalShares <= 0) throw AppError.badRequest('Không có cổ phần.');
+      const pct = (totalInfo.myShares / allInfo.totalShares) * 100;
+      if (pct < 95) throw AppError.badRequest('Cần sở hữu tối thiểu 95% để ép mua cổ đông thiểu số.');
+      if (totalInfo.myShares >= allInfo.totalShares) {
+        await this.repository.setBuyoutOfferStatus(client, offerId, 'completed');
+      } else {
+        const others = await client.query<{ holder_character_id: string; shares: string }>(
+          `SELECT holder_character_id, shares::text AS shares FROM company_shareholders WHERE company_id = $1 AND holder_character_id <> $2 AND shares > 0 FOR UPDATE`,
+          [companyId, acquirerCharacterId],
+        );
+        let acquired = 0;
+        for (const o of others.rows) {
+          const s = Number(o.shares);
+          if (s <= 0) continue;
+          const cost = s * price;
+          await ledger.transfer(client, {
+            from: { ownerType: 'character', ownerId: acquirerCharacterId, kind: 'cash' },
+            to: { ownerType: 'character', ownerId: o.holder_character_id, kind: 'cash' },
+            amountMinor: cost,
+            kind: 'company_buyout_squeeze_out',
+            description: `Ép mua ${s} cổ phần`,
+            referenceType: 'company_buyout_offer',
+            referenceId: offerId,
+          });
+          await this.repository.transferShares(client, companyId, o.holder_character_id, acquirerCharacterId, s);
+          await this.repository.recordBuyoutPurchase(client, {
+            offerId,
+            companyId,
+            sellerCharacterId: o.holder_character_id,
+            buyerCharacterId: acquirerCharacterId,
+            shares: s,
+            pricePerShareMinor: price,
+            totalCostMinor: cost,
+            isSqueezeOut: true,
+          });
+          acquired += s;
+        }
+        await this.repository.updateBuyoutOfferProgress(client, offerId, acquired, true);
+        await this.repository.transferOwnership(client, companyId, acquirerCharacterId);
+      }
+      const rows = await this.repository.listBuyoutOffers(client, { companyId });
+      const row = rows.find((r: any) => r.id === offerId) ?? rows[0];
+      return this.mapBuyoutOffer(client, row, character.id);
+    });
+  }
+
+  // === Merger A -> B ===
+  async mergeCompanies(userId: string, survivorCompanyId: string, mergedCompanyId: string): Promise<any> {
+    if (survivorCompanyId === mergedCompanyId) throw AppError.badRequest('Công ty sáp nhập và công ty tiếp nhận phải khác nhau.');
+    return withTransaction(async (client) => {
+      const character = await requireLivingCharacterByUserId(client, userId);
+      const survivor = await this.repository.getCompany(survivorCompanyId, client);
+      const merged = await this.repository.getCompany(mergedCompanyId, client);
+      if (!survivor || !merged) throw AppError.notFound('Company');
+      if (!['active', 'ipo'].includes(survivor.status) || !['active', 'ipo'].includes(merged.status)) {
+        throw AppError.badRequest('Chỉ sáp nhập giữa các công ty đang hoạt động/IPO.');
+      }
+      if (survivor.ownerCharacterId !== character.id) {
+        throw AppError.forbidden('Chỉ chủ sở hữu công ty tiếp nhận mới được thực hiện sáp nhập.');
+      }
+      const mergedCtrl = await this.repository.getCompanyControlForCharacter(client, mergedCompanyId, character.id);
+      if (mergedCtrl.totalShares <= 0 || mergedCtrl.myShares < mergedCtrl.totalShares) {
+        throw AppError.badRequest('Cần sở hữu 100% công ty bị sáp nhập trước khi thực hiện sáp nhập.');
+      }
+      const survivorCtrl = await this.repository.getCompanyControlForCharacter(client, survivorCompanyId, character.id);
+      if (survivorCtrl.totalShares <= 0 || survivorCtrl.myShares <= survivorCtrl.totalShares * 0.5) {
+        throw AppError.badRequest('Bạn cần kiểm soát công ty tiếp nhận.');
+      }
+
+      // remove merged from group memberships if any
+      const activeMembership = await client.query<{ group_id: string }>(
+        `SELECT group_id FROM company_group_members WHERE company_id = $1 AND status = 'active'`,
+        [mergedCompanyId],
+      );
+      for (const m of activeMembership.rows) {
+        await this.repository.removeCompanyGroupMember(client, m.group_id, mergedCompanyId);
+      }
+
+      const mergedCash = await this.repository.getCompanyCashForUpdate(client, mergedCompanyId);
+      let cashTransferred = 0;
+      if (mergedCash > 0) {
+        await ledger.transfer(client, {
+          from: { ownerType: 'company', ownerId: mergedCompanyId, kind: 'cash' },
+          to: { ownerType: 'company', ownerId: survivorCompanyId, kind: 'cash' },
+          amountMinor: mergedCash,
+          kind: 'company_merger_transfer',
+          description: `Chuyển quỹ từ công ty sáp nhập ${merged.name}`,
+          referenceType: 'company',
+          referenceId: mergedCompanyId,
+        });
+        cashTransferred = mergedCash;
+        await client.query(`UPDATE companies SET cash_minor = cash_minor + $2::bigint, valuation_minor = GREATEST(0, valuation_minor + $2::bigint), updated_at = now() WHERE id = $1`, [survivorCompanyId, mergedCash]);
+        await client.query(`UPDATE companies SET cash_minor = 0, updated_at = now() WHERE id = $1`, [mergedCompanyId]);
+      }
+
+      // transfer premises claims to survivor (best-effort) and clear merged premises need
+      await this.repository.transferPremisesClaimsToSurvivor(client, mergedCompanyId, survivorCompanyId).catch(() => {});
+      await this.repository.releasePremisesClaim(client, mergedCompanyId).catch(() => {});
+      // also clear merged company premises fields to avoid dangling
+      await client.query(
+        `UPDATE companies SET premises_needs_reselection = false, premises_invalid_reason = $2, premises_core_property_id = NULL, premises_province_land_property_id = NULL, premises_company_property_id = NULL, premises_type = NULL, premises_province_code = NULL, updated_at = now() WHERE id = $1`,
+        [mergedCompanyId, `Đã sáp nhập vào công ty ${survivor.name}`],
+      ).catch(() => {});
+
+      const employmentsTransferred = await this.repository.moveEmploymentsToSurvivor(client, mergedCompanyId, survivorCompanyId);
+      const staffTransferred = await this.repository.moveCompanyStaffToSurvivor(client, mergedCompanyId, survivorCompanyId);
+
+      await this.repository.cleanupMergedCompanyMarketData(client, mergedCompanyId);
+      await this.repository.markCompanyMerged(client, mergedCompanyId, survivorCompanyId);
+
+      const mergerId = await this.repository.createMerger(client, {
+        survivorCompanyId,
+        mergedCompanyId,
+        executedByCharacterId: character.id,
+        cashTransferredMinor: cashTransferred,
+        staffTransferred,
+        employmentsTransferred,
+        meta: { survivorName: survivor.name, mergedName: merged.name },
+      });
+
+      await notify(client, {
+        userId,
+        kind: 'company',
+        title: 'Sáp nhập công ty',
+        body: `Đã sáp nhập "${merged.name}" vào "${survivor.name}".`,
+        payload: { mergerId, survivorCompanyId, mergedCompanyId, cashTransferred, staffTransferred, employmentsTransferred },
+      }).catch(() => {});
+
+      return {
+        id: mergerId,
+        survivorCompanyId,
+        mergedCompanyId,
+        cashTransferred: money(cashTransferred),
+        staffTransferred,
+        employmentsTransferred,
+        executedAt: new Date().toISOString(),
+      };
+    });
+  }
 }
 
 function formatMinor(amount: number): string {

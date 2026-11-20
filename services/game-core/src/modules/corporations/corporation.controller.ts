@@ -1,7 +1,10 @@
 ﻿import type { Request, Response } from 'express';
 import type {
+  AddCompanyGroupMemberRequest,
   CompanyInvestRequest,
   CompanyOperationRequest,
+  CreateBuyoutOfferRequest,
+  CreateCompanyGroupRequest,
   CreateCompanyRequest,
   CreateCompanyTaxFilingRequest,
   CreateHiringPlanRequest,
@@ -9,8 +12,11 @@ import type {
   DecideHiringCandidateRequest,
   DividendRequest,
   IpoCompanyRequest,
+  MergeCompanyRequest,
   RelocateCompanyPremisesRequest,
+  RenameCompanyGroupRequest,
   TakeoverRequest,
+  TenderBuyoutOfferRequest,
   UpdateEmployeeSalaryRequest,
   UpdateStaffSalaryRequest,
 } from '@efls/contracts';
@@ -283,6 +289,104 @@ export class CorporationController {
     const body = req.body as any;
     const data = await this.service.buyShareOffering(userId, offeringId, Number(body.shares));
     res.status(200).json(data);
+  };
+
+  getGroupOverview = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const result = await this.service.getGroupOverview(userId);
+    res.status(200).json(result);
+  };
+
+  getGroupDetail = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { groupId } = req.params as { groupId: string };
+    const result = await this.service.getGroupDetail(userId, groupId);
+    res.status(200).json(result);
+  };
+
+  createCompanyGroup = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const body = req.body as CreateCompanyGroupRequest;
+    const result = await this.service.createCompanyGroup(userId, body.name, body.holdingCompanyId);
+    res.status(201).json(result);
+  };
+
+  renameCompanyGroup = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { groupId } = req.params as { groupId: string };
+    const body = req.body as RenameCompanyGroupRequest;
+    const result = await this.service.renameCompanyGroup(userId, groupId, body.name);
+    res.status(200).json(result);
+  };
+
+  dissolveCompanyGroup = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { groupId } = req.params as { groupId: string };
+    await this.service.dissolveCompanyGroup(userId, groupId);
+    res.status(204).send();
+  };
+
+  addCompanyGroupMember = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { groupId } = req.params as { groupId: string };
+    const body = req.body as AddCompanyGroupMemberRequest;
+    const result = await this.service.addCompanyGroupMember(userId, groupId, body.companyId);
+    res.status(200).json(result);
+  };
+
+  removeCompanyGroupMember = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { groupId, companyId } = req.params as { groupId: string; companyId: string };
+    const result = await this.service.removeCompanyGroupMember(userId, groupId, companyId);
+    res.status(200).json(result);
+  };
+
+  listBuyoutOffers = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const companyId = typeof req.query.companyId === 'string' ? req.query.companyId : undefined;
+    const result = await this.service.listBuyoutOffers(userId, companyId);
+    res.status(200).json(result);
+  };
+
+  createBuyoutOffer = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const body = req.body as CreateBuyoutOfferRequest;
+    const result = await this.service.createBuyoutOffer(userId, {
+      companyId: body.companyId,
+      pricePerShareMinor: body.pricePerShare.amount,
+      durationHours: body.durationHours ?? 24,
+      allowSqueezeOut: body.allowSqueezeOut !== false,
+    });
+    res.status(201).json(result);
+  };
+
+  tenderBuyoutOffer = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { offerId } = req.params as { offerId: string };
+    const body = req.body as TenderBuyoutOfferRequest;
+    const result = await this.service.tenderBuyoutOffer(userId, offerId, body.shares);
+    res.status(200).json(result);
+  };
+
+  cancelBuyoutOffer = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { offerId } = req.params as { offerId: string };
+    await this.service.cancelBuyoutOffer(userId, offerId);
+    res.status(204).send();
+  };
+
+  squeezeOutBuyout = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const { offerId } = req.params as { offerId: string };
+    const result = await this.service.squeezeOutBuyout(userId, offerId);
+    res.status(200).json(result);
+  };
+
+  mergeCompanies = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireActorId(req);
+    const body = req.body as MergeCompanyRequest;
+    const result = await this.service.mergeCompanies(userId, body.survivorCompanyId, body.mergedCompanyId);
+    res.status(200).json(result);
   };
 }
 

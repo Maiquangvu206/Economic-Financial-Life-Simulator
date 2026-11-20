@@ -28,7 +28,7 @@ export const CompanyDtoSchema = z.object({
   ownerName: z.string(),
   cash: MoneySchema,
   valuation: MoneySchema,
-  status: z.enum(['active', 'bankrupt', 'ipo']),
+  status: z.enum(['active', 'bankrupt', 'ipo', 'merged']),
   tickerSymbol: z.string().nullable(),
   foundedAt: z.string().datetime(),
   isOwner: z.boolean(),
@@ -55,6 +55,11 @@ export const CompanyDtoSchema = z.object({
       }),
     )
     .optional(),
+  mergedIntoCompanyId: IdSchema.nullable().optional(),
+  mergedAt: z.string().datetime().nullable().optional(),
+  groupId: IdSchema.nullable().optional(),
+  groupName: z.string().nullable().optional(),
+  myControlPct: z.number().min(0).max(100).optional(),
 });
 export type CompanyDto = z.infer<typeof CompanyDtoSchema>;
 
@@ -415,3 +420,125 @@ export const BuyShareOfferingResponseSchema = z.object({
   status: ShareOfferingStatusSchema,
 });
 export type BuyShareOfferingResponse = z.infer<typeof BuyShareOfferingResponseSchema>;
+
+// === Company Groups (Tập đoàn) ===
+export const CompanyGroupMemberDtoSchema = z.object({
+  companyId: IdSchema,
+  companyName: z.string(),
+  role: z.enum(['holding', 'subsidiary', 'affiliate']).default('subsidiary'),
+  controlPct: z.number().min(0).max(100).default(0),
+  isHolding: z.boolean().default(false),
+  status: z.enum(['active', 'bankrupt', 'ipo', 'merged']).optional(),
+  cash: MoneySchema.optional(),
+  valuation: MoneySchema.optional(),
+  totalShares: z.number().int().nonnegative().optional(),
+  myShares: z.number().int().nonnegative().optional(),
+});
+export type CompanyGroupMemberDto = z.infer<typeof CompanyGroupMemberDtoSchema>;
+
+export const CompanyGroupDtoSchema = z.object({
+  id: IdSchema,
+  name: z.string(),
+  holdingCompanyId: IdSchema,
+  holdingCompanyName: z.string(),
+  ownerCharacterId: IdSchema,
+  ownerName: z.string().optional().default(''),
+  status: z.enum(['active', 'dissolved']).default('active'),
+  members: z.array(CompanyGroupMemberDtoSchema).default([]),
+  summary: z
+    .object({
+      memberCount: z.number().int().nonnegative(),
+      totalCash: MoneySchema,
+      totalValuation: MoneySchema,
+    })
+    .optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime().optional(),
+  dissolvedAt: z.string().datetime().nullable().optional(),
+  isOwner: z.boolean().default(false),
+});
+export type CompanyGroupDto = z.infer<typeof CompanyGroupDtoSchema>;
+
+export const CompanyGroupOverviewDtoSchema = z.object({
+  groups: z.array(CompanyGroupDtoSchema),
+  eligibleHoldingCompanies: z.array(z.object({ id: IdSchema, name: z.string() })).default([]),
+  eligibleMemberCompanies: z.array(z.object({ id: IdSchema, name: z.string(), controlPct: z.number(), groupId: IdSchema.nullable().optional() })).default([]),
+});
+export type CompanyGroupOverviewDto = z.infer<typeof CompanyGroupOverviewDtoSchema>;
+
+export const CreateCompanyGroupRequestSchema = z.object({
+  name: z.string().min(1).max(120),
+  holdingCompanyId: IdSchema,
+});
+export type CreateCompanyGroupRequest = z.infer<typeof CreateCompanyGroupRequestSchema>;
+
+export const RenameCompanyGroupRequestSchema = z.object({
+  name: z.string().min(1).max(120),
+});
+export type RenameCompanyGroupRequest = z.infer<typeof RenameCompanyGroupRequestSchema>;
+
+export const AddCompanyGroupMemberRequestSchema = z.object({
+  companyId: IdSchema,
+});
+export type AddCompanyGroupMemberRequest = z.infer<typeof AddCompanyGroupMemberRequestSchema>;
+
+// === Buyout offers (Mua lại 100%) ===
+export const CompanyBuyoutOfferDtoSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  companyName: z.string(),
+  acquirerCharacterId: IdSchema,
+  acquirerName: z.string().optional().default(''),
+  pricePerShare: MoneySchema,
+  targetShares: z.number().int().nonnegative(),
+  acquiredShares: z.number().int().nonnegative(),
+  status: z.enum(['open', 'completed', 'cancelled', 'expired']),
+  allowSqueezeOut: z.boolean().default(true),
+  startsAt: z.string().datetime(),
+  endsAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+  closedAt: z.string().datetime().nullable().optional(),
+  isAcquirer: z.boolean().default(false),
+  myShares: z.number().int().nonnegative().default(0),
+  totalCompanyShares: z.number().int().nonnegative().default(0),
+  acquirerOwnedShares: z.number().int().nonnegative().default(0),
+  acquirerControlPct: z.number().min(0).max(100).default(0),
+  canMerge: z.boolean().optional().default(false),
+});
+export type CompanyBuyoutOfferDto = z.infer<typeof CompanyBuyoutOfferDtoSchema>;
+
+export const CompanyBuyoutOverviewDtoSchema = z.object({
+  offers: z.array(CompanyBuyoutOfferDtoSchema),
+});
+export type CompanyBuyoutOverviewDto = z.infer<typeof CompanyBuyoutOverviewDtoSchema>;
+
+export const CreateBuyoutOfferRequestSchema = z.object({
+  companyId: IdSchema,
+  pricePerShare: MoneySchema,
+  durationHours: z.number().int().positive().max(24 * 30).default(24),
+  allowSqueezeOut: z.boolean().optional().default(true),
+});
+export type CreateBuyoutOfferRequest = z.infer<typeof CreateBuyoutOfferRequestSchema>;
+
+export const TenderBuyoutOfferRequestSchema = z.object({
+  shares: z.number().int().positive().optional(),
+});
+export type TenderBuyoutOfferRequest = z.infer<typeof TenderBuyoutOfferRequestSchema>;
+
+// === Mergers (Sáp nhập A -> B) ===
+export const CompanyMergerResultDtoSchema = z.object({
+  id: IdSchema,
+  survivorCompanyId: IdSchema,
+  mergedCompanyId: IdSchema,
+  cashTransferred: MoneySchema,
+  staffTransferred: z.number().int().nonnegative(),
+  employmentsTransferred: z.number().int().nonnegative(),
+  executedAt: z.string().datetime(),
+});
+export type CompanyMergerResultDto = z.infer<typeof CompanyMergerResultDtoSchema>;
+
+export const MergeCompanyRequestSchema = z.object({
+  survivorCompanyId: IdSchema,
+  mergedCompanyId: IdSchema,
+});
+export type MergeCompanyRequest = z.infer<typeof MergeCompanyRequestSchema>;

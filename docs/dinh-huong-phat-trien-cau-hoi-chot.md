@@ -130,7 +130,7 @@
 ## 5) Thể lực & cơ chế hồi phục chung
 
 ### Q18. Chỉ số thể lực sử dụng
-- [x] Dùng trực tiếp **`health_energy`** hiện có (0–100), thống nhất với hao hụt theo tick/mùa và rủi ro hiện tại
+- [x] Dùng trực tiếp **`health_energy`** hiện có (0–100), thống nhất với hao hụt theo tháng game/mùa và rủi ro hiện tại
 - [ ] Tách stat **stamina** riêng với `health_energy`
 - [ ] **Khác:** `___`
 - Khi thể lực rất thấp/đến 0, tương tác với rủi ro tử vong/kiệt sức hiện tại như thế nào? `tử vong`

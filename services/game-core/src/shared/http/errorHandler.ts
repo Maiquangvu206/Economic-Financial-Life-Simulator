@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
 import { AppError } from './errors.js';
 
@@ -56,12 +57,25 @@ export function errorHandler(
   }
 
   logger.error({ err: error, requestId }, 'Unhandled error');
+
+  // Chẩn đoán: kèm mã lỗi PostgreSQL / tên bảng / constraint để khoanh vùng sự cố
+  // từ phía client (DevTools → Response) mà không cần đọc log server.
+  const dbg = error as { code?: unknown; table?: unknown; constraint?: unknown; column?: unknown; message?: unknown };
+  const debugParts: string[] = [];
+  if (typeof dbg?.code === 'string' && dbg.code) debugParts.push(`code=${dbg.code}`);
+  if (typeof dbg?.table === 'string' && dbg.table) debugParts.push(`table=${dbg.table}`);
+  if (typeof dbg?.constraint === 'string' && dbg.constraint) debugParts.push(`constraint=${dbg.constraint}`);
+  if (typeof dbg?.column === 'string' && dbg.column) debugParts.push(`column=${dbg.column}`);
+  if (env.NODE_ENV !== 'production' && typeof dbg?.message === 'string' && dbg.message) debugParts.push(`message=${dbg.message}`);
+  const debug = debugParts.join(' ');
+
   res.status(500).json({
     type: 'https://efls.game/errors/internal',
     title: 'Lỗi hệ thống',
     status: 500,
-    detail: 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.',
+    detail: debug ? `Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau. (${debug})` : 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.',
     code: 'internal_error',
+    debug: debug || undefined,
     requestId,
   });
 }

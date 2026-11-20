@@ -1,6 +1,6 @@
 ﻿import type { Db } from '../../shared/db/tx.js';
 import { pool } from '../../shared/db/pool.js';
-import { ledger } from '../../shared/ledger/ledger.service.js';
+import { ledger, SYSTEM_ESCROW_ID } from '../../shared/ledger/ledger.service.js';
 
 export interface CompanyRow {
   id: string;
@@ -126,11 +126,11 @@ export class CorporationRepository {
     LEFT JOIN companies host ON host.id = hp.owner_company_id
   `;
 
-  /** Danh sách công ty đang hoạt động/IPO (không bao gồm đã giải thể/phá sản), kèm chủ sở hữu và mã chứng khoán (nếu có). */
+  /** Danh sách công ty đang hoạt động/IPO (không bao gồm đã giải thể/phá sản/sáp nhập), kèm chủ sở hữu và mã chứng khoán (nếu có). */
   async listCompanies(): Promise<CompanyRow[]> {
     const result = await this.db.query<CompanyRow>(
       `${CorporationRepository.COMPANY_SELECT}
-       WHERE c.status <> 'bankrupt'
+       WHERE c.status NOT IN ('bankrupt', 'merged')
        ORDER BY c.updated_at DESC`,
     );
     return result.rows;
@@ -139,7 +139,7 @@ export class CorporationRepository {
   async getCompany(id: string, db: Db = this.db): Promise<CompanyRow | null> {
     const result = await db.query<CompanyRow>(
       `${CorporationRepository.COMPANY_SELECT}
-       WHERE c.id = $1 AND c.status <> 'bankrupt'`,
+       WHERE c.id = $1 AND c.status NOT IN ('bankrupt', 'merged')`,
       [id],
     );
     return result.rows[0] ?? null;
@@ -1495,6 +1495,309 @@ export class CorporationRepository {
       employeeArrearsMinor: Number(emp.rows[0]?.arrearsMinor ?? 0),
       staffArrearsMinor: Number(staff.rows[0]?.arrearsMinor ?? 0),
     };
+  }
+
+  // === Company Groups ===
+  async getCompanyControlForCharacter(db: Db, companyId: string, characterId: string): Promise<{ myShares: number; totalShares: number; controlPct: number }> {
+    const r = await db.query<{ my_shares: string; total_shares: string }>(
+      `SELECT
+         COALESCE(SUM(CASE WHEN holder_character_id = $2 THEN shares ELSE 0 END), 0)::bigint::text AS my_shares,
+         COALESCE(SUM(shares), 0)::bigint::text AS total_shares
+       FROM company_shareholders
+       WHERE company_id = $1 AND shares > 0`,
+      [companyId, characterId],
+    );
+    const myShares = Number(r.rows[0]?.my_shares ?? 0);
+    const totalShares = Number(r.rows[0]?.total_shares ?? 0);
+    const controlPct = totalShares > 0 ? (myShares / totalShares) * 100 : 0;
+    return { myShares, totalShares, controlPct };
+  }
+
+  async listCompanyGroupsForCharacter(db: Db, characterId: string): Promise<any[]> {
+    const r = await db.query<any>(
+      `SELECT g.id, g.name, g.holding_company_id AS "holdingCompanyId", hc.name AS "holdingCompanyName",
+              g.owner_character_id AS "ownerCharacterId", ch.full_name AS "ownerName",
+              g.status, g.created_at AS "createdAt", g.updated_at AS "updatedAt", g.dissolved_at AS "dissolvedAt"
+       FROM company_groups g
+       JOIN companies hc ON hc.id = g.holding_company_id
+       JOIN characters ch ON ch.id = g.owner_character_id
+       WHERE g.status = 'active' AND (
+         g.owner_character_id = $1
+         OR EXISTS (
+           SELECT 1 FROM company_group_members m
+           JOIN companies c ON c.id = m.company_id
+           WHERE m.group_id = g.id AND m.status = 'active' AND c.owner_character_id = $1
+         )
+       )
+       ORDER BY g.updated_at DESC, g.created_at DESC`,
+      [characterId],
+    );
+    return r.rows;
+  }
+
+  async getCompanyGroupById(db: Db, groupId: string): Promise<any | null> {
+    const r = await db.query<any>(
+      `SELECT g.id, g.name, g.holding_company_id AS "holdingCompanyId", hc.name AS "holdingCompanyName",
+              g.owner_character_id AS "ownerCharacterId", ch.full_name AS "ownerName",
+              g.status, g.created_at AS "createdAt", g.updated_at AS "updatedAt", g.dissolved_at AS "dissolvedAt"
+       FROM company_groups g
+       JOIN companies hc ON hc.id = g.holding_company_id
+       JOIN characters ch ON ch.id = g.owner_character_id
+       WHERE g.id = $1`,
+      [groupId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async listCompanyGroupMembers(db: Db, groupId: string): Promise<any[]> {
+    const r = await db.query<any>(
+      `SELECT m.company_id AS "companyId", c.name AS "companyName", m.role, m.control_pct AS "controlPct",
+              c.status, c.cash_minor AS "cashMinor", c.valuation_minor AS "valuationMinor"
+       FROM company_group_members m
+       JOIN companies c ON c.id = m.company_id
+       WHERE m.group_id = $1 AND m.status = 'active'
+       ORDER BY (m.role = 'holding') DESC, c.name ASC`,
+      [groupId],
+    );
+    return r.rows;
+  }
+
+  async createCompanyGroup(db: Db, input: { name: string; holdingCompanyId: string; ownerCharacterId: string }): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO company_groups (name, holding_company_id, owner_character_id)
+       VALUES ($1,$2,$3) RETURNING id`,
+      [input.name, input.holdingCompanyId, input.ownerCharacterId],
+    );
+    const groupId = r.rows[0]!.id;
+    await db.query(
+      `INSERT INTO company_group_members (group_id, company_id, role, control_pct, status)
+       VALUES ($1,$2,'holding',100,'active')`,
+      [groupId, input.holdingCompanyId],
+    );
+    return groupId;
+  }
+
+  async renameCompanyGroup(db: Db, groupId: string, name: string): Promise<void> {
+    await db.query(`UPDATE company_groups SET name = $2, updated_at = now() WHERE id = $1`, [groupId, name]);
+  }
+
+  async dissolveCompanyGroup(db: Db, groupId: string): Promise<void> {
+    await db.query(`UPDATE company_group_members SET status = 'removed', left_at = now() WHERE group_id = $1 AND status = 'active'`, [groupId]);
+    await db.query(`UPDATE company_groups SET status = 'dissolved', dissolved_at = now(), updated_at = now() WHERE id = $1`, [groupId]);
+  }
+
+  async addCompanyGroupMember(db: Db, input: { groupId: string; companyId: string; controlPct: number }): Promise<void> {
+    await db.query(
+      `INSERT INTO company_group_members (group_id, company_id, role, control_pct, status)
+       VALUES ($1,$2,'subsidiary',$3,'active')`,
+      [input.groupId, input.companyId, input.controlPct],
+    );
+  }
+
+  async removeCompanyGroupMember(db: Db, groupId: string, companyId: string): Promise<number> {
+    const r = await db.query(
+      `UPDATE company_group_members SET status = 'removed', left_at = now()
+       WHERE group_id = $1 AND company_id = $2 AND status = 'active'`,
+      [groupId, companyId],
+    );
+    return r.rowCount ?? 0;
+  }
+
+  async findActiveGroupForCompany(db: Db, companyId: string): Promise<{ groupId: string; groupName: string } | null> {
+    const r = await db.query<{ group_id: string; group_name: string }>(
+      `SELECT m.group_id, g.name AS group_name
+       FROM company_group_members m
+       JOIN company_groups g ON g.id = m.group_id
+       WHERE m.company_id = $1 AND m.status = 'active' AND g.status = 'active'
+       LIMIT 1`,
+      [companyId],
+    );
+    if (!r.rows[0]) return null;
+    return { groupId: r.rows[0].group_id, groupName: r.rows[0].group_name };
+  }
+
+  async listEligibleHoldingCompanies(db: Db, characterId: string): Promise<any[]> {
+    const r = await db.query<any>(
+      `SELECT c.id, c.name
+       FROM companies c
+       WHERE c.owner_character_id = $1 AND c.status IN ('active','ipo')
+         AND NOT EXISTS (
+           SELECT 1 FROM company_group_members m
+           JOIN company_groups g ON g.id = m.group_id
+           WHERE m.company_id = c.id AND m.status = 'active' AND g.status = 'active'
+         )
+       ORDER BY c.name ASC`,
+      [characterId],
+    );
+    return r.rows;
+  }
+
+  // === Buyout offers ===
+  async listBuyoutOffers(db: Db, opts?: { companyId?: string; acquirerCharacterId?: string }): Promise<any[]> {
+    const params: any[] = [];
+    const where: string[] = [];
+    if (opts?.companyId) { params.push(opts.companyId); where.push(`o.company_id = $${params.length}`); }
+    if (opts?.acquirerCharacterId) { params.push(opts.acquirerCharacterId); where.push(`o.acquirer_character_id = $${params.length}`); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await db.query<any>(
+      `SELECT o.id, o.company_id AS "companyId", c.name AS "companyName",
+              o.acquirer_character_id AS "acquirerCharacterId", ch.full_name AS "acquirerName",
+              o.price_per_share_minor AS "pricePerShareMinor", o.target_shares AS "targetShares",
+              o.acquired_shares AS "acquiredShares", o.status, o.allow_squeeze_out AS "allowSqueezeOut",
+              o.starts_at AS "startsAt", o.ends_at AS "endsAt", o.created_at AS "createdAt", o.closed_at AS "closedAt"
+       FROM company_buyout_offers o
+       JOIN companies c ON c.id = o.company_id
+       JOIN characters ch ON ch.id = o.acquirer_character_id
+       ${whereSql}
+       ORDER BY (o.status = 'open') DESC, o.created_at DESC
+       LIMIT 200`,
+      params,
+    );
+    return r.rows;
+  }
+
+  async getBuyoutOfferForUpdate(db: Db, offerId: string): Promise<any | null> {
+    const r = await db.query<any>(
+      `SELECT o.*, c.name AS "companyName", c.status AS "companyStatus", c.owner_character_id AS "companyOwnerCharacterId", c.ticker_symbol AS "companyTicker"
+       FROM company_buyout_offers o
+       JOIN companies c ON c.id = o.company_id
+       WHERE o.id = $1
+       FOR UPDATE OF o`,
+      [offerId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async createBuyoutOffer(db: Db, input: { companyId: string; acquirerCharacterId: string; pricePerShareMinor: number; targetShares: number; endsAt: Date; allowSqueezeOut: boolean }): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO company_buyout_offers (company_id, acquirer_character_id, price_per_share_minor, target_shares, ends_at, allow_squeeze_out)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [input.companyId, input.acquirerCharacterId, input.pricePerShareMinor, input.targetShares, input.endsAt, input.allowSqueezeOut],
+    );
+    return r.rows[0]!.id;
+  }
+
+  async updateBuyoutOfferProgress(db: Db, offerId: string, acquiredDelta: number, complete: boolean): Promise<void> {
+    await db.query(
+      `UPDATE company_buyout_offers
+          SET acquired_shares = acquired_shares + $2,
+              status = CASE WHEN $3::boolean THEN 'completed' ELSE status END,
+              closed_at = CASE WHEN $3::boolean THEN now() ELSE closed_at END
+        WHERE id = $1`,
+      [offerId, acquiredDelta, complete],
+    );
+  }
+
+  async setBuyoutOfferStatus(db: Db, offerId: string, status: string): Promise<void> {
+    await db.query(
+      `UPDATE company_buyout_offers SET status = $2, closed_at = CASE WHEN $2 IN ('completed','cancelled','expired') THEN now() ELSE closed_at END WHERE id = $1`,
+      [offerId, status],
+    );
+  }
+
+  async recordBuyoutPurchase(db: Db, input: { offerId: string; companyId: string; sellerCharacterId: string; buyerCharacterId: string; shares: number; pricePerShareMinor: number; totalCostMinor: number; isSqueezeOut: boolean }): Promise<void> {
+    await db.query(
+      `INSERT INTO company_buyout_purchases (offer_id, company_id, seller_character_id, buyer_character_id, shares, price_per_share_minor, total_cost_minor, is_squeeze_out)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [input.offerId, input.companyId, input.sellerCharacterId, input.buyerCharacterId, input.shares, input.pricePerShareMinor, input.totalCostMinor, input.isSqueezeOut],
+    );
+  }
+
+  async getShareholderSharesForUpdate(db: Db, companyId: string, characterId: string): Promise<number> {
+    const r = await db.query<{ shares: string }>(
+      `SELECT shares::text AS shares FROM company_shareholders WHERE company_id = $1 AND holder_character_id = $2 FOR UPDATE`,
+      [companyId, characterId],
+    );
+    return Number(r.rows[0]?.shares ?? 0);
+  }
+
+  async transferShares(db: Db, companyId: string, fromCharacterId: string, toCharacterId: string, shares: number): Promise<void> {
+    await db.query(
+      `UPDATE company_shareholders SET shares = shares - $3
+       WHERE company_id = $1 AND holder_character_id = $2 AND shares >= $3`,
+      [companyId, fromCharacterId, shares],
+    );
+    await db.query(`DELETE FROM company_shareholders WHERE company_id = $1 AND holder_character_id = $2 AND shares <= 0`, [companyId, fromCharacterId]);
+    await this.upsertShareholder(db, companyId, toCharacterId, shares);
+  }
+
+  // === Merger ===
+  async createMerger(db: Db, input: { survivorCompanyId: string; mergedCompanyId: string; executedByCharacterId: string; cashTransferredMinor: number; staffTransferred: number; employmentsTransferred: number; meta?: any }): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO company_mergers (survivor_company_id, merged_company_id, executed_by_character_id, cash_transferred_minor, staff_transferred, employments_transferred, meta)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb) RETURNING id`,
+      [input.survivorCompanyId, input.mergedCompanyId, input.executedByCharacterId, input.cashTransferredMinor, input.staffTransferred, input.employmentsTransferred, JSON.stringify(input.meta ?? {})],
+    );
+    return r.rows[0]!.id;
+  }
+
+  async markCompanyMerged(db: Db, mergedCompanyId: string, survivorCompanyId: string): Promise<void> {
+    await db.query(
+      `UPDATE companies
+          SET status = 'merged', merged_into_company_id = $2, merged_at = now(), ticker_symbol = NULL, cash_minor = 0, updated_at = now()
+        WHERE id = $1`,
+      [mergedCompanyId, survivorCompanyId],
+    );
+  }
+
+  async moveCompanyStaffToSurvivor(db: Db, mergedCompanyId: string, survivorCompanyId: string): Promise<number> {
+    const r = await db.query(`UPDATE company_staff SET company_id = $2 WHERE company_id = $1`, [mergedCompanyId, survivorCompanyId]);
+    return r.rowCount ?? 0;
+  }
+
+  async moveEmploymentsToSurvivor(db: Db, mergedCompanyId: string, survivorCompanyId: string): Promise<number> {
+    const r = await db.query(
+      `UPDATE employments SET company_id = $2
+       WHERE company_id = $1 AND status IN ('active','notice_pending')`,
+      [mergedCompanyId, survivorCompanyId],
+    );
+    return r.rowCount ?? 0;
+  }
+
+  async cleanupMergedCompanyMarketData(db: Db, mergedCompanyId: string): Promise<void> {
+    const tickerRes = await db.query<{ id: string }>(`SELECT id FROM stock_tickers WHERE company_id = $1`, [mergedCompanyId]);
+    const ticker = tickerRes.rows[0];
+    if (ticker) {
+      // best-effort: cancel/refund open buy orders similar to liquidation-lite
+      const buyOrders = await db.query<{ id: string; character_id: string; refund_minor: string }>(
+        `SELECT o.id, o.character_id, ((o.amount - o.filled_amount) * o.price_minor)::bigint AS refund_minor
+         FROM stock_orders o
+         WHERE o.ticker_id = $1 AND o.side = 'buy' AND o.status IN ('open','partially_filled') AND (o.amount - o.filled_amount) > 0`,
+        [ticker.id],
+      );
+      for (const o of buyOrders.rows) {
+        const refund = Number(o.refund_minor ?? 0);
+        if (refund > 0) {
+          await ledger.transfer(db as any, {
+            from: { ownerType: 'escrow', ownerId: SYSTEM_ESCROW_ID },
+            to: { ownerType: 'character', ownerId: o.character_id },
+            amountMinor: refund,
+            kind: 'order_escrow_refund',
+            description: `Hoàn tiền lệnh mua do công ty sáp nhập`,
+            referenceType: 'order',
+            referenceId: o.id,
+          }).catch(() => {});
+        }
+        await db.query(`UPDATE stock_orders SET status = 'cancelled', updated_at = now() WHERE id = $1`, [o.id]);
+      }
+      await db.query(`UPDATE stock_orders SET status = 'cancelled', updated_at = now() WHERE ticker_id = $1 AND status IN ('open','partially_filled')`, [ticker.id]);
+      await db.query(`DELETE FROM stock_trades WHERE ticker_id = $1`, [ticker.id]);
+      await db.query(`DELETE FROM stock_orders WHERE ticker_id = $1`, [ticker.id]);
+      await db.query(`DELETE FROM stock_holdings WHERE ticker_id = $1`, [ticker.id]);
+      await db.query(`DELETE FROM stock_tickers WHERE id = $1`, [ticker.id]);
+    }
+    await db.query(`DELETE FROM company_shareholders WHERE company_id = $1`, [mergedCompanyId]);
+  }
+
+  async transferPremisesClaimsToSurvivor(db: Db, mergedCompanyId: string, survivorCompanyId: string): Promise<void> {
+    await db.query(`UPDATE properties SET hq_company_id = $2, updated_at = now() WHERE hq_company_id = $1`, [mergedCompanyId, survivorCompanyId]);
+    await db.query(`UPDATE province_land_properties SET hq_company_id = $2, updated_at = now() WHERE hq_company_id = $1`, [mergedCompanyId, survivorCompanyId]);
+    // premises fields on merged company no longer meaningful; survivor keeps its own
+  }
+
+  async getCompanyCashForUpdate(db: Db, companyId: string): Promise<number> {
+    const r = await db.query<{ cash_minor: string }>(`SELECT cash_minor::text AS cash_minor FROM companies WHERE id = $1 FOR UPDATE`, [companyId]);
+    return Number(r.rows[0]?.cash_minor ?? 0);
   }
 }
 

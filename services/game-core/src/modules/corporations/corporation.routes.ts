@@ -4,9 +4,12 @@ import { asyncHandler } from '../../shared/http/asyncHandler.js';
 import { validateBody } from '../../shared/http/validate.js';
 import { CorporationController } from './corporation.controller.js';
 import {
+  AddCompanyGroupMemberRequestSchema,
   BuyShareOfferingRequestSchema,
   CompanyInvestRequestSchema,
   CompanyOperationRequestSchema,
+  CreateBuyoutOfferRequestSchema,
+  CreateCompanyGroupRequestSchema,
   CreateCompanyRequestSchema,
   CreateCompanyTaxFilingRequestSchema,
   CreateHiringPlanRequestSchema,
@@ -15,10 +18,13 @@ import {
   DecideHiringCandidateRequestSchema,
   DividendRequestSchema,
   IpoCompanyRequestSchema,
+  MergeCompanyRequestSchema,
   RelocateCompanyPremisesRequestSchema,
+  RenameCompanyGroupRequestSchema,
   SetCompanyOwnerSalaryRequestSchema,
   SetRevenueRetainRequestSchema,
   TakeoverRequestSchema,
+  TenderBuyoutOfferRequestSchema,
   UpdateEmployeeSalaryRequestSchema,
   UpdateStaffSalaryRequestSchema,
 } from '@efls/contracts';
@@ -43,6 +49,25 @@ corporationRouter.post(
   validateBody(BuyShareOfferingRequestSchema),
   asyncHandler(controller.buyShareOffering),
 );
+
+/** Tập đoàn (company groups) */
+corporationRouter.get('/groups/overview', asyncHandler(controller.getGroupOverview));
+corporationRouter.post('/groups', validateBody(CreateCompanyGroupRequestSchema), asyncHandler(controller.createCompanyGroup));
+corporationRouter.get('/groups/:groupId', asyncHandler(controller.getGroupDetail));
+corporationRouter.patch('/groups/:groupId', validateBody(RenameCompanyGroupRequestSchema), asyncHandler(controller.renameCompanyGroup));
+corporationRouter.delete('/groups/:groupId', asyncHandler(controller.dissolveCompanyGroup));
+corporationRouter.post('/groups/:groupId/members', validateBody(AddCompanyGroupMemberRequestSchema), asyncHandler(controller.addCompanyGroupMember));
+corporationRouter.delete('/groups/:groupId/members/:companyId', asyncHandler(controller.removeCompanyGroupMember));
+
+/** Mua lại 100% (buyout/tender) */
+corporationRouter.get('/buyouts', asyncHandler(controller.listBuyoutOffers));
+corporationRouter.post('/buyouts', validateBody(CreateBuyoutOfferRequestSchema), asyncHandler(controller.createBuyoutOffer));
+corporationRouter.post('/buyouts/:offerId/tender', validateBody(TenderBuyoutOfferRequestSchema), asyncHandler(controller.tenderBuyoutOffer));
+corporationRouter.post('/buyouts/:offerId/cancel', asyncHandler(controller.cancelBuyoutOffer));
+corporationRouter.post('/buyouts/:offerId/squeeze-out', asyncHandler(controller.squeezeOutBuyout));
+
+/** Sáp nhập công ty (A -> B) */
+corporationRouter.post('/mergers', validateBody(MergeCompanyRequestSchema), asyncHandler(controller.mergeCompanies));
 
 /** Chọn/đổi trụ sở công ty (bắt buộc khi trụ sở cũ bị phá dỡ). */
 corporationRouter.post(
