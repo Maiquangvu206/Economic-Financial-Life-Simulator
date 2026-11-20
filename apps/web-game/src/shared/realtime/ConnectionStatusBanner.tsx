@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getGameSocket } from './socket';
+import { apiRequest } from '../api/httpClient';
 
 type ConnState = 'connected' | 'reconnecting' | 'failed';
 
@@ -8,8 +9,18 @@ export function ConnectionStatusBanner() {
   const qc = useQueryClient();
   const [state, setState] = useState<ConnState>('connected');
   const [synced, setSynced] = useState(false);
+  const [offline, setOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
   const wasDisconnectedRef = useRef(false);
   const syncTimerRef = useRef<number | null>(null);
+  const lastAuthRetryRef = useRef(0);
+
+  const refreshAfterReconnect = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ['game-config'] });
+    void qc.invalidateQueries({ queryKey: ['characters'] });
+    void qc.invalidateQueries({ queryKey: ['notifications'] });
+    void qc.invalidateQueries({ queryKey: ['broadcasts'] });
+    void qc.invalidateQueries({ queryKey: ['chat'] });
+  }, [qc]);
 
   useEffect(() => {
     const socket = getGameSocket();
@@ -19,14 +30,6 @@ export function ConnectionStatusBanner() {
       setSynced(true);
       if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
       syncTimerRef.current = window.setTimeout(() => setSynced(false), 3000);
-    };
-
-    const refreshAfterReconnect = () => {
-      void qc.invalidateQueries({ queryKey: ['game-config'] });
-      void qc.invalidateQueries({ queryKey: ['characters', 'me'] });
-      void qc.invalidateQueries({ queryKey: ['notifications'] });
-      void qc.invalidateQueries({ queryKey: ['broadcasts'] });
-      void qc.invalidateQueries({ queryKey: ['chat'] });
     };
 
     const onConnect = () => {
@@ -43,7 +46,16 @@ export function ConnectionStatusBanner() {
       setSynced(false);
       setState('reconnecting');
     };
-    const onConnectError = () => {
+    const onConnectError = (error: Error) => {
+      // Token có thể vừa hết hạn: gọi một API bất kỳ để kích hoạt refresh,
+      // lần reconnect sau auth callback sẽ gửi token mới.
+      if (/unauthorized|invalid/i.test(error?.message ?? '')) {
+        const now = Date.now();
+        if (now - lastAuthRetryRef.current > 10_000) {
+          lastAuthRetryRef.current = now;
+          void apiRequest('/api/v1/game-config').catch(() => undefined);
+        }
+      }
       if (!wasDisconnectedRef.current && socket.active) return;
       wasDisconnectedRef.current = true;
       setState((s) => (s === 'failed' ? 'failed' : 'reconnecting'));
@@ -58,6 +70,19 @@ export function ConnectionStatusBanner() {
       setSynced(false);
       setState('failed');
     };
+    const onOnline = () => {
+      setOffline(false);
+      if (!socket.connected) {
+        wasDisconnectedRef.current = true;
+        setState('reconnecting');
+        socket.connect();
+      }
+    };
+    const onOffline = () => {
+      setOffline(true);
+      setState('reconnecting');
+      setSynced(false);
+    };
 
     if (!socket.connected && socket.active) {
       wasDisconnectedRef.current = true;
@@ -69,6 +94,8 @@ export function ConnectionStatusBanner() {
     socket.on('connect_error', onConnectError);
     manager.on('reconnect_attempt', onReconnectAttempt);
     manager.on('reconnect_failed', onReconnectFailed);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
 
     return () => {
       socket.off('connect', onConnect);
@@ -76,9 +103,30 @@ export function ConnectionStatusBanner() {
       socket.off('connect_error', onConnectError);
       manager.off('reconnect_attempt', onReconnectAttempt);
       manager.off('reconnect_failed', onReconnectFailed);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
       if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
     };
-  }, [qc]);
+  }, [refreshAfterReconnect]);
+
+  const retryNow = () => {
+    const socket = getGameSocket();
+    try {
+      socket.connect();
+    } catch {
+      /* ignore */
+    }
+    setState('reconnecting');
+    wasDisconnectedRef.current = true;
+  };
+
+  if (offline) {
+    return (
+      <div className="flex w-full items-center justify-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800">
+        <span>Thiết bị đang mất mạng. Hệ thống sẽ tự kết nối lại khi có mạng.</span>
+      </div>
+    );
+  }
 
   if (state === 'connected' && !synced) return null;
 
@@ -96,12 +144,7 @@ export function ConnectionStatusBanner() {
         <span>Không thể kết nối tự động</span>
         <button
           type="button"
-          onClick={() => {
-            const socket = getGameSocket();
-            try { socket.connect(); } catch { /* ignore */ }
-            setState('reconnecting');
-            wasDisconnectedRef.current = true;
-          }}
+          onClick={retryNow}
           className="rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-rose-500"
         >
           Kết nối lại ngay
@@ -111,9 +154,16 @@ export function ConnectionStatusBanner() {
   }
 
   return (
-    <div className="flex w-full items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+    <div className="flex w-full flex-wrap items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
       <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
       <span>Mất kết nối máy chủ. Đang tự động kết nối lại...</span>
+      <button
+        type="button"
+        onClick={retryNow}
+        className="rounded-lg border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+      >
+        Thử lại
+      </button>
     </div>
   );
 }

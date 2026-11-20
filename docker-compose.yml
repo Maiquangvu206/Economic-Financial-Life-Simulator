@@ -133,6 +133,8 @@ services:
       AI_SWEEP_INTERVAL_MS: ${AI_SWEEP_INTERVAL_MS:-10800000}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+      # Giới hạn heap để GC trước khi container bị OOM-kill trên host RAM thấp.
+      NODE_OPTIONS: ${GAME_CORE_NODE_OPTIONS:---max-old-space-size=384}
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/health >/dev/null || exit 1']
       interval: 10s
@@ -159,6 +161,13 @@ services:
       CORE_URL: http://game-core:4000
       WEB_ORIGIN: ${PUBLIC_ORIGIN:-https://project1.zorse-mizar.ts.net}
       ADMIN_ORIGIN: ${PUBLIC_ORIGIN:-https://project1.zorse-mizar.ts.net}
+      # Bắt buộc: Tailscale Serve (1 hop) + nginx (1 hop) để rate limit theo IP thật.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-900}
+      AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-60}
+      REFRESH_RATE_LIMIT_PER_MIN: ${REFRESH_RATE_LIMIT_PER_MIN:-120}
+      PROXY_TIMEOUT_MS: ${PROXY_TIMEOUT_MS:-30000}
+      NODE_OPTIONS: ${GATEWAY_NODE_OPTIONS:---max-old-space-size=192}
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1']
       interval: 10s
@@ -187,6 +196,7 @@ services:
       WEB_ORIGIN: ${PUBLIC_ORIGIN:-https://project1.zorse-mizar.ts.net}
       ADMIN_ORIGIN: ${PUBLIC_ORIGIN:-https://project1.zorse-mizar.ts.net}
       REALTIME_CHANNEL: ${REALTIME_CHANNEL:-efls:realtime}
+      NODE_OPTIONS: ${REALTIME_NODE_OPTIONS:---max-old-space-size=256}
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:5000/health >/dev/null || exit 1']
       interval: 10s
@@ -219,9 +229,12 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-efls}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-efls}
       REDIS_URL: redis://redis:6379
       GAME_TICK_INTERVAL_MS: ${GAME_TICK_INTERVAL_MS:-60000}
+      GAME_TICK_LOCK_TIMEOUT_MS: ${GAME_TICK_LOCK_TIMEOUT_MS:-5000}
+      GAME_TICK_STATEMENT_TIMEOUT_MS: ${GAME_TICK_STATEMENT_TIMEOUT_MS:-60000}
       AI_NEWS_CRON: ${AI_NEWS_CRON:-0 6 * * *}
       DOMAIN_EVENT_CHANNEL: ${DOMAIN_EVENT_CHANNEL:-efls:domain-events}
       WORKER_METRICS_PORT: 6060
+      NODE_OPTIONS: ${WORKER_NODE_OPTIONS:---max-old-space-size=320}
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:6060/health >/dev/null || exit 1']
       interval: 10s

@@ -66,6 +66,30 @@ function toCompanyDto(
   };
 }
 
+/** Chuẩn hoá danh sách cổ đông kèm tỉ lệ % và cờ chủ sở hữu/người xem. */
+function toShareholderDtos(
+  shareholders: Array<{ characterId: string; characterName: string; shares: number }>,
+  ownerCharacterId: string,
+  viewerCharacterId: string,
+): Array<{
+  characterId: string;
+  characterName: string;
+  shares: number;
+  isOwner: boolean;
+  isMe: boolean;
+  percentage: number;
+}> {
+  const totalShares = shareholders.reduce((sum, s) => sum + Number(s.shares || 0), 0);
+  return shareholders.map((s) => ({
+    characterId: s.characterId,
+    characterName: s.characterName,
+    shares: Number(s.shares),
+    isOwner: s.characterId === ownerCharacterId,
+    isMe: s.characterId === viewerCharacterId,
+    percentage: totalShares > 0 ? Math.round((Number(s.shares) / totalShares) * 10000) / 100 : 0,
+  }));
+}
+
 /** Dịch vụ doanh nghiệp: thành lập, quản lý công ty, đầu tư vốn. */
 export class CorporationService {
   constructor(private readonly repository = corporationRepository) {}
@@ -447,7 +471,14 @@ export class CorporationService {
 
       const dto = await this.repository.getCompany(companyId, client);
       if (!dto) throw new Error('Company disappeared after IPO');
-      return { ...toCompanyDto(dto), isOwner: true, shareholders: [] };
+      // Trả về danh sách cổ đông thật (chủ sở hữu được cấp cổ phiếu ban đầu)
+      // thay vì mảng rỗng, để UI hiển thị đúng ngay sau khi niêm yết.
+      const shareholders = await this.repository.listShareholders(companyId, client);
+      return {
+        ...toCompanyDto(dto),
+        isOwner: true,
+        shareholders: toShareholderDtos(shareholders, dto.ownerCharacterId, character.id),
+      };
     });
   }
 

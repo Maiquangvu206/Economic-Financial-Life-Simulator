@@ -6,7 +6,25 @@ import { publishClient } from './publisher.js';
 import { scheduleJobs } from './scheduler.js';
 import { createWorkers } from './workers.js';
 
-await scheduleJobs();
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, 'unhandledRejection (worker vẫn tiếp tục chạy)');
+});
+process.on('uncaughtException', (error) => {
+  logger.fatal({ err: error }, 'uncaughtException');
+  setTimeout(() => process.exit(1), 500).unref();
+});
+
+// Redis có thể chưa sẵn sàng lúc container khởi động; thử lại thay vì crash loop.
+for (;;) {
+  try {
+    await scheduleJobs();
+    break;
+  } catch (error) {
+    logger.error({ err: error }, 'Không lên lịch được job; thử lại sau 5s');
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
+}
+
 const workers = createWorkers();
 const health = createHealthServer();
 

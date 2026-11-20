@@ -156,14 +156,17 @@ export class CorporationRepository {
   }
 
   /** Danh sách cổ đông của một công ty. */
-  async listShareholders(companyId: string): Promise<
+  async listShareholders(
+    companyId: string,
+    db: Db = this.db,
+  ): Promise<
     {
       characterId: string;
       characterName: string;
       shares: number;
     }[]
   > {
-    const result = await this.db.query(
+    const result = await db.query(
       `SELECT s.holder_character_id AS "characterId", ch.full_name AS "characterName",
               s.shares
        FROM company_shareholders s

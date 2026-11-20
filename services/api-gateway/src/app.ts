@@ -5,6 +5,7 @@ import pino from 'pino';
 import { pinoHttp } from 'pino-http';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
+import { isHealthPath, rateLimitHandler } from './middleware/rateLimit.js';
 import { mountRoutes } from './routes/api.js';
 
 const logger = pino({
@@ -17,6 +18,11 @@ const logger = pino({
 
 export function createApp(): Express {
   const app = express();
+
+  // Gateway nằm sau Tailscale Serve + nginx. Không cấu hình trust proxy thì
+  // `req.ip` luôn là IP của nginx => tất cả người chơi dùng chung một xô
+  // rate limit (429 hàng loạt). Số hop phải khớp topology triển khai.
+  app.set('trust proxy', env.TRUST_PROXY_HOPS);
 
   app.disable('x-powered-by');
   app.use(helmet());
@@ -42,9 +48,11 @@ export function createApp(): Express {
   app.use(
     rateLimit({
       windowMs: 60_000,
-      limit: 300,
+      limit: env.RATE_LIMIT_PER_MIN,
       standardHeaders: 'draft-7',
       legacyHeaders: false,
+      skip: isHealthPath,
+      handler: rateLimitHandler,
     }),
   );
 

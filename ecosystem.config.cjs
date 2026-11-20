@@ -24,6 +24,11 @@ function app(name, cwd, script, maxMemoryRestart) {
     autorestart: true,
     watch: false,
     max_memory_restart: maxMemoryRestart,
+    // Tránh vòng lặp restart dồn dập khi dịch vụ crash lúc khởi động.
+    exp_backoff_restart_delay: 2_000,
+    min_uptime: '20s',
+    max_restarts: 30,
+    kill_timeout: 10_000,
     env: {
       NODE_ENV: 'development',
     },
@@ -39,10 +44,10 @@ function app(name, cwd, script, maxMemoryRestart) {
 
 module.exports = {
   apps: [
-    app('efls-api-gateway', 'services/api-gateway', 'dist/main.js', '180M'),
-    app('efls-game-core', 'services/game-core', 'dist/main.js', '300M'),
-    app('efls-realtime', 'services/realtime', 'dist/main.js', '220M'),
+    app('efls-api-gateway', 'services/api-gateway', 'dist/main.js', '320M'),
+    app('efls-game-core', 'services/game-core', 'dist/main.js', '480M'),
+    app('efls-realtime', 'services/realtime', 'dist/main.js', '360M'),
     // Enable worker only if required by your deployment (adds RAM usage)
-    // app('efls-worker', 'services/worker', 'dist/main.js', '180M'),
+    // app('efls-worker', 'services/worker', 'dist/main.js', '320M'),
   ],
 };

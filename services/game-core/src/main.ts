@@ -19,6 +19,19 @@ const server = app.listen(env.CORE_PORT, () => {
     .catch((error) => logger.warn({ error }, 'Đồng bộ cấu hình AI đã lưu thất bại'));
 });
 
+// Timeout tầng HTTP: request treo không được giữ connection vô hạn.
+server.headersTimeout = 20_000;
+server.requestTimeout = 30_000;
+server.keepAliveTimeout = 65_000;
+
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, 'unhandledRejection (game-core vẫn tiếp tục chạy)');
+});
+process.on('uncaughtException', (error) => {
+  logger.fatal({ err: error }, 'uncaughtException');
+  setTimeout(() => process.exit(1), 500).unref();
+});
+
 // Tự kết thúc các phiên đấu giá đã hết hạn (Countdown = 0), quét mỗi 60 giây.
 const auctionSweep = setInterval(() => {
   auctionService

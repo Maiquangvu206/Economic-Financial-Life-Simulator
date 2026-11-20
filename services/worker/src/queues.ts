@@ -1,10 +1,19 @@
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { env } from './config/env.js';
+import { logger } from './logger.js';
 
 /** BullMQ requires maxRetriesPerRequest = null for blocking connections. */
 export function createRedis(): Redis {
-  return new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+  const client = new Redis(env.REDIS_URL, {
+    maxRetriesPerRequest: null,
+    // Tự kết nối lại; không để một blip Redis làm sập worker.
+    retryStrategy: (times) => Math.min(times * 500, 10_000),
+  });
+  client.on('error', (err) => {
+    logger.warn({ err }, 'Worker Redis connection error (will retry)');
+  });
+  return client;
 }
 
 export const queueConnection = createRedis();

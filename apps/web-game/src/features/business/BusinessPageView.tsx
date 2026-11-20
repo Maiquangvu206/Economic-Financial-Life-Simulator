@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import type { IndustryType } from '@efls/contracts';
 import { PageHeader } from '@efls/ui';
 import { formatCompact, formatMoney } from '../../shared/lib/format';
 import { TransactionConfirmModal } from '../../shared/ui/TransactionConfirmModal';
@@ -9,9 +11,13 @@ import { GameInput } from '../../shared/ui/GameInput';
 import { CCCDLookupInput } from '../../shared/identity/CCCDLookupInput';
 import { Modal } from '../../shared/ui/Modal';
 import { Badge } from '../../shared/ui/Badge';
+import { createIdempotencyKey } from '../../shared/api/httpClient';
+import { useToast } from '../../shared/ui/Toast';
 import { ENTRY_TYPES, INDUSTRIES, industryLabel, statusBadge } from './businessPage.shared';
 
 export function BusinessPageView(props: any) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const {
     confirm,
     createOpen, setCreateOpen,
@@ -144,7 +150,7 @@ export function BusinessPageView(props: any) {
             </p>
           ) : (
             <div className="space-y-2">
-              {myCompanies.map((c) => (
+              {myCompanies.map((c: any) => (
                 <button
                   key={c.id}
                   type="button"
@@ -190,7 +196,7 @@ export function BusinessPageView(props: any) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {companies.map((c) => (
+                    {companies.map((c: any) => (
                       <tr
                         key={c.id}
                         className="cursor-pointer hover:bg-slate-50"
@@ -488,7 +494,7 @@ export function BusinessPageView(props: any) {
                     {(premisesOptions?.land ?? []).length === 0 ? (
                       <option value="" disabled>Không có đất nền hoặc trụ sở công ty (≥ 2 ô liền nhau, đã xây dựng &quot;Công ty&quot;) phù hợp</option>
                     ) : (
-                      (premisesOptions?.land ?? []).map((o) => {
+                      (premisesOptions?.land ?? []).map((o: any) => {
                         const key = `${o.type}:${o.id}`;
                         const suffix = o.type === 'land_province'
                           ? ` · ${o.provinceName ?? o.provinceCode ?? 'Tỉnh/thành'}`
@@ -501,7 +507,7 @@ export function BusinessPageView(props: any) {
                     {(premisesOptions?.companyProperties ?? []).length === 0 ? (
                       <option value="" disabled>Không có bất động sản công ty khác khả dụng</option>
                     ) : (
-                      (premisesOptions?.companyProperties ?? []).map((o) => {
+                      (premisesOptions?.companyProperties ?? []).map((o: any) => {
                         const key = `${o.type}:${o.id}`;
                         return <option key={key} value={key}>{o.label}{o.hostCompanyName ? ` · ${o.hostCompanyName}` : ''}</option>;
                       })
@@ -601,12 +607,12 @@ export function BusinessPageView(props: any) {
                           >
                             <option value="">-- Chọn trụ sở mới --</option>
                             <optgroup label="Đất nền / trụ sở công ty (sở hữu, lô gốc)">
-                              {(premisesOptions?.land ?? []).map((o) => (
+                              {(premisesOptions?.land ?? []).map((o: any) => (
                                 <option key={`reloc-${o.type}:${o.id}`} value={`${o.type}:${o.id}`}>{o.label}</option>
                               ))}
                             </optgroup>
                             <optgroup label="Bất động sản thuộc công ty khác">
-                              {(premisesOptions?.companyProperties ?? []).map((o) => (
+                              {(premisesOptions?.companyProperties ?? []).map((o: any) => (
                                 <option key={`reloc-${o.type}:${o.id}`} value={`${o.type}:${o.id}`}>{o.label}</option>
                               ))}
                             </optgroup>
@@ -788,7 +794,7 @@ export function BusinessPageView(props: any) {
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-slate-100">
-                                        {filteredRevenueSettlements.map((s) => (
+                                        {filteredRevenueSettlements.map((s: any) => (
                                           <tr key={s.id} className="hover:bg-slate-50/60">
                                             <td className="px-2.5 py-2 font-medium text-slate-800">{s.periodKey}</td>
                                             <td className="px-2.5 py-2 text-slate-600">{s.gameYear}-{String(s.gameMonth).padStart(2, '0')}</td>
@@ -824,7 +830,7 @@ export function BusinessPageView(props: any) {
                               <p className="text-[11px] font-semibold text-slate-700">Lịch sử khai thuế</p>
                               {filings.length === 0 ? (
                                 <p className="rounded-lg bg-white p-2 text-[11px] text-slate-500">Chưa có hồ sơ khai thuế. Hồ sơ chỉ lập được sau khi hệ thống chốt doanh thu ít nhất một kỳ 30 ngày game.</p>
-                              ) : filings.map((filing) => (
+                              ) : filings.map((filing: any) => (
                                 <div key={filing.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-2 text-[11px]">
                                   <div><span className="font-medium text-slate-800">Kỳ {filing.periodKey ?? filing.period}</span><span className="ml-2 text-slate-500">{new Date(filing.createdAt).toLocaleDateString('vi-VN')}</span></div>
                                   <div className="text-right text-slate-600">Thuế {formatMoney(filing.taxPaid.amount)} · DT khai {formatMoney(filing.declaredRevenue.amount)} <Badge variant={filing.status === 'penalized' ? 'warning' : filing.status === 'audited' ? 'success' : 'default'}>{filing.status}</Badge></div>

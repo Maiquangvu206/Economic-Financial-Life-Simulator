@@ -34,6 +34,28 @@ export type GameServer = Server<
   SocketData
 >;
 
+type RoomTarget = {
+  join: (room: string) => void | Promise<void>;
+  leave: (room: string) => void | Promise<void>;
+};
+
+/**
+ * socket.join/leave có thể trả Promise (nhất là khi dùng Redis adapter).
+ * Nuốt lỗi có log để một lần join thất bại không tạo unhandled rejection
+ * (Node 24 mặc định coi đó là lỗi nghiêm trọng và thoát process).
+ */
+function safeJoin(target: RoomTarget, room: string): void {
+  void Promise.resolve(target.join(room)).catch((err) => {
+    logger.warn({ err, room }, 'socket join failed');
+  });
+}
+
+function safeLeave(target: RoomTarget, room: string): void {
+  void Promise.resolve(target.leave(room)).catch((err) => {
+    logger.warn({ err, room }, 'socket leave failed');
+  });
+}
+
 const chatWindows = new Map<string, number[]>();
 // Đồng bộ presence theo Set<socketId> gắn với từng userId:
 // chỉ chuyển Offline khi socketIds.size === 0 (đóng tab/phiên cuối cùng).
@@ -118,6 +140,9 @@ export function createRealtimeServer(): {
   });
 
   const httpServer = createServer(app);
+  // Giữ kết nối đủ lâu cho long-polling/WebSocket; header timeout chặn client treo.
+  httpServer.headersTimeout = 20_000;
+  httpServer.keepAliveTimeout = 65_000;
   const io: GameServer = new Server(httpServer, {
     cors: {
       origin: [env.WEB_ORIGIN, env.ADMIN_ORIGIN],
@@ -133,8 +158,8 @@ export function createRealtimeServer(): {
   io.on('connection', (socket) => {
     const actor = socket.data.actor;
     const userRoom = `user:${actor.userId}`;
-    void socket.join(userRoom);
-    void socket.join(Rooms.character(actor.userId));
+    safeJoin(socket, userRoom);
+    safeJoin(socket, Rooms.character(actor.userId));
     // Presence: chỉ broadcast online khi chuyển từ 0 -> 1 socket
     if (markOnline(actor.userId, socket.id)) {
       (io.emit as any)('user:presence', { userId: actor.userId, isOnline: true });
@@ -148,7 +173,7 @@ export function createRealtimeServer(): {
       if (!parsed.success) return;
       // allow joining own user room explicitly
       if (parsed.data.room === userRoom || parsed.data.room === Rooms.character(actor.userId)) {
-        void socket.join(parsed.data.room);
+        safeJoin(socket, parsed.data.room);
         return;
       }
       if (parsed.data.room === '__presence__') {
@@ -164,7 +189,7 @@ export function createRealtimeServer(): {
         });
         return;
       }
-      void socket.join(parsed.data.room);
+      safeJoin(socket, parsed.data.room);
       socket.emit('presence:sync', {
         room: parsed.data.room,
         characterIds: [actor.userId],
@@ -173,7 +198,7 @@ export function createRealtimeServer(): {
 
     socket.on('room:leave', (payload) => {
       if (typeof payload?.room === 'string') {
-        void socket.leave(payload.room);
+        safeLeave(socket, payload.room);
       }
     });
 
@@ -332,13 +357,13 @@ export function createRealtimeServer(): {
 
     socket.on('market:subscribe', (payload) => {
       if (typeof payload?.tickerId === 'string') {
-        void socket.join(Rooms.ticker(payload.tickerId));
+        safeJoin(socket, Rooms.ticker(payload.tickerId));
       }
     });
 
     socket.on('market:unsubscribe', (payload) => {
       if (typeof payload?.tickerId === 'string') {
-        void socket.leave(Rooms.ticker(payload.tickerId));
+        safeLeave(socket, Rooms.ticker(payload.tickerId));
       }
     });
 

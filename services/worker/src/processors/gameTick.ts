@@ -20,6 +20,9 @@ interface LedgerLeg {
 const SYSTEM_GOVERNMENT_ID = '00000000-0000-0000-0000-000000000002';
 const SYSTEM_BANK_ID = '00000000-0000-4000-8000-0000000000b1';
 
+/** Khóa advisory cho tick: chỉ một tick được chạy tại một thời điểm. */
+const GAME_TICK_LOCK_ID = 774_311_001;
+
 function isSystemOwner(ownerType: LedgerOwnerType): boolean {
   return ownerType !== 'character' && ownerType !== 'company';
 }
@@ -328,8 +331,44 @@ export async function processGameTick(): Promise<GameTickResult> {
   logger.info({ tick, now }, 'Game tick started');
 
   const client = await pool.connect();
+  const startedAt = Date.now();
   try {
     await client.query('BEGIN');
+
+    // Chống 2 tick chạy chồng (deploy/restart/queue trễ). Khóa tự nhả khi
+    // COMMIT/ROLLBACK nên không sợ rò rỉ khóa khi lỗi.
+    const lockRes = await client.query<{ locked: boolean }>(
+      'SELECT pg_try_advisory_xact_lock($1) AS locked',
+      [GAME_TICK_LOCK_ID],
+    );
+    if (!lockRes.rows[0]?.locked) {
+      await client.query('ROLLBACK');
+      const stateRes = await client.query<{
+        current_day: string;
+        current_year: string;
+        season: string;
+      }>(`SELECT current_day, current_year, season FROM game_state WHERE id = 1`);
+      const skippedDay = Number(stateRes.rows[0]?.current_day ?? 0);
+      const skippedYear = Number(stateRes.rows[0]?.current_year ?? GAME_START_YEAR);
+      const normalizedSkipped = ((Math.floor(skippedDay) % GAME_DAYS_PER_YEAR) + GAME_DAYS_PER_YEAR) % GAME_DAYS_PER_YEAR;
+      logger.warn({ tick }, 'Game tick skipped: previous tick still running');
+      return {
+        tick,
+        inGameYear: Math.max(GAME_START_YEAR, Math.floor(skippedYear)),
+        inGameMonth: Math.floor(normalizedSkipped / 30) + 1,
+        inGameDay: (normalizedSkipped % 30) + 1,
+        dayOfYear: normalizedSkipped,
+        season: String(stateRes.rows[0]?.season ?? 'spring'),
+        applied: ['skipped: previous tick still running'],
+      };
+    }
+
+    // Giới hạn thời gian chờ khóa và thời gian câu lệnh: tick không được phép
+    // treo vô hạn và làm mọi thao tác người chơi phải chờ.
+    await client.query(
+      `SELECT set_config('lock_timeout', $1, true), set_config('statement_timeout', $2, true)`,
+      [`${env.GAME_TICK_LOCK_TIMEOUT_MS}ms`, `${env.GAME_TICK_STATEMENT_TIMEOUT_MS}ms`],
+    );
 
     const applied: string[] = [];
 
@@ -1948,7 +1987,10 @@ export async function processGameTick(): Promise<GameTickResult> {
     }
 
     await client.query('COMMIT');
-    logger.info({ tick, appliedCount: applied.length }, 'Game tick committed');
+    logger.info(
+      { tick, appliedCount: applied.length, durationMs: Date.now() - startedAt },
+      'Game tick committed',
+    );
 
     // Publish đồng bộ thời gian game cho toàn bộ client (best-effort, realtime channel)
     try {

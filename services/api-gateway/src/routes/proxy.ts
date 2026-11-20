@@ -18,6 +18,9 @@ export function coreProxy(mountPath = '') {
     target: env.CORE_URL,
     changeOrigin: true,
     xfwd: true,
+    // Không để request treo vô hạn khi game-core bị block (tick/DB lock).
+    proxyTimeout: env.PROXY_TIMEOUT_MS,
+    timeout: env.PROXY_TIMEOUT_MS,
     pathRewrite: (path) => `${mountPath}${path}`,
     on: {
       proxyReq: (proxyReq, req) => {
@@ -44,14 +47,20 @@ export function coreProxy(mountPath = '') {
 
         fixRequestBody(proxyReq, original);
       },
-      error: (_error, _req, res) => {
+      error: (error, _req, res) => {
         if ('writeHead' in res && !res.headersSent) {
-          res.writeHead(502, { 'Content-Type': 'application/json' });
+          const code = String((error as { code?: string } | undefined)?.code ?? '');
+          const timedOut = code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT' || code === 'ECONNRESET';
+          const status = timedOut ? 504 : 502;
+          res.writeHead(status, { 'Content-Type': 'application/json' });
           res.end(
             JSON.stringify({
-              type: 'https://efls.game/errors/bad-gateway',
-              title: 'Core service unavailable',
-              status: 502,
+              type: `https://efls.game/errors/${timedOut ? 'gateway-timeout' : 'bad-gateway'}`,
+              title: timedOut ? 'Máy chủ phản hồi quá lâu' : 'Dịch vụ tạm thời không khả dụng',
+              status,
+              detail: timedOut
+                ? 'Yêu cầu vượt quá thời gian chờ. Vui lòng thử lại.'
+                : 'Không kết nối được tới máy chủ game. Vui lòng thử lại sau.',
             }),
           );
         }

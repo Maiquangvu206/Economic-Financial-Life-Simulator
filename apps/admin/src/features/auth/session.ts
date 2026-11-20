@@ -129,6 +129,11 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
+/** Cho phép các module ngoài React (vd: socket realtime) theo dõi token mới. */
+export function subscribeAdminSession(listener: () => void): () => void {
+  return subscribe(listener);
+}
+
 export function useAdminSession(): AdminSession | null {
   return useSyncExternalStore(
     subscribe,
