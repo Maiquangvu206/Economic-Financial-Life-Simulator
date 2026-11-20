@@ -150,6 +150,16 @@ export function ChatWidget() {
                   <div className="text-[11px] text-slate-500 flex items-center">{activePeer.isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}{isStaff(activePeer.role) && <RoleBadge role={activePeer.role} />}</div>
                 )}
               </div>
+              {tab === 'private' && privateView === 'thread' && activePeer && (activePeer.unreadCount ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => chat.markConversationRead(activePeer.peerUserId)}
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                  title="Đánh dấu đã đọc"
+                >
+                  Đã đọc
+                </button>
+              )}
               <button type="button" onClick={() => setOpen(false)} className="rounded-lg px-2 text-slate-500 hover:bg-slate-100" aria-label="Thu nhỏ">✕</button>
             </div>
             {!(tab === 'private' && privateView === 'thread') && (

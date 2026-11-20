@@ -7,7 +7,7 @@ import { creditStateFund } from '../../shared/state-fund/stateFund.js';
 import { callAiService } from '../../shared/ai/aiClient.js';
 import { notify } from '../notifications/notification.service.js';
 import { loadCurrentSeasonEffects } from '../../shared/season/seasonEffects.js';
-import { CONSTRUCTION_OPTIONS } from '@efls/domain';
+import { CONSTRUCTION_OPTIONS, GAME_START_YEAR, deriveCanonicalGameTime } from '@efls/domain';
 import { realEstateRepository } from '../real-estate/real-estate.repository.js';
 import { provinceLandRepository } from '../province-land/provinceLand.repository.js';
 import {
@@ -303,11 +303,21 @@ export class CorporationService {
         referenceId: undefined,
       });
 
+      // Mốc thành lập theo thời gian game (đồng bộ kỳ tài chính/doanh thu/thuế).
+      const gs = await client.query<{ current_day: string | number; current_year: string | number }>(
+        `SELECT current_day, current_year FROM game_state WHERE id = 1`,
+      );
+      const curDay = Number(gs.rows[0]?.current_day ?? 0);
+      const curYear = Number(gs.rows[0]?.current_year ?? GAME_START_YEAR);
+      const gameTime = deriveCanonicalGameTime({ dayOfYear: Math.max(0, Math.floor(curDay)), year: Math.max(GAME_START_YEAR, Math.floor(curYear)) });
+
       const companyId = await this.repository.createCompany(client, {
         name,
         industry,
         ownerCharacterId: character.id,
         initialCapitalMinor,
+        foundedGameYear: gameTime.year,
+        foundedGameMonth: gameTime.month,
         premises: premisesRecord,
       });
 
@@ -903,6 +913,15 @@ export class CorporationService {
       if (cash < amountMinor) {
         throw AppError.conflict('insufficient_funds', 'Quỹ công ty không đủ để chi OPEX.');
       }
+      // Gắn kỳ tháng game hiện tại để đồng bộ thời gian hệ thống (phục vụ kê khai thuế/cổ tức theo kỳ).
+      const gs = await client.query<{ current_day: string | number; current_year: string | number }>(
+        `SELECT current_day, current_year FROM game_state WHERE id = 1`,
+      );
+      const curDay = Number(gs.rows[0]?.current_day ?? 0);
+      const curYear = Number(gs.rows[0]?.current_year ?? GAME_START_YEAR);
+      const gameTime = deriveCanonicalGameTime({ dayOfYear: Math.max(0, Math.floor(curDay)), year: Math.max(GAME_START_YEAR, Math.floor(curYear)) });
+      const periodKey = `${gameTime.year}-${String(gameTime.month).padStart(2, '0')}`;
+
       await this.repository.adjustCash(client, companyId, -amountMinor);
       await this.repository.addLedgerEntry(client, {
         companyId,
@@ -911,7 +930,9 @@ export class CorporationService {
         declaredAmountMinor: amountMinor,
         description: note ?? 'Chi OPEX',
         isEvasion: false,
-      });
+        ledgerKind: 'MANUAL',
+        periodKey,
+      } as any);
       await notify(client, {
         userId,
         kind: 'company',
@@ -1361,6 +1382,15 @@ export class CorporationService {
         }
       }
 
+      // Gắn kỳ tháng game hiện tại để đồng bộ chi phí/bút toán thủ công theo thời gian hệ thống.
+      const gs = await client.query<{ current_day: string | number; current_year: string | number }>(
+        `SELECT current_day, current_year FROM game_state WHERE id = 1`,
+      );
+      const curDay = Number(gs.rows[0]?.current_day ?? 0);
+      const curYear = Number(gs.rows[0]?.current_year ?? GAME_START_YEAR);
+      const gameTime = deriveCanonicalGameTime({ dayOfYear: Math.max(0, Math.floor(curDay)), year: Math.max(GAME_START_YEAR, Math.floor(curYear)) });
+      const periodKey = `${gameTime.year}-${String(gameTime.month).padStart(2, '0')}`;
+
       await this.repository.addLedgerEntry(client, {
         companyId,
         entryType: input.entryType,
@@ -1369,6 +1399,7 @@ export class CorporationService {
         description: input.description ?? '',
         isEvasion,
         ledgerKind: 'MANUAL',
+        periodKey,
       } as any);
       return this.getHrAccounting(userId, companyId);
     });
@@ -1411,9 +1442,9 @@ export class CorporationService {
         throw AppError.conflict('tax_filing_exists', `Kỳ ${periodKey} đã được khai/nộp thuế.`);
       }
 
-      const opexTotal = await this.repository.sumOpexInPeriod(client, companyId, periodKey);
+      const periodExpenses = await this.repository.sumOperatingExpensesInPeriod(client, companyId, periodKey);
       const taxDueMinor = Math.round(declaredRevenue * 0.1);
-      const dividendPool = declaredRevenue - taxDueMinor - opexTotal;
+      const dividendPool = declaredRevenue - taxDueMinor - periodExpenses;
 
       let companyCash = Number((await this.repository.getCompany(companyId, client))?.cashMinor ?? company.cashMinor ?? 0);
       const requiredTotal = taxDueMinor + (dividendPool > 0 ? dividendPool : 0);
@@ -1495,7 +1526,7 @@ export class CorporationService {
       const status = dividendPool > 0 ? 'filed' : 'filed';
       const notesParts = [
         input.notes?.trim() || '',
-        `Kỳ ${periodKey}: DT thực tế ${formatMinor(actualRevenue)}, DT khai ${formatMinor(declaredRevenue)}, thuế ${formatMinor(taxDueMinor)}, OPEX kỳ ${formatMinor(opexTotal)}, quỹ cổ tức ${formatMinor(Math.max(0, dividendPool))}.`,
+        `Kỳ ${periodKey}: DT thực tế ${formatMinor(actualRevenue)}, DT khai ${formatMinor(declaredRevenue)}, thuế ${formatMinor(taxDueMinor)}, chi phí kỳ (OPEX+lương+khác) ${formatMinor(periodExpenses)}, quỹ cổ tức ${formatMinor(Math.max(0, dividendPool))}.`,
         dividendPool > 0 ? `Đã tự động chia cổ tức ${formatMinor(dividendDistributed)} cho ${dividendRecipients} cổ đông.` : 'Kỳ báo lỗ/không đủ quỹ chia cổ tức, không chia cổ tức.',
       ].filter(Boolean);
 
@@ -1505,8 +1536,8 @@ export class CorporationService {
         periodKey,
         declaredRevenueMinor: declaredRevenue,
         actualRevenueMinor: actualRevenue,
-        declaredExpenseMinor: opexTotal,
-        actualExpenseMinor: opexTotal,
+        declaredExpenseMinor: periodExpenses,
+        actualExpenseMinor: periodExpenses,
         taxDueMinor,
         taxPaidMinor: taxDueMinor,
         riskScore,
@@ -1516,7 +1547,7 @@ export class CorporationService {
         dividendDistributedMinor: dividendDistributed,
         dividendDistributedAt: dividendPool > 0 ? new Date() : null,
         evasionGapMinor: evasionGap,
-        opexTotalMinor: opexTotal,
+        opexTotalMinor: periodExpenses,
       } as any);
 
       await notify(client, {

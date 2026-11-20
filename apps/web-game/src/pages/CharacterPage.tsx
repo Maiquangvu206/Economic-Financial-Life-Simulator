@@ -8,6 +8,7 @@ import { Badge } from '../shared/ui/Badge';
 import { formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
 import { CharacterSectionNav } from '../shared/character/CharacterSectionNav';
+import { useGameStore } from '../store/game';
 
 const MARITAL_LABEL: Record<CharacterDto['maritalStatus'], string> = {
   single: 'Độc thân',
@@ -21,14 +22,33 @@ function formatCccd(cccd: string): string {
   return `${cccd.slice(0, 3)} ${cccd.slice(3, 6)} ${cccd.slice(6, 9)} ${cccd.slice(9, 12)}`;
 }
 
-function getActiveDays(createdAt?: string | null) {
+function getDaysLivedByRealTime(createdAt?: string | null) {
   if (!createdAt) return 1;
   const t = new Date(createdAt).getTime();
   if (Number.isNaN(t)) return 1;
   return Math.max(1, Math.floor((Date.now() - t) / 86_400_000) + 1);
 }
 
+function getDaysLived(character: CharacterDto | undefined, currentYear: number, currentDayOfYear: number) {
+  const birthYear = character?.birthGameYear;
+  const birthDay = character?.birthGameDay;
+  if (
+    character &&
+    currentYear > 0 &&
+    typeof birthYear === 'number' &&
+    typeof birthDay === 'number' &&
+    Number.isFinite(birthYear) &&
+    Number.isFinite(birthDay)
+  ) {
+    const currentAbs = Math.floor(currentYear) * 360 + ((Math.floor(currentDayOfYear) % 360) + 360) % 360;
+    const birthAbs = Math.floor(birthYear) * 360 + ((Math.floor(birthDay) % 360) + 360) % 360;
+    return Math.max(1, currentAbs - birthAbs + 1);
+  }
+  return getDaysLivedByRealTime(character?.createdAt);
+}
+
 export function CharacterPage() {
+  const { year, dayOfYear } = useGameStore();
   const { data: character, isLoading } = useQuery({
     queryKey: ['character', 'me'],
     queryFn: () => apiRequest<CharacterDto>('/api/v1/characters/me'),
@@ -122,7 +142,7 @@ export function CharacterPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Tài sản ròng" value={formatMoney(character.netWorth?.amount ?? 0)} tone="positive" />
-        <StatCard label="Ngày sống (nhân vật)" value={`${getActiveDays(character.createdAt)} ngày`} />
+        <StatCard label="Ngày sống (nhân vật)" value={`${getDaysLived(character, year, dayOfYear)} ngày`} />
         <StatCard label="Điểm tín dụng" value={character.creditScore ?? 0} />
         <StatCard label="Mức chú ý" value={`${character.heatLevel ?? 0} / 100`} />
         <StatCard label="Sức khỏe / Năng lượng" value={`${character.healthEnergy ?? 0} / 100`} />

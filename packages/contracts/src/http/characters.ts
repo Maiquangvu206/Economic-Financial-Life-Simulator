@@ -18,6 +18,8 @@ export const CharacterDtoSchema = z.object({
   cccd: z.string(),
   birthplace: z.string().nullable(),
   birthplaceName: z.string().nullable(),
+  birthGameYear: z.number().int().nullable().optional(),
+  birthGameDay: z.number().int().min(0).max(359).nullable().optional(),
   age: z.number().int().min(0),
   healthEnergy: z.number().int().min(0).max(100),
   creditScore: z.number().int().min(300).max(850),

@@ -20,6 +20,8 @@ function toDto(row: CharacterRow, tier: AccountTier, netWorthMinor?: number): Ch
     cccd: row.cccd,
     birthplace: row.birthplace,
     birthplaceName: row.birthplace_name,
+    birthGameYear: row.birth_game_year ?? null,
+    birthGameDay: row.birth_game_day ?? null,
     age: row.age,
     healthEnergy: row.health_energy,
     creditScore: row.credit_score,

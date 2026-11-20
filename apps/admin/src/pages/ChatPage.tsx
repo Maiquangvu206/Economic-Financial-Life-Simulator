@@ -171,12 +171,25 @@ export function ChatPage() {
             {chat.activePeerId ? (
               <>
                 <div className="border-b border-slate-200 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-900">{activePeer?.displayName || chat.activePeerId.slice(0, 8)}</span>
-                    {activePeer && isStaff(activePeer.role) && <RoleBadge role={activePeer.role} />}
-                    <span className={clsx('h-2 w-2 rounded-full', activePeer?.isOnline ? 'bg-emerald-500' : 'bg-slate-300')} />
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate font-semibold text-slate-900">{activePeer?.displayName || chat.activePeerId.slice(0, 8)}</span>
+                        {activePeer && isStaff(activePeer.role) && <RoleBadge role={activePeer.role} />}
+                        <span className={clsx('h-2 w-2 rounded-full', activePeer?.isOnline ? 'bg-emerald-500' : 'bg-slate-300')} />
+                      </div>
+                      <div className="text-[11px] text-slate-500">{activePeer?.isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}</div>
+                    </div>
+                    {(activePeer?.unreadCount ?? 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => chat.markConversationRead(chat.activePeerId!)}
+                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Đánh dấu đã đọc
+                      </button>
+                    )}
                   </div>
-                  <div className="text-[11px] text-slate-500">{activePeer?.isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}</div>
                 </div>
                 <MessageList messages={activeMessages} myUserId={chat.myUserId} />
                 <div className="border-t border-slate-200 bg-white p-3">

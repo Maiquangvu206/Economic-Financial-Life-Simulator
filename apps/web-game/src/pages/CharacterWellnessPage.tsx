@@ -56,6 +56,13 @@ export function CharacterWellnessPage() {
     if (!travelProvince) setTravelProvince(defaultProvince);
   }, [defaultProvince, travelProvince]);
 
+  useEffect(() => {
+    const rate = healthOverview?.insurance?.contributionRatePct;
+    if (typeof rate === 'number' && Number.isFinite(rate) && rate > 0) {
+      setInsuranceRate(rate);
+    }
+  }, [healthOverview?.insurance?.contributionRatePct]);
+
   const travelDestination = useMemo(() => {
     const list = (travelOverview?.destinations ?? []) as any[];
     return list.find((d) => d.provinceCode === (travelProvince || defaultProvince)) ?? null;
@@ -154,8 +161,16 @@ export function CharacterWellnessPage() {
       }),
   });
 
-  const hw = healthOverview?.wellness;
   const ins = healthOverview?.insurance;
+  const healthEnergy = Number(healthOverview?.healthEnergy ?? character?.healthEnergy ?? 0);
+  const inActiveTrip = Boolean(healthOverview?.inActiveTrip || travelOverview?.inActiveTrip);
+  const daily = healthOverview?.daily;
+  const homeRest = healthOverview?.homeRest;
+  const medical = healthOverview?.medical;
+  const spaActivity = (healthOverview?.entertainment ?? []).find((a: any) => a.code === 'spa');
+  const entertainmentUsedToday = (healthOverview?.entertainment ?? []).reduce((sum: number, a: any) => sum + Number(a.usedToday ?? 0), 0);
+  const completedTrips = (travelOverview?.history ?? []).filter((t: any) => t.status === 'completed').length;
+  const gameYear = healthOverview?.gameTime?.year ?? travelOverview?.gameTime?.year;
 
   return (
     <div className="space-y-4">
@@ -165,7 +180,7 @@ export function CharacterWellnessPage() {
       />
       <CharacterSectionNav />
 
-      {hw?.inActiveTrip && (
+      {inActiveTrip && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           Nhân vật đang trong chuyến nghỉ dưỡng. Một số hoạt động làm việc/chợ đen sẽ bị khóa cho đến khi kết thúc.
         </div>
@@ -178,23 +193,39 @@ export function CharacterWellnessPage() {
           ) : (
             <div className="space-y-3 text-sm">
               <div className="flex items-center justify-between">
-                <span>Thể lực</span>
-                <span className="font-semibold">{Number(hw?.stamina ?? 0).toFixed(2)} / {hw?.staminaCap ?? 100}</span>
+                <span>Thể lực (sức khỏe)</span>
+                <span className="font-semibold">{healthEnergy.toFixed(0)} / 100</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                 <div
                   className="h-full bg-emerald-500"
-                  style={{ width: `${Math.max(0, Math.min(100, ((Number(hw?.stamina ?? 0) / Math.max(1, Number(hw?.staminaCap ?? 100))) * 100)))}%` }}
+                  style={{ width: `${Math.max(0, Math.min(100, healthEnergy))}%` }}
                 />
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-lg border border-slate-200 p-2">Lượt làm việc/tháng: <b>{hw?.shiftCountMonth ?? 0}</b></div>
-                <div className="rounded-lg border border-slate-200 p-2">Nghỉ ngơi/tháng: <b>{hw?.restActionsMonth ?? 0}</b></div>
-                <div className="rounded-lg border border-slate-200 p-2">Spa tháng này: <b>{hw?.spaUsedMonth ? 'Đã dùng' : 'Chưa dùng'}</b></div>
-                <div className="rounded-lg border border-slate-200 p-2">Du lịch trong kỳ: <b>{hw?.travelCountYear ?? 0}</b></div>
+                <div className="rounded-lg border border-slate-200 p-2">
+                  Nghỉ ngơi tại nhà (hôm nay): <b>{homeRest?.usedToday ?? daily?.homeRestCount ?? 0}</b> / {homeRest?.dailyLimit ?? 2}
+                </div>
+                <div className="rounded-lg border border-slate-200 p-2">
+                  Khám chữa bệnh (hôm nay): <b>{medical?.usedToday ?? daily?.medicalCount ?? 0}</b> / {medical?.dailyLimit ?? 2}
+                </div>
+                <div className="rounded-lg border border-slate-200 p-2">
+                  Spa (hôm nay): <b>{spaActivity ? `${spaActivity.usedToday}/${spaActivity.dailyLimit}` : '—'}</b>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-2">
+                  Hoạt động giải trí (hôm nay): <b>{entertainmentUsedToday}</b> lượt
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-lg border border-slate-200 p-2">
+                  Chuyến du lịch đã hoàn tất: <b>{completedTrips}</b>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-2">
+                  Trạng thái chuyến đi: <b>{inActiveTrip ? 'Đang nghỉ dưỡng' : 'Không có'}</b>
+                </div>
               </div>
               <div className="text-xs text-slate-500">
-                Trần theo tuổi: {hw?.staminaCap ?? '—'} • Kỳ du lịch: {hw?.travelYear ?? '—'}
+                Năm game: {gameYear ?? '—'} • Ngày trong năm: {healthOverview?.gameTime?.dayOfYear ?? '—'} • Mùa: {healthOverview?.gameTime?.season ?? '—'}
               </div>
             </div>
           )}
@@ -241,24 +272,34 @@ export function CharacterWellnessPage() {
         <div className="grid gap-3 md:grid-cols-2">
           <button
             type="button"
-            disabled={!!hw?.inActiveTrip}
+            disabled={inActiveTrip || homeRest?.canRest === false}
             onClick={() => run(() => apiRequest('/api/v1/health/rest', { method: 'POST', body: JSON.stringify({}) }), 'Nghỉ ngơi')}
             className="rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-50 disabled:opacity-50"
+            title={homeRest?.reason ?? undefined}
           >
             <div className="font-semibold text-slate-900">Nghỉ ngơi tại nhà</div>
-            <div className="mt-1 text-xs text-slate-600">Hồi 5–10% trần thể lực, tối đa 5 lần/tháng, không tốn tiền.</div>
+            <div className="mt-1 text-xs text-slate-600">
+              Hồi {homeRest?.energyGain ?? '—'} thể lực • {homeRest?.usedToday ?? daily?.homeRestCount ?? 0}/{homeRest?.dailyLimit ?? 2} lượt hôm nay • Chi phí {fmtMoneyValue(homeRest?.cost)}
+            </div>
+            {homeRest?.reason && homeRest.canRest === false && (
+              <div className="mt-1 text-[11px] text-amber-700">{homeRest.reason}</div>
+            )}
           </button>
 
           <button
             type="button"
-            disabled={!!hw?.inActiveTrip || !!hw?.spaUsedMonth}
-            onClick={() => run(() => apiRequest('/api/v1/health/spa', { method: 'POST', body: JSON.stringify({}) }), 'Gói Spa')}
+            disabled={inActiveTrip || !(spaActivity?.available)}
+            onClick={() => run(() => apiRequest('/api/v1/health/entertainment/perform', { method: 'POST', body: JSON.stringify({ activityCode: 'spa' }) }), 'Gói Spa')}
             className="rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-50 disabled:opacity-50"
+            title={spaActivity?.unavailableReason ?? undefined}
           >
-            <div className="font-semibold text-slate-900">Gói Spa cao cấp</div>
+            <div className="font-semibold text-slate-900">Spa thư giãn</div>
             <div className="mt-1 text-xs text-slate-600">
-              Chi phí {fmtMoneyValue(healthOverview?.spaCost)} • Hồi 30% trần • 1 lần/tháng.
+              Chi phí {fmtMoneyValue(spaActivity?.cost)} • Hồi {spaActivity?.energyGain ?? '—'} thể lực • {spaActivity?.usedToday ?? 0}/{spaActivity?.dailyLimit ?? 1} lượt hôm nay.
             </div>
+            {spaActivity?.unavailableReason && !spaActivity.available && (
+              <div className="mt-1 text-[11px] text-amber-700">{spaActivity.unavailableReason}</div>
+            )}
           </button>
         </div>
       </Panel>

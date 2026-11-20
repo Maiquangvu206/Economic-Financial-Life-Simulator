@@ -78,20 +78,31 @@ export class ChatRepository {
          FROM chat_messages m
          WHERE m.channel = 'private' AND (m.sender_user_id = $1 OR m.receiver_user_id = $1)
          ORDER BY CASE WHEN m.sender_user_id = $1 THEN m.receiver_user_id ELSE m.sender_user_id END, m.created_at DESC
+       ),
+       reads AS (
+         SELECT peer_user_id, last_read_at
+         FROM chat_conversation_reads
+         WHERE user_id = $1
+       ),
+       unread AS (
+         SELECT m.sender_user_id AS peer_user_id, COUNT(*)::bigint AS unread_count
+         FROM chat_messages m
+         JOIN pairs p ON p.peer_user_id = m.sender_user_id
+         LEFT JOIN reads r ON r.peer_user_id = m.sender_user_id
+         WHERE m.channel = 'private'
+           AND m.receiver_user_id = $1
+           AND m.created_at > COALESCE(r.last_read_at, '1970-01-01'::timestamptz)
+         GROUP BY m.sender_user_id
        )
        SELECT p.peer_user_id,
               COALESCE(NULLIF(c.full_name,''), NULLIF(u.username,''), u.email, 'Người dùng') AS display_name,
               COALESCE(u.role,'player') AS role,
               lm.last_message,
               lm.last_at,
-              COALESCE((
-                SELECT COUNT(*)::text FROM chat_messages m2
-                LEFT JOIN chat_conversation_reads r ON r.user_id = $1 AND r.peer_user_id = p.peer_user_id
-                WHERE m2.channel='private' AND m2.sender_user_id = p.peer_user_id AND m2.receiver_user_id = $1
-                  AND m2.created_at > COALESCE(r.last_read_at, '1970-01-01'::timestamptz)
-              ), '0') AS unread_count
+              COALESCE(u2.unread_count, 0)::text AS unread_count
        FROM pairs p
        JOIN last_msg lm ON lm.peer_user_id = p.peer_user_id
+       LEFT JOIN unread u2 ON u2.peer_user_id = p.peer_user_id
        LEFT JOIN users u ON u.id = p.peer_user_id
        LEFT JOIN LATERAL (
          SELECT id, full_name FROM characters ch

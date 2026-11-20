@@ -48,6 +48,8 @@ interface CreateCompanyInput {
   industry: string;
   ownerCharacterId: string;
   initialCapitalMinor: number;
+  foundedGameYear: number;
+  foundedGameMonth: number;
   premises: {
     type: 'land_core' | 'land_province' | 'company_property';
     provinceCode: string | null;
@@ -183,9 +185,10 @@ export class CorporationRepository {
     const result = await db.query<{ id: string }>(
       `INSERT INTO companies (
          id, name, industry, owner_character_id, cash_minor, valuation_minor, status, ticker_symbol,
-         premises_type, premises_province_code, premises_core_property_id, premises_province_land_property_id, premises_company_property_id
+         premises_type, premises_province_code, premises_core_property_id, premises_province_land_property_id, premises_company_property_id,
+         founded_game_year, founded_game_month
        )
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $4, 'active', NULL, $5, $6, $7, $8, $9)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $4, 'active', NULL, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id`,
       [
         input.name,
@@ -197,6 +200,8 @@ export class CorporationRepository {
         input.premises.corePropertyId,
         input.premises.provinceLandPropertyId,
         input.premises.companyPropertyId,
+        input.foundedGameYear,
+        input.foundedGameMonth,
       ],
     );
     return result.rows[0]!.id;
@@ -911,11 +916,12 @@ export class CorporationRepository {
     return r.rows[0] ?? null;
   }
 
-  async sumOpexInPeriod(db: Db, companyId: string, periodKey: string): Promise<number> {
+  async sumOperatingExpensesInPeriod(db: Db, companyId: string, periodKey: string): Promise<number> {
+    // Chi phí kỳ: gồm OPEX, lương (payroll) và chi phí khác được ghi nhận theo period_key.
     const r = await db.query<{ total: string }>(
       `SELECT COALESCE(SUM(amount_minor),0)::bigint AS total
        FROM company_ledger_entries
-       WHERE company_id = $1 AND period_key = $2 AND entry_type = 'opex'`,
+       WHERE company_id = $1 AND period_key = $2 AND entry_type IN ('opex','payroll','other')`,
       [companyId, periodKey],
     );
     return Number(r.rows[0]?.total ?? 0);

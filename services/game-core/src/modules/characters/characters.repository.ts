@@ -12,6 +12,8 @@ export interface CharacterRow {
   cccd: string;
   birthplace: string | null;
   birthplace_name: string | null;
+  birth_game_year: number | null;
+  birth_game_day: number | null;
   age: number;
   health_energy: number;
   cash_minor: string;
@@ -39,6 +41,7 @@ export class CharactersRepository {
     return `
       ${alias}.id, ${alias}.user_id, ${alias}.full_name, ${alias}.account_number, ${alias}.cccd, ${alias}.birthplace,
       p.name AS birthplace_name,
+      ${alias}.birth_game_year, ${alias}.birth_game_day,
       ${alias}.age, ${alias}.health_energy, ${alias}.cash_minor, ${alias}.credit_score,
       ${alias}.heat_level, COALESCE(${alias}.is_alive, true) AS is_alive, ${alias}.marital_status, ${alias}.spouse_id,
       ${alias}.location_x, ${alias}.location_y, ${alias}.created_at
@@ -216,6 +219,7 @@ export class CharactersRepository {
           credit_score, heat_level, is_alive, marital_status, location_x, location_y, birth_game_year, birth_game_day, death_age)
        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $8, 100, $9, 650, 0, true, 'single', $6, $7, $10, $11, 80)
        RETURNING id, user_id, full_name, account_number, cccd, birthplace, NULL::text AS birthplace_name,
+                 birth_game_year, birth_game_day,
                  age, health_energy, cash_minor, credit_score, heat_level, is_alive,
                  marital_status, spouse_id, location_x, location_y, created_at`,
       [
@@ -241,6 +245,7 @@ export class CharactersRepository {
        SET location_x = $2, location_y = $3, updated_at = now()
        WHERE id = $1
        RETURNING id, user_id, full_name, account_number, cccd, birthplace, NULL::text AS birthplace_name,
+                 birth_game_year, birth_game_day,
                  age, health_energy, cash_minor, credit_score, heat_level, COALESCE(is_alive,true) AS is_alive,
                  marital_status, spouse_id, location_x, location_y, created_at`,
       [characterId, x, y],

@@ -42,12 +42,35 @@ const NAV_ITEMS = [
   { to: '/recap', label: 'Khi vắng mặt', symbol: '◷' },
 ];
 
-function getActiveDays(createdAt?: string | null) {
+function getDaysLivedByRealTime(createdAt?: string | null) {
   if (!createdAt) return null;
   const t = new Date(createdAt).getTime();
   if (Number.isNaN(t)) return null;
   const diff = Date.now() - t;
   return Math.max(1, Math.floor(diff / 86_400_000) + 1);
+}
+
+function getDaysLivedGameTime(
+  character: CharacterDto | null | undefined,
+  currentYear: number,
+  currentDayOfYear: number,
+  fallbackCreatedAt?: string | null,
+) {
+  const birthYear = character?.birthGameYear;
+  const birthDay = character?.birthGameDay;
+  if (
+    character &&
+    currentYear > 0 &&
+    typeof birthYear === 'number' &&
+    typeof birthDay === 'number' &&
+    Number.isFinite(birthYear) &&
+    Number.isFinite(birthDay)
+  ) {
+    const currentAbs = Math.floor(currentYear) * 360 + ((Math.floor(currentDayOfYear) % 360) + 360) % 360;
+    const birthAbs = Math.floor(birthYear) * 360 + ((Math.floor(birthDay) % 360) + 360) % 360;
+    return Math.max(1, currentAbs - birthAbs + 1);
+  }
+  return getDaysLivedByRealTime(fallbackCreatedAt ?? character?.createdAt ?? null);
 }
 
 const SEASON_LABELS: Record<string, { label: string; icon: string; badgeCls: string }> = {
@@ -84,7 +107,7 @@ export function AppLayout() {
   const setSession = useSessionStore((state) => state.setSession);
   const clearSession = useSessionStore((state) => state.clearSession);
   const {
-    netWorth, cash, heatLevel, energy, year, month, day, hour, minute,
+    netWorth, cash, heatLevel, energy, year, month, day, dayOfYear, hour, minute,
     isPaused, season, period, activeHoliday,
     lastHolidayLetter, claimHolidayGift, dismissHolidayLetter, tickTime, setSeason, setGameState, syncServerTime,
   } = useGameStore();
@@ -513,7 +536,7 @@ export function AppLayout() {
           <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
             <span>Số ngày hoạt động:</span>
             <span className="font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-              {getActiveDays(user?.createdAt ?? me?.createdAt) ?? '—'} ngày
+              {getDaysLivedGameTime(me, year, dayOfYear, user?.createdAt ?? me?.createdAt) ?? '—'} ngày
             </span>
           </div>
         </div>
@@ -549,7 +572,7 @@ export function AppLayout() {
           </div>
           <div className="flex items-center justify-between text-[11px]">
             <span>Số ngày hoạt động:</span>
-            <span className="font-medium text-slate-700">{getActiveDays(user?.createdAt ?? me?.createdAt) ?? '—'} ngày</span>
+            <span className="font-medium text-slate-700">{getDaysLivedGameTime(me, year, dayOfYear, user?.createdAt ?? me?.createdAt) ?? '—'} ngày</span>
           </div>
           <button type="button" onClick={handleLogout} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600">
             Đăng xuất

@@ -87,6 +87,8 @@ export function useChatSocket() {
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const myUserIdRef = useRef(myUserId);
   const activePeerIdRef = useRef<string | null>(null);
+  const markReadTimersRef = useRef<Record<string, number>>({});
+  const markReadInFlightRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => { myUserIdRef.current = myUserId; }, [myUserId]);
   useEffect(() => { activePeerIdRef.current = activePeerId; }, [activePeerId]);
@@ -98,6 +100,35 @@ export function useChatSocket() {
     refetchIntervalInBackground: false,
     staleTime: 30_000,
   });
+
+  const markConversationRead = useCallback((peerUserId: string) => {
+    if (!peerUserId) return;
+    setUnreadByPeer((prev) => (prev[peerUserId] === 0 ? prev : { ...prev, [peerUserId]: 0 }));
+    if (markReadInFlightRef.current[peerUserId]) return;
+    markReadInFlightRef.current[peerUserId] = true;
+    void apiRequest('/api/v1/chat/conversations/read', {
+      method: 'POST',
+      body: JSON.stringify({ peerUserId }),
+    })
+      .then(() => { void refetchConversations(); })
+      .catch(() => { /* best effort; local unread already cleared */ })
+      .finally(() => { markReadInFlightRef.current[peerUserId] = false; });
+  }, [refetchConversations]);
+
+  const scheduleMarkConversationRead = useCallback((peerUserId: string) => {
+    if (!peerUserId) return;
+    const existing = markReadTimersRef.current[peerUserId];
+    if (existing) window.clearTimeout(existing);
+    markReadTimersRef.current[peerUserId] = window.setTimeout(() => {
+      delete markReadTimersRef.current[peerUserId];
+      markConversationRead(peerUserId);
+    }, 400);
+  }, [markConversationRead]);
+
+  useEffect(() => () => {
+    for (const t of Object.values(markReadTimersRef.current)) window.clearTimeout(t);
+    markReadTimersRef.current = {};
+  }, []);
 
   const upsertMessage = useCallback((incoming: UiChatMessage, opts?: { countUnread?: boolean }) => {
     const apply = (list: UiChatMessage[]) => {
@@ -128,10 +159,16 @@ export function useChatSocket() {
       return prev;
     });
 
-    if (opts?.countUnread && incoming.senderId !== me && activePeerIdRef.current !== peerId) {
-      setUnreadByPeer((prev) => ({ ...prev, [peerId]: (prev[peerId] ?? 0) + 1 }));
+    if (opts?.countUnread && incoming.senderId !== me) {
+      if (activePeerIdRef.current !== peerId) {
+        setUnreadByPeer((prev) => ({ ...prev, [peerId]: (prev[peerId] ?? 0) + 1 }));
+      } else {
+        // Đang mở hội thoại: giữ trạng thái đã đọc cả local và server.
+        setUnreadByPeer((prev) => (prev[peerId] === 0 ? prev : { ...prev, [peerId]: 0 }));
+        scheduleMarkConversationRead(peerId);
+      }
     }
-  }, []);
+  }, [scheduleMarkConversationRead]);
 
   useEffect(() => {
     const socket = getGameSocket();
@@ -274,13 +311,13 @@ export function useChatSocket() {
       window.clearTimeout(timeout);
       if (ack && ack.ok) {
         upsertMessage({ ...optimistic, id: ack.id, createdAt: ack.createdAt, localStatus: 'sent' });
-        void apiRequest('/api/v1/chat/conversations/read', { method: 'POST', body: JSON.stringify({ peerUserId: receiverId }) }).catch(() => {});
+        markConversationRead(receiverId);
       } else {
         upsertMessage({ ...optimistic, localStatus: 'error' });
         pushToast({ variant: 'error', title: 'Chat', description: (ack as any)?.error === 'rate_limited' ? 'Bạn đang gửi quá nhanh. Vui lòng chờ một chút.' : 'Không gửi được tin nhắn.' });
       }
     });
-  }, [upsertMessage]);
+  }, [upsertMessage, markConversationRead]);
 
   const loadHistory = useCallback(async (peerUserId: string) => {
     try {
@@ -295,10 +332,9 @@ export function useChatSocket() {
 
   const openConversation = useCallback((peerUserId: string) => {
     setActivePeerId(peerUserId);
-    setUnreadByPeer((prev) => ({ ...prev, [peerUserId]: 0 }));
     void loadHistory(peerUserId);
-    void apiRequest('/api/v1/chat/conversations/read', { method: 'POST', body: JSON.stringify({ peerUserId }) }).catch(() => {});
-  }, [loadHistory]);
+    markConversationRead(peerUserId);
+  }, [loadHistory, markConversationRead]);
 
   const conversations = useMemo(() => {
     const map = new Map<string, Conversation>();
@@ -348,6 +384,7 @@ export function useChatSocket() {
       if (id) openConversation(id); else setActivePeerId(null);
     },
     openConversation,
+    markConversationRead,
     totalPrivateUnread,
     sendGlobal,
     sendPrivate,

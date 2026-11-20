@@ -1434,7 +1434,8 @@ export async function processGameTick(): Promise<GameTickResult> {
     await client.query('SAVEPOINT company_settlement_step');
     try {
       const completedPeriods: Array<{ periodKey: string; gameYear: number; gameMonth: number }> = [];
-      for (let i = 1; i <= 3; i++) {
+      // Đồng bộ theo thời gian hệ thống (game_state): bù tối đa 48 kỳ tháng game đã hoàn tất để không lệch thời gian/kỳ.
+      for (let i = 1; i <= 48; i++) {
         let m = nextTime.month - i;
         let y = nextYear;
         while (m <= 0) {
@@ -1465,10 +1466,14 @@ export async function processGameTick(): Promise<GameTickResult> {
           valuation_minor: string;
           cash_minor: string;
           revenue_retain_pct: string | number;
+          founded_game_year: number | null;
+          founded_game_month: number | null;
         }>(
-          `SELECT c.id, c.owner_character_id, c.industry, c.valuation_minor, c.cash_minor, COALESCE(c.revenue_retain_pct,0) AS revenue_retain_pct
+          `SELECT c.id, c.owner_character_id, c.industry, c.valuation_minor, c.cash_minor,
+                  COALESCE(c.revenue_retain_pct,0) AS revenue_retain_pct,
+                  c.founded_game_year, c.founded_game_month
            FROM companies c
-           WHERE c.status = 'active'
+           WHERE c.status IN ('active', 'ipo')
              AND EXISTS (SELECT 1 FROM business_licenses bl WHERE bl.company_id = c.id AND bl.status = 'active')
              AND NOT EXISTS (SELECT 1 FROM company_revenue_settlements s WHERE s.company_id = c.id AND s.period_key = $1)`,
           [periodKey],
@@ -1476,6 +1481,13 @@ export async function processGameTick(): Promise<GameTickResult> {
 
         let settledForPeriod = 0;
         for (const co of companiesRes.rows) {
+          // Không chốt doanh thu/thuế cho các kỳ trước thời điểm thành lập công ty (theo thời gian game).
+          if (co.founded_game_year != null && co.founded_game_month != null) {
+            if (gameYear < co.founded_game_year || (gameYear === co.founded_game_year && gameMonth < co.founded_game_month)) {
+              continue;
+            }
+          }
+
           const cfg = cfgMap.get(co.industry);
           if (!cfg) continue;
           const ratePct = Number(cfg.monthly_rate_pct ?? 0);
