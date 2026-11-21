@@ -500,7 +500,7 @@ export class CorporationService {
     await requireLivingCharacterByUserId(this.repository.db, userId);
     const company = await this.repository.getCompany(companyId);
     if (!company) throw AppError.notFound('Company');
-    throw AppError.badRequest('Cổ tức thủ công đã được tắt. Hệ thống sẽ tự động chia cổ tức theo kỳ 30 ngày sau khi bạn khai và nộp thuế doanh nghiệp.');
+    throw AppError.badRequest('Cổ tức thủ công đã được tắt. Hệ thống sẽ tự động chia cổ tức sau khi bạn quyết toán và nộp thuế doanh nghiệp theo năm.');
   }
 
   private isRawBuildableLand(constructionOption: string | null | undefined, propertyType: string | null | undefined): boolean {
@@ -1424,25 +1424,41 @@ export class CorporationService {
         throw AppError.badRequest('Doanh thu khai báo không hợp lệ.');
       }
 
-      // Xác định kỳ 30 ngày: ưu tiên period/periodKey truyền vào, nếu không lấy kỳ gần nhất đã chốt doanh thu thực tế
-      const requestedKey = (input.period ?? '').trim() || null;
-      const settlement = await this.repository.getSettlementForFiling(client, companyId, requestedKey);
-      if (!settlement) {
-        throw AppError.badRequest('Chưa có kỳ 30 ngày nào được hệ thống chốt doanh thu thực tế để khai thuế.');
+      // Quyết toán thuế doanh nghiệp theo NĂM game (không theo tháng).
+      // period có thể là "YYYY" hoặc "YYYY-MM" (tương thích cũ) - đều quy về năm.
+      const requestedRaw = (input.period ?? '').trim();
+      let requestedYear: number | null = null;
+      if (requestedRaw) {
+        const m = requestedRaw.match(/^(\d{4})(?:-\d{2})?$/);
+        if (!m) {
+          throw AppError.badRequest('Kỳ quyết toán thuế không hợp lệ. Vui lòng nhập năm (VD: 2000).');
+        }
+        requestedYear = Number(m[1]);
       }
-      const periodKey = String(settlement.period_key);
-      const actualRevenue = Math.max(0, Number(settlement.actual_revenue_minor ?? 0));
 
-      // 1 kỳ chỉ khai 1 lần (nộp thuế + chia cổ tức tự động)
+      const annual = await this.repository.getAnnualSettlementForFiling(client, companyId, requestedYear);
+      if (!annual) {
+        throw AppError.badRequest(
+          requestedYear != null
+            ? `Chưa có kỳ doanh thu 30 ngày nào được hệ thống chốt trong năm ${requestedYear} để quyết toán thuế.`
+            : 'Chưa có kỳ doanh thu 30 ngày nào được hệ thống chốt để quyết toán thuế.',
+        );
+      }
+
+      const taxYear = Number(annual.year);
+      const periodKey = String(taxYear);
+      const actualRevenue = Math.max(0, Number(annual.actual_revenue_minor ?? 0));
+
+      // 1 năm chỉ quyết toán 1 lần (nộp thuế + chia cổ tức tự động)
       const existing = await client.query<{ id: string }>(
         `SELECT id FROM company_tax_filings WHERE company_id = $1 AND period_key = $2 LIMIT 1`,
         [companyId, periodKey],
       );
       if (existing.rows[0]) {
-        throw AppError.conflict('tax_filing_exists', `Kỳ ${periodKey} đã được khai/nộp thuế.`);
+        throw AppError.conflict('tax_filing_exists', `Năm ${periodKey} đã được quyết toán/nộp thuế.`);
       }
 
-      const periodExpenses = await this.repository.sumOperatingExpensesInPeriod(client, companyId, periodKey);
+      const periodExpenses = await this.repository.sumOperatingExpensesInYear(client, companyId, taxYear);
       const taxDueMinor = Math.round(declaredRevenue * 0.1);
       const dividendPool = declaredRevenue - taxDueMinor - periodExpenses;
 
@@ -1454,20 +1470,20 @@ export class CorporationService {
       if (shortfall > 0) {
         if (!input.usePersonalFundsForShortfall) {
           if (companyCash < taxDueMinor) {
-            throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế kỳ ${periodKey}. Cần ${formatMinor(taxDueMinor)} (có thể chọn dùng ví cá nhân bù thiếu).`);
+            throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế năm ${periodKey}. Cần ${formatMinor(taxDueMinor)} (có thể chọn dùng ví cá nhân bù thiếu).`);
           }
-          throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế và chia cổ tức kỳ ${periodKey}. (Có thể chọn dùng ví cá nhân bù thiếu)`);
+          throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế và chia cổ tức năm ${periodKey}. (Có thể chọn dùng ví cá nhân bù thiếu)`);
         }
         const ownerCash = toMinor(ownerChar.cash_minor);
         if (ownerCash < shortfall) {
-          throw AppError.conflict('insufficient_funds', `Ví cá nhân không đủ để bù thiếu ${formatMinor(shortfall)} cho kỳ ${periodKey} (thuế + cổ tức).`);
+          throw AppError.conflict('insufficient_funds', `Ví cá nhân không đủ để bù thiếu ${formatMinor(shortfall)} cho năm ${periodKey} (thuế + cổ tức).`);
         }
         await ledger.transfer(client, {
           from: { ownerType: 'character', ownerId: ownerChar.id, kind: 'cash' },
           to: { ownerType: 'company', ownerId: companyId, kind: 'cash' },
           amountMinor: shortfall,
           kind: 'company_tax_shortfall_cover',
-          description: `Bù thiếu quỹ công ty cho kỳ ${periodKey} (thuế/cổ tức) từ ví cá nhân`,
+          description: `Bù thiếu quỹ công ty cho năm ${periodKey} (thuế/cổ tức) từ ví cá nhân`,
           referenceType: 'company_tax_filing',
           referenceId: companyId,
         });
@@ -1477,10 +1493,10 @@ export class CorporationService {
       }
 
       if (companyCash < taxDueMinor) {
-        throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế kỳ ${periodKey}. Cần ${formatMinor(taxDueMinor)}.`);
+        throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế năm ${periodKey}. Cần ${formatMinor(taxDueMinor)}.`);
       }
       if (dividendPool > 0 && companyCash < taxDueMinor + dividendPool) {
-        throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế và chia cổ tức kỳ ${periodKey}.`);
+        throw AppError.conflict('insufficient_funds', `Quỹ công ty không đủ để nộp thuế và chia cổ tức năm ${periodKey}.`);
       }
 
       // Trừ thuế từ quỹ công ty
@@ -1492,7 +1508,7 @@ export class CorporationService {
         entryType: 'tax',
         amountMinor: taxDueMinor,
         declaredAmountMinor: taxDueMinor,
-        description: `Nộp thuế doanh nghiệp kỳ ${periodKey} (10% trên doanh thu khai báo)`,
+        description: `Nộp thuế doanh nghiệp năm ${periodKey} (10% trên doanh thu khai báo)`,
         isEvasion: false,
         ledgerKind: 'ACTUAL',
         periodKey,
@@ -1510,7 +1526,7 @@ export class CorporationService {
         );
       }
 
-      // Chia cổ tức tự động theo tỉ lệ cổ phần nếu có lợi nhuận sau thuế và OPEX kỳ
+      // Chia cổ tức tự động theo tỉ lệ cổ phần nếu có lợi nhuận sau thuế và chi phí năm
       let dividendDistributed = 0;
       let dividendRecipients = 0;
       if (dividendPool > 0) {
@@ -1523,11 +1539,11 @@ export class CorporationService {
         dividendRecipients = dist.recipientCount;
       }
 
-      const status = dividendPool > 0 ? 'filed' : 'filed';
+      const status = 'filed';
       const notesParts = [
         input.notes?.trim() || '',
-        `Kỳ ${periodKey}: DT thực tế ${formatMinor(actualRevenue)}, DT khai ${formatMinor(declaredRevenue)}, thuế ${formatMinor(taxDueMinor)}, chi phí kỳ (OPEX+lương+khác) ${formatMinor(periodExpenses)}, quỹ cổ tức ${formatMinor(Math.max(0, dividendPool))}.`,
-        dividendPool > 0 ? `Đã tự động chia cổ tức ${formatMinor(dividendDistributed)} cho ${dividendRecipients} cổ đông.` : 'Kỳ báo lỗ/không đủ quỹ chia cổ tức, không chia cổ tức.',
+        `Năm ${periodKey} (${annual.period_count} kỳ doanh thu): DT thực tế ${formatMinor(actualRevenue)}, DT khai ${formatMinor(declaredRevenue)}, thuế ${formatMinor(taxDueMinor)}, chi phí năm (OPEX+lương+khác) ${formatMinor(periodExpenses)}, quỹ cổ tức ${formatMinor(Math.max(0, dividendPool))}.`,
+        dividendPool > 0 ? `Đã tự động chia cổ tức ${formatMinor(dividendDistributed)} cho ${dividendRecipients} cổ đông.` : 'Năm báo lỗ/không đủ quỹ chia cổ tức, không chia cổ tức.',
       ].filter(Boolean);
 
       await this.repository.createTaxFiling(client, {
@@ -1553,9 +1569,9 @@ export class CorporationService {
       await notify(client, {
         userId,
         kind: 'company',
-        title: 'Khai thuế & chốt kỳ 30 ngày',
-        body: `Công ty "${company.name}" đã khai/nộp thuế kỳ ${periodKey}. Thuế: ${formatMinor(taxDueMinor)}.${dividendPool > 0 ? ` Cổ tức tự động: ${formatMinor(dividendDistributed)}.` : ' Không chia cổ tức (báo lỗ/không đủ quỹ).'}`,
-        payload: { companyId, periodKey, declaredRevenue, actualRevenue, taxDueMinor, dividendPool: Math.max(0, dividendPool), dividendDistributed },
+        title: 'Quyết toán thuế doanh nghiệp năm',
+        body: `Công ty "${company.name}" đã quyết toán/nộp thuế năm ${periodKey}. Thuế: ${formatMinor(taxDueMinor)}.${dividendPool > 0 ? ` Cổ tức tự động: ${formatMinor(dividendDistributed)}.` : ' Không chia cổ tức (báo lỗ/không đủ quỹ).'}`,
+        payload: { companyId, periodKey, taxYear, declaredRevenue, actualRevenue, taxDueMinor, dividendPool: Math.max(0, dividendPool), dividendDistributed },
       });
 
       return this.getHrAccounting(userId, companyId);

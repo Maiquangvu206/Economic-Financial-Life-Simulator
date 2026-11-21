@@ -41,6 +41,14 @@ function addGameDays(year: number, dayOfYear: number, deltaDays: number): { year
   return fromAbsDay(absDay(year, dayOfYear) + deltaDays);
 }
 
+/** Hiển thị ngày trong năm game (0–359) dạng dd/MM. */
+function formatGameDayOfYear(dayOfYear: number): string {
+  const normalized = ((Math.floor(dayOfYear) % DAYS_PER_YEAR) + DAYS_PER_YEAR) % DAYS_PER_YEAR;
+  const day = (normalized % DAYS_PER_MONTH) + 1;
+  const month = Math.floor(normalized / DAYS_PER_MONTH) + 1;
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+}
+
 function money(amount: number) {
   return { amount: Math.max(0, Math.round(amount)), currency: 'VND' as const };
 }
@@ -421,7 +429,7 @@ export class FamilyService {
             userId: st.user_id,
             kind: 'social',
             title: 'Bắt đầu thai kỳ',
-            body: `Thai kỳ đã được khởi tạo (10 tháng game). Dự kiến sinh vào ngày game ${due.day + 1}/năm ${due.year}.`,
+            body: `Thai kỳ đã được khởi tạo (10 tháng game). Dự kiến sinh vào ${formatGameDayOfYear(due.day)}/${due.year}.`,
             payload: { pregnancyId, pregnantCharacterId: pregnantId, dueGameYear: due.year, dueGameDay: due.day },
           });
         }

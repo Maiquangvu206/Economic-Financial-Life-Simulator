@@ -738,10 +738,11 @@ export function BusinessPageView(props: any) {
                             </div>
 
                             <div className="space-y-2 rounded-lg border border-amber-100 bg-white p-2.5">
-                              <p className="text-[11px] font-semibold text-slate-700">Khai và nộp thuế</p>
+                              <p className="text-[11px] font-semibold text-slate-700">Quyết toán thuế doanh nghiệp theo năm</p>
+                              <p className="text-[11px] text-slate-500">Doanh thu vẫn được hệ thống chốt tự động mỗi 30 ngày game, nhưng thuế doanh nghiệp được quyết toán <b>1 lần/năm</b>. Doanh thu thực tế năm = tổng doanh thu các kỳ 30 ngày đã chốt trong năm.</p>
                               <div className="grid gap-2 sm:grid-cols-2">
-                                <GameInput label="Kỳ (để trống = kỳ gần nhất chưa khai)" value={filingPeriod} onChange={(e) => setFilingPeriod(e.target.value)} placeholder="VD: 2000-01" />
-                                <GameInput label="Doanh thu khai báo (VND)" type="number" min={0} value={declaredRevenueInput} onChange={(e) => setDeclaredRevenueInput(e.target.value)} />
+                                <GameInput label="Năm quyết toán (để trống = năm gần nhất có doanh thu)" value={filingPeriod} onChange={(e) => setFilingPeriod(e.target.value)} placeholder="VD: 2000" />
+                                <GameInput label="Doanh thu khai báo cả năm (VND)" type="number" min={0} value={declaredRevenueInput} onChange={(e) => setDeclaredRevenueInput(e.target.value)} />
                               </div>
                               <GameInput label="Ghi chú (không bắt buộc)" value={filingNotes} onChange={(e) => setFilingNotes(e.target.value)} />
                               <label className="flex items-start gap-2 text-[11px] text-slate-600">
@@ -749,15 +750,15 @@ export function BusinessPageView(props: any) {
                                 <span>Cho phép dùng ví cá nhân bù phần quỹ công ty thiếu để nộp thuế và xử lý cổ tức.</span>
                               </label>
                               <GameButton variant="primary" onClick={() => createFiling.mutate(selectedCompany.id)} disabled={createFiling.isPending}>
-                                {createFiling.isPending ? 'Đang nộp...' : 'Khai & nộp thuế'}
+                                {createFiling.isPending ? 'Đang nộp...' : 'Quyết toán & nộp thuế năm'}
                               </GameButton>
                             </div>
 
                             <div className="space-y-1.5">
                               <div className="flex flex-wrap items-end justify-between gap-2">
                                 <div>
-                                  <p className="text-[11px] font-semibold text-slate-700">Bảng thống kê doanh thu theo kỳ (dùng để khai thuế)</p>
-                                  <p className="text-[11px] text-slate-500">Doanh thu thực tế do hệ thống tự chốt mỗi 30 ngày game. Khi khai thuế, bạn nên đối chiếu cột <b>Doanh thu thực tế</b> của kỳ tương ứng.</p>
+                                  <p className="text-[11px] font-semibold text-slate-700">Bảng thống kê doanh thu theo kỳ (30 ngày game)</p>
+                                  <p className="text-[11px] text-slate-500">Doanh thu thực tế do hệ thống tự chốt mỗi 30 ngày game. Thuế doanh nghiệp được quyết toán theo năm: khi quyết toán, hệ thống cộng doanh thu thực tế của các kỳ trong năm.</p>
                                 </div>
                                 {revenueSettlements.length > 0 && (
                                   <div className="w-full sm:w-64">
@@ -789,7 +790,7 @@ export function BusinessPageView(props: any) {
                                           <th className="px-2.5 py-2 text-right font-semibold">Doanh thu thực tế</th>
                                           <th className="px-2.5 py-2 text-right font-semibold">Đã khai</th>
                                           <th className="px-2.5 py-2 text-right font-semibold">Thuế đã nộp</th>
-                                          <th className="px-2.5 py-2 text-left font-semibold">Trạng thái khai</th>
+                                          <th className="px-2.5 py-2 text-left font-semibold">Quyết toán năm</th>
                                           <th className="px-2.5 py-2 text-left font-semibold">Chốt lúc</th>
                                         </tr>
                                       </thead>
@@ -804,10 +805,10 @@ export function BusinessPageView(props: any) {
                                             <td className="px-2.5 py-2">
                                               {s.filed ? (
                                                 <Badge variant={s.filingStatus === 'penalized' ? 'warning' : s.filingStatus === 'audited' ? 'success' : 'default'}>
-                                                  {s.filingStatus ?? 'đã khai'}
+                                                  {s.filingStatus ?? 'đã quyết toán'}
                                                 </Badge>
                                               ) : (
-                                                <Badge variant="warning">Chưa khai</Badge>
+                                                <Badge variant="warning">Chưa quyết toán</Badge>
                                               )}
                                             </td>
                                             <td className="px-2.5 py-2 text-slate-500 whitespace-nowrap">{new Date(s.settledAt).toLocaleString('vi-VN')}</td>
@@ -827,12 +828,12 @@ export function BusinessPageView(props: any) {
                             </div>
 
                             <div className="space-y-1.5">
-                              <p className="text-[11px] font-semibold text-slate-700">Lịch sử khai thuế</p>
+                              <p className="text-[11px] font-semibold text-slate-700">Lịch sử quyết toán thuế</p>
                               {filings.length === 0 ? (
-                                <p className="rounded-lg bg-white p-2 text-[11px] text-slate-500">Chưa có hồ sơ khai thuế. Hồ sơ chỉ lập được sau khi hệ thống chốt doanh thu ít nhất một kỳ 30 ngày game.</p>
+                                <p className="rounded-lg bg-white p-2 text-[11px] text-slate-500">Chưa có hồ sơ quyết toán thuế. Hồ sơ chỉ lập được sau khi hệ thống chốt doanh thu ít nhất một kỳ 30 ngày game trong năm.</p>
                               ) : filings.map((filing: any) => (
                                 <div key={filing.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-2 text-[11px]">
-                                  <div><span className="font-medium text-slate-800">Kỳ {filing.periodKey ?? filing.period}</span><span className="ml-2 text-slate-500">{new Date(filing.createdAt).toLocaleDateString('vi-VN')}</span></div>
+                                  <div><span className="font-medium text-slate-800">Năm {filing.periodKey ?? filing.period}</span><span className="ml-2 text-slate-500">{new Date(filing.createdAt).toLocaleDateString('vi-VN')}</span></div>
                                   <div className="text-right text-slate-600">Thuế {formatMoney(filing.taxPaid.amount)} · DT khai {formatMoney(filing.declaredRevenue.amount)} <Badge variant={filing.status === 'penalized' ? 'warning' : filing.status === 'audited' ? 'success' : 'default'}>{filing.status}</Badge></div>
                                 </div>
                               ))}

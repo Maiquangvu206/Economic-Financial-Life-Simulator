@@ -8,7 +8,7 @@ import { Modal } from '../shared/ui/Modal';
 import { Badge } from '../shared/ui/Badge';
 import { GameInput } from '../shared/ui/GameInput';
 import { CCCDLookupInput } from '../shared/identity/CCCDLookupInput';
-import { formatMoney } from '../shared/lib/format';
+import { formatGameDate, formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
 import {
   type LawOverviewExtDto,
@@ -532,7 +532,7 @@ export function LawPage() {
                       {(family?.pregnancies ?? []).map((pr) => (
                         <div key={pr.id} className="rounded-lg border border-pink-200 bg-pink-50/50 p-2 text-xs">
                           <div className="font-semibold text-slate-800">{pr.motherName} & {pr.fatherName}</div>
-                          <div className="text-slate-600">Trạng thái: {pr.status === 'active' ? 'Đang mang thai' : pr.status} · Dự sinh: ngày {pr.dueGameDay + 1}/năm {pr.dueGameYear}</div>
+                          <div className="text-slate-600">Trạng thái: {pr.status === 'active' ? 'Đang mang thai' : pr.status} · Dự sinh: {formatGameDate(pr.dueGameDay, pr.dueGameYear)}</div>
                           {pr.healthWarningDays > 0 ? <div className="text-rose-700">Cảnh báo sức khỏe thai kỳ: {pr.healthWarningDays} ngày (người mang thai sức khỏe &lt; 30)</div> : null}
                         </div>
                       ))}
@@ -584,7 +584,7 @@ export function LawPage() {
                       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Hồ sơ nhận nuôi</div>
                       {(family?.adoptionApplications ?? []).map((a) => {
                         const needSpouseApprove = a.status === 'pending_spouse_approval' && myCharId != null && a.spouseCharacterId === myCharId;
-                        const statusText = a.status === 'pending_spouse_approval' ? 'Chờ vợ/chồng đồng thuận' : a.status === 'pending_review' ? `Chờ xét duyệt (hoàn tất ngày ${a.reviewCompleteGameDay + 1}/năm ${a.reviewCompleteGameYear})` : a.status === 'completed' ? 'Đã hoàn tất' : a.status;
+                        const statusText = a.status === 'pending_spouse_approval' ? 'Chờ vợ/chồng đồng thuận' : a.status === 'pending_review' ? `Chờ xét duyệt (dự kiến hoàn tất ${formatGameDate(a.reviewCompleteGameDay, a.reviewCompleteGameYear)})` : a.status === 'completed' ? 'Đã hoàn tất' : a.status;
                         return (
                           <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50/50 p-2 text-xs">
                             <div className="min-w-0">

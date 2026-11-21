@@ -14,7 +14,7 @@ import { GameButton } from '../shared/ui/GameButton';
 import { GameInput } from '../shared/ui/GameInput';
 import { toast } from '../shared/ui/Toast';
 import { useDialog } from '../shared/ui/DialogContext';
-import { formatMoney } from '../shared/lib/format';
+import { formatGameDate, formatMoney } from '../shared/lib/format';
 
 function moneyText(m: { amount: number }) {
   return formatMoney(Number(m.amount || 0));
@@ -339,7 +339,7 @@ export function RecruitmentPage() {
                           {employment.companyName ? <div>Công ty: <span className="font-medium text-slate-800">{employment.companyName}</span></div> : null}
                           <div>Lương: <span className="font-medium text-slate-800">{moneyText(employment.salary)}</span></div>
                           {employment.status === 'notice_pending' && employment.effectiveResignGameYear != null && employment.effectiveResignGameDay != null ? (
-                            <div>Hiệu lực nghỉ việc: năm {employment.effectiveResignGameYear}, ngày {employment.effectiveResignGameDay} (game)</div>
+                            <div>Hiệu lực nghỉ việc: {formatGameDate(employment.effectiveResignGameDay, employment.effectiveResignGameYear)}</div>
                           ) : null}
                         </div>
                       </>

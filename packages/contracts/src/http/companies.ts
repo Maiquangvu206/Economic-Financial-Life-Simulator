@@ -275,9 +275,9 @@ export const CompanyTaxFilingDtoSchema = z.object({
 export type CompanyTaxFilingDto = z.infer<typeof CompanyTaxFilingDtoSchema>;
 
 export const CreateCompanyTaxFilingRequestSchema = z.object({
-  /** Kỳ 30 ngày game vừa kết thúc (periodKey, ví dụ 2000-01). Nếu bỏ trống, hệ thống dùng kỳ gần nhất có doanh thu thực tế. */
+  /** Năm game cần quyết toán thuế doanh nghiệp (ví dụ 2000). Chấp nhận YYYY hoặc YYYY-MM (tương thích cũ, sẽ quy về năm). Nếu bỏ trống, hệ thống dùng năm gần nhất có doanh thu thực tế đã chốt. */
   period: z.string().min(3).max(20).optional(),
-  /** Doanh thu do chủ sở hữu khai báo cho kỳ (có thể khác doanh thu thực tế). */
+  /** Doanh thu do chủ sở hữu khai báo cho cả năm (có thể khác doanh thu thực tế). */
   declaredRevenue: MoneySchema,
   /** Nếu quỹ công ty không đủ, tự động dùng ví cá nhân chủ sở hữu để bù phần thiếu (thuế + cổ tức). */
   usePersonalFundsForShortfall: z.boolean().optional().default(false),

@@ -475,8 +475,8 @@ export function useBusinessPage() {
       }),
     onSuccess: async () => {
       toast({
-        title: 'Đã nộp khai thuế kỳ 30 ngày',
-        description: 'Đã nộp thuế và hệ thống tự động xử lý chia cổ tức (nếu có).',
+        title: 'Đã quyết toán thuế doanh nghiệp năm',
+        description: 'Đã nộp thuế theo năm và hệ thống tự động xử lý chia cổ tức (nếu có).',
       });
       setFilingNotes('');
       await invalidate();

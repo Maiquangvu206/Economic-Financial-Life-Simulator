@@ -6,6 +6,8 @@ import { publishClient } from '../publisher.js';
 import { env } from '../config/env.js';
 import { Rooms } from '@efls/contracts';
 import { accrueSimpleInterest, computeGameAge, DEFAULT_SEASON_RANGES, deriveCanonicalGameTime, evaluateLoanHealth, GAME_DAYS_PER_YEAR, GAME_START_YEAR, generateCccd, normalizeSeasonRanges, resolveSeasonEffects } from '@efls/domain';
+import { syncNpcRuntime } from './npcRuntime.js';
+import { processProductionOrders } from './productionTick.js';
 
 type LedgerOwnerType = 'character' | 'company' | 'bank' | 'government' | 'market' | 'escrow';
 type LedgerAccountKind = 'cash' | 'savings' | 'escrow' | 'clearing';
@@ -1675,7 +1677,7 @@ export async function processGameTick(): Promise<GameTickResult> {
           if (clawbackTotal > 0) {
             await postLedger(client, {
               kind: 'tax_evasion_clawback',
-              description: `Truy thu & phạt khai khống thuế kỳ ${f.period_key ?? ''}`.trim(),
+              description: `Truy thu & phạt khai khống thuế doanh nghiệp ${f.period_key ? `năm/kỳ ${f.period_key}` : ''}`.trim(),
               referenceType: 'company_tax_filing',
               referenceId: f.id,
               legs: [
@@ -2027,6 +2029,32 @@ export async function processGameTick(): Promise<GameTickResult> {
       try { await client.query('ROLLBACK TO SAVEPOINT family_step'); } catch { /* ignore */ }
       logger.warn({ err: e }, 'Family/children tick step failed (best-effort)');
       applied.push('family: skipped (error)');
+    }
+
+    try {
+      await client.query('SAVEPOINT npc_runtime_step');
+      const npcRuntimeMsg = await syncNpcRuntime(client, {
+        gameYear: nextYear,
+        dayOfYear: nextDay,
+        period: nextTime.period,
+      });
+      await client.query('RELEASE SAVEPOINT npc_runtime_step');
+      applied.push(npcRuntimeMsg);
+    } catch (e) {
+      try { await client.query('ROLLBACK TO SAVEPOINT npc_runtime_step'); } catch { /* ignore */ }
+      logger.warn({ err: e }, 'NPC runtime tick step failed (best-effort)');
+      applied.push('npc_runtime: skipped (error)');
+    }
+
+    try {
+      await client.query('SAVEPOINT production_step');
+      const prodMsg = await processProductionOrders(client, { gameYear: nextYear, dayOfYear: nextDay });
+      await client.query('RELEASE SAVEPOINT production_step');
+      applied.push(prodMsg);
+    } catch (e) {
+      try { await client.query('ROLLBACK TO SAVEPOINT production_step'); } catch { /* ignore */ }
+      logger.warn({ err: e }, 'Production tick step failed (best-effort)');
+      applied.push('production: skipped (error)');
     }
 
     await client.query('COMMIT');

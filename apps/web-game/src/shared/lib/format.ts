@@ -52,6 +52,18 @@ export function formatVietnamDate(day: number, month: number, year: number): str
   return `${paddedDay}/${paddedMonth}/${year}`;
 }
 
+/** Đổi ngày trong năm game (0–359, năm game 360 ngày) sang ngày/tháng. */
+export function gameDayOfYearToDate(dayOfYear: number): { day: number; month: number } {
+  const normalized = ((Math.floor(dayOfYear) % 360) + 360) % 360;
+  return { month: Math.floor(normalized / 30) + 1, day: (normalized % 30) + 1 };
+}
+
+/** Hiển thị một mốc thời gian game dạng dd/MM/yyyy (year là năm game). */
+export function formatGameDate(dayOfYear: number, year: number): string {
+  const { day, month } = gameDayOfYearToDate(dayOfYear);
+  return formatVietnamDate(day, month, year);
+}
+
 export function formatVietnamTime(hour: number, minute: number): string {
   const paddedHour = hour.toString().padStart(2, '0');
   const paddedMinute = minute.toString().padStart(2, '0');

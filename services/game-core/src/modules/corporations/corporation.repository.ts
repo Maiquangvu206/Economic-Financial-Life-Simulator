@@ -881,7 +881,12 @@ export class CorporationRepository {
               f.declared_revenue_minor AS "declaredRevenueMinor",
               f.tax_paid_minor AS "taxPaidMinor"
        FROM company_revenue_settlements s
-       LEFT JOIN company_tax_filings f ON f.company_id = s.company_id AND f.period_key = s.period_key
+       LEFT JOIN company_tax_filings f
+         ON f.company_id = s.company_id
+        AND (
+          f.period_key = s.period_key
+          OR f.period_key = s.game_year::text
+        )
        WHERE s.company_id = $1
        ORDER BY s.game_year DESC, s.game_month DESC, s.settled_at DESC
        LIMIT $2`,
@@ -890,39 +895,50 @@ export class CorporationRepository {
     return r.rows;
   }
 
-  async getSettlementForFiling(
+  async getAnnualSettlementForFiling(
     db: Db,
     companyId: string,
-    periodKey?: string | null,
-  ): Promise<{ period_key: string; actual_revenue_minor: string; game_year: number; game_month: number } | null> {
-    if (periodKey) {
-      const r = await db.query(
-        `SELECT period_key, actual_revenue_minor, game_year, game_month
+    year?: number | null,
+  ): Promise<{ year: number; actual_revenue_minor: string; period_count: number } | null> {
+    if (year != null) {
+      const r = await db.query<{ year: number; actual_revenue_minor: string; period_count: string }>(
+        `SELECT $2::int AS year,
+                COALESCE(SUM(actual_revenue_minor),0)::bigint AS actual_revenue_minor,
+                COUNT(*)::int AS period_count
          FROM company_revenue_settlements
-         WHERE company_id = $1 AND period_key = $2
-         LIMIT 1`,
-        [companyId, periodKey],
+         WHERE company_id = $1 AND game_year = $2`,
+        [companyId, year],
       );
-      return r.rows[0] ?? null;
+      const row = r.rows[0];
+      if (!row || Number(row.period_count ?? 0) <= 0) return null;
+      return { year: Number(row.year), actual_revenue_minor: String(row.actual_revenue_minor ?? 0), period_count: Number(row.period_count ?? 0) };
     }
-    const r = await db.query(
-      `SELECT period_key, actual_revenue_minor, game_year, game_month
+    const r = await db.query<{ year: number; actual_revenue_minor: string; period_count: string }>(
+      `SELECT game_year AS year,
+              COALESCE(SUM(actual_revenue_minor),0)::bigint AS actual_revenue_minor,
+              COUNT(*)::int AS period_count
        FROM company_revenue_settlements
        WHERE company_id = $1
-       ORDER BY game_year DESC, game_month DESC, settled_at DESC
+       GROUP BY game_year
+       ORDER BY game_year DESC
        LIMIT 1`,
       [companyId],
     );
-    return r.rows[0] ?? null;
+    const row = r.rows[0];
+    if (!row) return null;
+    return { year: Number(row.year), actual_revenue_minor: String(row.actual_revenue_minor ?? 0), period_count: Number(row.period_count ?? 0) };
   }
 
-  async sumOperatingExpensesInPeriod(db: Db, companyId: string, periodKey: string): Promise<number> {
-    // Chi phí kỳ: gồm OPEX, lương (payroll) và chi phí khác được ghi nhận theo period_key.
+  async sumOperatingExpensesInYear(db: Db, companyId: string, year: number): Promise<number> {
+    // Chi phí năm: gồm OPEX, lương (payroll) và chi phí khác được ghi nhận trong các kỳ tháng thuộc năm.
+    const yearPrefix = `${year}-`;
     const r = await db.query<{ total: string }>(
       `SELECT COALESCE(SUM(amount_minor),0)::bigint AS total
        FROM company_ledger_entries
-       WHERE company_id = $1 AND period_key = $2 AND entry_type IN ('opex','payroll','other')`,
-      [companyId, periodKey],
+       WHERE company_id = $1
+         AND entry_type IN ('opex','payroll','other')
+         AND period_key LIKE $2`,
+      [companyId, `${yearPrefix}%`],
     );
     return Number(r.rows[0]?.total ?? 0);
   }

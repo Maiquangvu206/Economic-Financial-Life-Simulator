@@ -4,7 +4,7 @@ import { PageHeader } from '@efls/ui';
 import type { CharacterDto } from '@efls/contracts';
 import { Badge } from '../shared/ui/Badge';
 import { Panel } from '../shared/ui/Panel';
-import { formatMoney } from '../shared/lib/format';
+import { formatGameDate, formatMoney } from '../shared/lib/format';
 import { apiRequest } from '../shared/api/httpClient';
 import { toast } from '../shared/ui/Toast';
 import { CharacterSectionNav } from '../shared/character/CharacterSectionNav';
@@ -319,7 +319,7 @@ export function CharacterWellnessPage() {
                 {` • ${travelOverview.activeTrip.durationDays} ngày`}
               </div>
               <div className="mt-1 text-xs text-amber-700">
-                Kết thúc: ngày {travelOverview.activeTrip.endGameDay + 1} (năm {travelOverview.activeTrip.endGameYear})
+                Kết thúc: {formatGameDate(travelOverview.activeTrip.endGameDay, travelOverview.activeTrip.endGameYear)}
               </div>
               <p className="mt-2 text-[11px] text-amber-700">
                 Trong thời gian này, thao tác đi làm và chợ đen sẽ tạm khóa.
